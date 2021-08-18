@@ -29,7 +29,7 @@ GSMSYSTEM部署与使用
 * docker镜像已推送至实验室服务器，可以在NERV下直接拉取
 
 ```bash
-docker pull registry.jiahao.li/addx/gsmsystem:1.0
+docker pull registry.jiahao.li/addx/gsmsystem:1.1
 ```
 
 * 容器启动命令
