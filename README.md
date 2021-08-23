@@ -19,8 +19,14 @@
 ### 一. 运行环境&设备要求
 
 * 操作系统 : 物理机运行Ubuntu20.04及以上;
+
 * 软件环境 : docker;
+
 * 硬件设备 : USRP B210
+
+* 系统架构
+
+  ![gsmsystem](./image/gsmsystem.png)
 
 ### 二. docker镜像部署
 
@@ -132,10 +138,10 @@ ipaddressL8081/setphonenumber # 配置已连接到设备的电话号码
   | id   | 备注                                                         |
   | ---- | ------------------------------------------------------------ |
   | 0    | ARFCNs: 1, C0: 540, band: 1800, short name: test, mcc: 001, mnc: 01 |
-  | 1    | ARFCNs: 1, C0: 540, band: 900, mcc: 460, mnc: 00, short name: China Mobile 暂不可用 |
-  | 2    | ARFCNs: 512, C0: 540, band: 1800, mcc: 460, mnc: 02, short name: China Mobile 暂不可用 |
-  | 3    | ARFCNs: 1, C0: 540, band: 900, mcc: 460, mnc: 01, short name: China Unicom 暂不可用 |
-  | 4    | ARFCNs: 512, C0: 540, band: 1800, mcc: 460, mnc: 03, short name: China Unicom 暂不可用 |
+  | 1    | ARFCNs: 1, C0: 55, band: 900, mcc: 460, mnc: 00, LAC: 4420, CI:41240, short name: ChinaMobile |
+  | 2    | ARFCNs: 1, C0: 540, band: 1800, mcc: 460, mnc: 00, LAC: 46980, CI:41286, short name: ChinaMobile |
+  | 3    | ARFCNs: 1, C0: 70, band: 900, mcc: 460, mnc: 01, LAC: 4420, CI:41240, short name: ChinaUnicom |
+  | 4    | ARFCNs: 1, C0: 668, band: 1800, mcc: 460, mnc: 01, LAC: 46980, CI:41286, short name: ChinaUnicom |
 
 + 备注：后续会继续调试配置，暂时只能使用测试配置
 
