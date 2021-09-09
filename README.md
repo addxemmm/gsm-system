@@ -49,13 +49,13 @@
 * docker镜像已推送至实验室服务器，可以在NERV下直接拉取
 
 ```bash
-docker pull registry.jiahao.li/addx/gsmsystem:1.1
+docker pull registry.jiahao.li/addx/gsmsystem:1.2
 ```
 
 * 容器启动命令
 
 ```bash
-docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=srslte gsmsystem:1.0
+docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=gsmsystem gsmsystem:1.2
 ```
 
 宿主机USB整体映射到容器之中，已连接USRP B210这一USB设备;
@@ -67,15 +67,16 @@ docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=srsl
 docker环境启动之后，该套件通过API提供服务，目前提供了8个API,均使用POST请求发送,传参和接受参数均使用json格式的数据
 
 ```
-ipaddress:8081/start # 启动2G系统
-ipaddress:8081/stop # 停止2G系统
-ipaddress:8081/config # 对整套系统进行基础配置
-ipaddress:8081/getconfig # 获取当前的所有配置信息
-ipaddress:8081/allconfig # 单独对每一项配置进行修改
-ipaddress:8081/iptables # 配置系统网络数据转发
-ipaddress:8081/smsinfo # 获取当前系统中短信相关信息
-ipaddress:8081/ueinfo # 获取当前系统中所有终端设备信息
-ipaddressL8081/setphonenumber # 配置已连接到设备的电话号码
+ipaddress:8083/start # 启动2G系统
+ipaddress:8083/stop # 停止2G系统
+ipaddress:8083/config # 对整套系统进行基础配置
+ipaddress:8083/getconfig # 获取当前的所有配置信息
+ipaddress:8083/allconfig # 单独对每一项配置进行修改
+ipaddress:8083/iptables # 配置系统网络数据转发
+ipaddress:8083/smsinfo # 获取当前系统中短信相关信息
+ipaddress:8083/ueinfo # 获取当前系统中所有终端设备信息
+ipaddress:8083/setphonenumber # 配置已连接到设备的电话号码
+ipaddress:8083/sendsms # 向指定imsi设备发送短信
 ```
 
 #### 1. start
@@ -157,7 +158,7 @@ ipaddressL8081/setphonenumber # 配置已连接到设备的电话号码
   | 3    | ARFCNs: 1, C0: 70, band: 900, mcc: 460, mnc: 01, LAC: 4420, CI:41240, short name: ChinaUnicom |
   | 4    | ARFCNs: 1, C0: 668, band: 1800, mcc: 460, mnc: 01, LAC: 46980, CI:41286, short name: ChinaUnicom |
 
-+ 备注：后续会继续调试配置，暂时只能使用测试配置
++ 备注：后续会继续调试配置
 
 ##### Response
 
@@ -466,3 +467,44 @@ ipaddressL8081/setphonenumber # 配置已连接到设备的电话号码
 
 + 使用前建议先使用ueinfo接口查询当前存在的终端设备再进行修改。
 
+#### 10. sendsms
+
+##### Request
+
+​	Request
+
+``` 
+{
+    "imsi":"001012333333333",
+    "sender":"1111111",
+    "smsmessage":"111111"
+}
+```
+
++ imsi: 接受者的IMSI；
++ sender：自定义发送者的电话号码；
++ smsmessage：短信内容；
+
+##### Response
+
+``` json
+{"status": true, "message_id": 1, "message": "Send successfully"}
+```
+
++ status : 执行结果, 启动成功为true,其他为false
+
++ message_id : 响应结果id
+
++ message : 响应信息
+
++ message_id与message对应关系
+
+  | message_id | message      | 备注                             |
+  | ---------- | ------------ | -------------------------------- |
+  | 0          | stop failed  | 发送失败，默认状态，需要查阅日志 |
+  | 1          | stop success | 发送成功                         |
+  | 2          | not running  | 程序未在运行在,无法发送          |
+
+##### 注意事项
+
++ 无法发送中文内容
