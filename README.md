@@ -67,16 +67,16 @@ docker run -dti --privileged --net=host -v /dev/bus/usb:/dev/bus/usb --name=gsms
 docker环境启动之后，该套件通过API提供服务，目前提供了8个API,均使用POST请求发送,传参和接受参数均使用json格式的数据
 
 ```
-ipaddress:8083/start # 启动2G系统
-ipaddress:8083/stop # 停止2G系统
-ipaddress:8083/config # 对整套系统进行基础配置
-ipaddress:8083/getconfig # 获取当前的所有配置信息
-ipaddress:8083/allconfig # 单独对每一项配置进行修改
-ipaddress:8083/iptables # 配置系统网络数据转发
-ipaddress:8083/smsinfo # 获取当前系统中短信相关信息
-ipaddress:8083/ueinfo # 获取当前系统中所有终端设备信息
-ipaddress:8083/setphonenumber # 配置已连接到设备的电话号码
-ipaddress:8083/sendsms # 向指定imsi设备发送短信
+ipaddress:8082/start # 启动2G系统
+ipaddress:8082/stop # 停止2G系统
+ipaddress:8082/config # 对整套系统进行基础配置
+ipaddress:8082/getconfig # 获取当前的所有配置信息
+ipaddress:8082/allconfig # 单独对每一项配置进行修改
+ipaddress:8082/iptables # 配置系统网络数据转发
+ipaddress:8082/smsinfo # 获取当前系统中短信相关信息
+ipaddress:8082/ueinfo # 获取当前系统中所有终端设备信息
+ipaddress:8082/setphonenumber # 配置已连接到设备的电话号码
+ipaddress:8082/sendsms # 向指定imsi设备发送短信
 ```
 
 #### 1. start
