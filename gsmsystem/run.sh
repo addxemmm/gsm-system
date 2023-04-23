@@ -47,7 +47,6 @@ then
 else
     echo "asterisk pid: $asterisk_pid is running......"
 fi
-
 # start openbts
 if [ ! -n "$openbts_pid" ]
 then
@@ -67,6 +66,9 @@ then
 		# Device connected successfully.
 		echo -e "\033[32m${device_info} connect success......\033[0m"
 
+		# rm OpenBTS.pid
+		rm /var/run/OpenBTS.pid
+
 		# start OpenBTS
 		/OpenBTS/OpenBTS > $openbts_log 2>&1 &
 
@@ -79,13 +81,36 @@ then
 			test_message=$(cat $openbts_log | grep "Performing timer loopback test... pass")
 		done
 		sleep 3
+		openbts_status=$(cat $openbts_log | grep "An instance of /OpenBTS is already running.")
+		echo $openbts_status
+		if [ ! -n "$openbts_status" ]
+		then
+			# kill run.sh
+			# restart OpenBTS
+			# rm OpenBTS.pid
+			rm /var/run/OpenBTS.pid
+			run_sh_pid=$(ps -aux | grep -v 'grep'  | grep /OpenBTS/run.sh | awk '{print $2}')
+			if [ ! -n "$run_sh_pid" ]
+			then
+				echo -e "\033[31mStart failed, cant find run.sh's pid, continue restart......\033[0m"
+			else
+				kill -9 $run_sh_pid
+				echo -e "\033[31mStart failed, kill run.sh and restarting now......\033[0m"
+			fi
+		fi
+
+
 		openbts_status=$(cat $openbts_log | grep "system ready")
 		echo $openbts_status
 		if [ ! -n "$openbts_status" ]
 		then
 			# restart OpenBTS
+
+			# rm OpenBTS.pid
+			rm /var/run/OpenBTS.pid
+
 			openbts_pid=$(ps -aux | grep -v 'grep'  | grep /OpenBTS/OpenBTS | awk '{print $2}')
-			transceiver_pid=$(ps -aux | grep -v 'grep'  | grep transceiver | awk '{print $2}')
+			transceiver_pid=$(ps -aux | grep -v 'grep'  | grep transceiver | awk '{print 23$2}')
 			if [ ! -n "$openbts_pid" ]
 			then
 				echo -e "\033[31mStart failed, cant find OpenBTS's pid......\033[0m"

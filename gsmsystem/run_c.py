@@ -95,7 +95,6 @@ def start_openbts():
             asterisk_pid = os.popen("ps -aux| grep -v 'grep' | grep asterisk").read()
             # Determine whether the program is started
             if(len(openbts_pid) != 0 and len(sipauthserve_pid) != 0 and len(smqueue_pid) != 0 and len(asterisk_pid) != 0):
-                os.popen("/OpenBTS/OpenBTSCLI -c tmsis clear")
                 status = True
                 message_id = 1
                 message = "Start successfully"
@@ -180,9 +179,7 @@ def stop():
         print("openbts has been killed......")
     else:
         print("openbts pid: " + openbts_pid + " is stopping......")
-        print("clear tmsis......")
         os.popen("/OpenBTS/OpenBTSCLI -c tmsis clear")
-        print("clear tmsis complete......")
         os.popen("kill -9 " + openbts_pid)
         print("openbts close complete......")
 
@@ -195,65 +192,56 @@ def stop():
 
 def config_openbts(id):
     status = False
-    # 0 -> Failed   
-    # 1 -> Success, please start system manually.uccess   
-    # 2 -> Stop failed, please stop manually.    
-    # 3 -> Can not find database file.
-    # 4 -> The config id is not existed.
-    message_id = 0
+    message_id = 0 # 0 -> Failed   1 -> SSuccess, please start system manually.uccess   2 -> Stop failed, please stop manually.    3 -> Can not find database file.
     message = "Failed."
     # 0 -> test 1 -> 
     # arfcns c0 band mcc mnc lac ci shortname
-    config = [["1", "540", "1800", "001", "01", "4420", "41240", "test"], \
-        ["1", "55", "900", "460", "00", "4420", "41240", "ChinaMobile"], \
-        ["1", "540", "1800", "460", "00", "1", "0", "ChinaMobile"], \
-        ["1", "100", "900", "460", "01", "4420", "41240", "ChinaUnicom"], \
-        ["1", "540", "1800", "460", "01", "4420", "41240", "ChinaUnicom"]]
-    config_len = len(config)
-    id = int(id)
-    if(id < config_len and id >= 0):
-        if (os.path.exists("/etc/OpenBTS/OpenBTS.db")):
-            openbts_pid = os.popen("ps -aux| grep -v 'grep' | grep /OpenBTS/OpenBTS").read()
-            sipauthserve_pid = os.popen("ps -aux| grep -v 'grep' | grep sipauthserve").read()
-            smqueue_pid = os.popen("ps -aux| grep -v 'grep' | grep smqueue").read()
-            asterisk_pid = os.popen("ps -aux| grep -v 'grep' | grep asterisk").read()
-            transceiver_pid = os.popen("ps -aux| grep -v 'grep' | grep transceiver").read()
-        
-            # stop system first
-            stop_result = json.loads(stop_openbts())
-            stop_message_id = stop_result.get("message_id")
-            if (stop_message_id == 0):
-                print("Stop failed, please stop manually.")
-                status = False
-                message_id = 2
-                message = "Stop failed, please stop manually."
-            else:
-                # connect to sqlite database
-                openbts_conn = sqlite3.connect('/etc/OpenBTS/OpenBTS.db')
-                cursor = openbts_conn.cursor()
-                # config
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][0] +"' WHERE KEYSTRING='GSM.Radio.ARFCNs';")
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][1] +"' where KEYSTRING='GSM.Radio.C0';")
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][2] +"' where KEYSTRING='GSM.Radio.Band';")
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][3] +"' where KEYSTRING='GSM.Identity.MCC';")
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][4] +"' where KEYSTRING='GSM.Identity.MNC';")
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][5] +"' where KEYSTRING='GSM.Identity.LAC';")
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][6] +"' where KEYSTRING='GSM.Identity.CI';")
-                cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][7] +"' where KEYSTRING='GSM.Identity.ShortName';")
-                # close database connect
-                openbts_conn.commit()
-                openbts_conn.close()
-                print("Modify the configuration file successfully.")
-                status = True
-                message_id = 1
-                message = "Success, please start system manually."
+    config = [[1, "540", "1800", "001", "01", "4420", "41240", "test"], \
+        [1, "55", "900", "460", "00", "4420", "41240", "ChinaMobile"], \
+        [1, "540", "1800", "460", "00", "1", "0", "ChinaMobile"], \
+        [1, "100", "900", "460", "01", "4420", "41240", "ChinaUnicom"], \
+        [1, "668", "1800", "460", "01", "46980", "42186", "ChinaUnicom"]]
+
+    if (os.path.exists("/etc/OpenBTS/OpenBTS.db")):
+        openbts_pid = os.popen("ps -aux| grep -v 'grep' | grep /OpenBTS/OpenBTS").read()
+        sipauthserve_pid = os.popen("ps -aux| grep -v 'grep' | grep sipauthserve").read()
+        smqueue_pid = os.popen("ps -aux| grep -v 'grep' | grep smqueue").read()
+        asterisk_pid = os.popen("ps -aux| grep -v 'grep' | grep asterisk").read()
+        transceiver_pid = os.popen("ps -aux| grep -v 'grep' | grep transceiver").read()
+    
+        # stop system first
+        stop_result = json.loads(stop_openbts())
+        stop_message_id = stop_result.get("message_id")
+        if (stop_message_id == 0):
+            print("Stop failed, please stop manually.")
+            status = False
+            message_id = 2
+            message = "Stop failed, please stop manually."
         else:
-            print("Can not open database file, please check the file: /etc/OpenBTS/OpenBTS.db")
-            message_id = 3
-            message = "Can not find database file."
+            # connect to sqlite database
+            openbts_conn = sqlite3.connect('/etc/OpenBTS/OpenBTS.db')
+            cursor = openbts_conn.cursor()
+            # config
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][0] +"' WHERE KEYSTRING='GSM.Radio.ARFCNs';")
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][1] +"' where KEYSTRING='GSM.Radio.C0';")
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][2] +"' where KEYSTRING='GSM.Radio.Band';")
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][3] +"' where KEYSTRING='GSM.Identity.MCC';")
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][4] +"' where KEYSTRING='GSM.Identity.MNC';")
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][5] +"' where KEYSTRING='GSM.Identity.LAC';")
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][6] +"' where KEYSTRING='GSM.Identity.CI';")
+            cursor.execute("UPDATE CONFIG SET VALUESTRING='" + config[id][7] +"' where KEYSTRING='GSM.Identity.ShortName';")
+            # close database connect
+            openbts_conn.commit()
+            openbts_conn.close()
+            print("Modify the configuration file successfully.")
+            status = True
+            message_id = 1
+            message = "Success, please start system manually."
     else:
-        message_id = 4
-        message = "The config id is not existed."
+        print("Can not open database file, please check the file: /etc/OpenBTS/OpenBTS.db")
+        message_id = 3
+        message = "Can not find database file."
+    
     result = {'status': status, "message_id": message_id, "message": message}
     result_json = json.dumps(result)
     print(result_json)
@@ -356,12 +344,11 @@ def get_sms_info():
     status = False
     message_id = 0 
     message = "Failed"   # 0 -> Failed 1 -> Success.   2 -> Can not find /var/log/syslog 3 -> SMS message not fount.
-    sms_log_path = "/var/log/smqueue.log"
     sms_infos = []
-    if (os.path.exists(sms_log_path)):
+    if (os.path.exists("/var/log/smqueue.log")):
         # search message
-        message_grep = os.popen("cat " + sms_log_path + " | grep smqueue.h:505:get_text:").read()
-        message_info_grep = os.popen("cat " + sms_log_path + " | grep -A 13 'Deliver message:'").read()
+        message_grep = os.popen("cat /var/log/smqueue.log | grep smqueue.h:505:get_text:").read()
+        message_info_grep = os.popen("cat /var/log/smqueue.log | grep -A 13 'Deliver message:'").read()
         if(len(message_grep) != 0 and len(message_info_grep) != 0):
             # use --\n to splite message
             message_grep_groups = message_grep.split("\n")
@@ -370,9 +357,8 @@ def get_sms_info():
             message_groups_num = int(len(message_grep_groups)/2)
             message_groups = []
             for i in range(message_groups_num):
-                message_groups.append(message_grep_groups[2*i] + "\n" + message_info_grep_groups[i])
+                message_groups.append(message_grep_groups[2*i] + "\n" + message_info_grep_groups[i] )
             sms_infos = []
-
             for sms_message in message_groups:
                 message_lines = sms_message.split("\n")
                 sms_info = []
@@ -388,96 +374,40 @@ def get_sms_info():
                 else:
                     sms = None
                 sms_info.append(sms)
- 
-                # Error
-                if(sms_message.find("Error: invalid character") >= 0):
+
+   
+                if_not_exist = sms_message.find("Can't send your SMS to")
+                # can not fount reciver
+                if(if_not_exist >= 0):
                     # get sender number
-                    sender_number_from_site = sms_message.find("To: <sip:")
+                    sender_number_from_site = sms_message.find("To: ")  
                     if(sender_number_from_site >= 0):
-                        sender_number = sms_message[sender_number_from_site:].split("@")[0][9:]
+                        sender_number = message_lines[5].split("@")[0][9:]
                     else:
                         sender_number = None
-                    if sender_number[0:4] == "IMSI":
-                        sender_number = None
                     sms_info.append(sender_number)
+
                     # get sender imsi
-                    sender_imsi_from_site = sms_message.find("MESSAGE sip:IMSI")
-                    if(sender_imsi_from_site >= 0):
-                        sender_imsi = sms_message[sender_imsi_from_site:].split("@")[0][16:]
+                    sender_imsi_site = sms_message.find("MESSAGE sip:IMSI")
+                    if(sender_imsi_site >= 0):
+                        while(sms_message[sender_imsi_site+16:sender_imsi_site+17] == " "):
+                            sender_imsi_site = sms_message.find("MESSAGE sip:IMSI", sender_imsi_site+16)            
+                        sender_imsi = sms_message[sender_imsi_site+16:sender_imsi_site+16+15]
                     else:
                         sender_imsi = None
                     sms_info.append(sender_imsi)
+
                     # get reciver number
-                    reciver_number = None
+                    reciver_number = message_lines[11].split()[5][:-1]
                     sms_info.append(reciver_number)
+
                     # get reciver imsi         
                     reciver_imsi = None
-                    sms_info.append(reciver_imsi)      
+                    sms_info.append(reciver_imsi)
+                    
 
-                # can not found reciver
-                elif(sms_message.find("Can't send your SMS to") >= 0):
-                    if(sms_message.find("From: 101")):
-                        # get sender number
-                        sender_number_from_site = sms_message.find("To: <sip:")
-                        if(sender_number_from_site >= 0):
-                            sender_number = sms_message[sender_number_from_site:].split("@")[0][9:]
-                            print(sender_number)
-                            if sender_number[0:4] == "IMSI":
-                                sender_number = None
-                        else:
-                            sender_number = None  
-                        sms_info.append(sender_number)
 
-                        # get sender imsi
-                        sender_imsi_from_site = sms_message.find("MESSAGE sip:IMSI")
-                        if(sender_imsi_from_site >= 0):
-                            sender_imsi = sms_message[sender_imsi_from_site:].split("@")[0][16:]
-                        else:
-                            sender_imsi = None
-                        sms_info.append(sender_imsi)
 
-                        # get reciver number
-                        revicer_number_from_site = sms_message.find("Can't send your SMS to ")
-                        if(revicer_number_from_site >= 0):
-                            reciver_number = sms_message[revicer_number_from_site:].split()[5][:-1]
-                            if(reciver_number[0:4] == "IMSI"):
-                                reciver_number = None
-                        sms_info.append(reciver_number) 
-                        # get reciver imsi         
-                        reciver_imsi = None
-                        sms_info.append(reciver_imsi)     
-                    else:
-                        # get sender number
-                        sender_number_from_site = sms_message.find("To: ")  
-                        if(sender_number_from_site >= 0):
-                            sender_number = message_lines[5].split("@")[0][9:]
-                        else:
-                            sender_number = None
-                        if sender_number[0:4] == "IMSI":
-                            sender_number = None
-                        sms_info.append(sender_number)
-
-                        # get sender imsi
-                        sender_imsi_site = sms_message.find("MESSAGE sip:IMSI")
-                        if(sender_imsi_site >= 0):
-                            while(sms_message[sender_imsi_site+16:sender_imsi_site+17] == " "):
-                                sender_imsi_site = sms_message.find("MESSAGE sip:IMSI", sender_imsi_site+16)            
-                            sender_imsi = sms_message[sender_imsi_site+16:sender_imsi_site+16+15]
-                        else:
-                            sender_imsi = None
-                        if sender_imsi[0:4] == "IMSI":
-                            sender_imsi = sender_imsi[4:]
-                        sms_info.append(sender_imsi)
-
-                        # get reciver number
-                        reciver_number = message_lines[11].split()[5][:-1]
-                        sms_info.append(reciver_number)
-
-                        # get reciver imsi         
-                        reciver_imsi = None
-                        sms_info.append(reciver_imsi)    
-
-                # device to device
                 else:
                     # get sender number
                     sender_number_from_site = sms_message.find("From: ")  
@@ -485,8 +415,6 @@ def get_sms_info():
                         sender_number = message_lines[5].split()[1]
                     else:
                         sender_number = None
-                    if sender_number[0:4] == "IMSI":
-                        sender_number = None                   
                     sms_info.append(sender_number)
 
                     # get sender imsi
@@ -503,8 +431,6 @@ def get_sms_info():
                     reciver_number_site = sms_message.find("To: ")
                     if(reciver_number_site >= 0):
                         reciver_number = message_lines[6].split()[1]
-                        if(reciver_number.isdigit() is False):
-                            reciver_number = None
                     else:
                         reciver_number = None
                     sms_info.append(reciver_number)
@@ -518,6 +444,7 @@ def get_sms_info():
                     else:
                         reciver_imsi = None
                     sms_info.append(reciver_imsi)
+
                 sms_infos.append(sms_info)
             status = True
             message_id = 1
@@ -527,7 +454,7 @@ def get_sms_info():
             message = "SMS message not fount."
     else:
         message_id = 2
-        message = "Can not find /var/log/smqueue.log"
+        message = "Can not find /var/log/syslog"
 
     result = {'status': status, "message_id": message_id, "message": message, "infos": sms_infos}
     result_json = json.dumps(result)
@@ -665,7 +592,4 @@ def send_smsmessage(imsi, sender, smsmessage):
     result = {'status': status, "message_id": message_id, "message": message}
     result_json = json.dumps(result)
     print(result_json)
-    return result_json   
-
-if __name__=="__main__":
-    app.run(host='0.0.0.0', port=8082, debug=True)
+    return result_json

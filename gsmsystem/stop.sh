@@ -42,6 +42,8 @@ then
     echo "openbts have been killed......"
 else
     echo "openbts pid: $openbts_pid are stopping......"
+    /OpenBTS/OpenBTSCLI -c tmsis clear
+    echo "clean tmsis..."
     kill -9 $openbts_pid   
     echo "openbts close complete......"
 fi
