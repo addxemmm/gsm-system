@@ -13,7 +13,7 @@ mkdir -p third_party
 [ -d third_party/openbts ] || git clone --recursive \
   https://github.com/RangeNetworks/openbts.git third_party/openbts
 # smqueue left the openbts tree upstream; standalone repo, same Makefile.
-[ -d third_party/smqueue ] || git clone \
+[ -d third_party/smqueue ] || git clone --recursive \
   https://github.com/RangeNetworks/smqueue.git third_party/smqueue
 [ -d third_party/liba53 ] || git clone \
   https://github.com/RangeNetworks/liba53.git third_party/liba53
