@@ -79,6 +79,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends libosip2-dev &&
 # subscriberRegistry (sipauthserve) also left the openbts tree upstream.
 COPY third_party/subscriberRegistry ./subscriberRegistry
 RUN cd subscriberRegistry && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
+# Debian-packaged libs land in /usr/lib*; normalize into /usr/local/lib
+# so the runtime COPY below is deterministic (fail loudly if absent).
+RUN for f in /usr/lib/liba53* /usr/lib/libcoredumper* /usr/lib/x86_64-linux-gnu/liba53* /usr/lib/x86_64-linux-gnu/libcoredumper*; do [ -e "$f" ] && cp -P "$f" /usr/local/lib/; done; ldconfig; ls /usr/local/lib/liba53* /usr/local/lib/libcoredumper*
 RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
 
 # ---------- stage 3: Go API server (replaces Python/Flask) ----------
