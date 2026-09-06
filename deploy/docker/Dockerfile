@@ -68,11 +68,10 @@ RUN ./autogen.sh \
  && make -j$(nproc) \
  && make install \
  && ldconfig
-# smqueue left the openbts tree upstream: standalone repo + standalone
-# makefile (see openbts README). Output binary lands in smqueue/.
+# smqueue: standalone sister repo, same autotools flow as openbts
+# (installs to /usr/local/sbin like sipauthserve).
 COPY third_party/smqueue ./smqueue
-RUN make -C smqueue -f Makefile.standalone \
- && cp smqueue/smqueue /usr/local/sbin/smqueue
+RUN cd smqueue && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
 RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
 
 # ---------- stage 3: Go API server (replaces Python/Flask) ----------
