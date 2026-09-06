@@ -11,11 +11,15 @@ services:
     network_mode: host
     privileged: true
     restart: unless-stopped
+    init: true
+    stop_grace_period: 90s
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - gsm-data:/data
     environment:
       GSM_CONFIG: /app/configs/app.yaml
+      GSM_LISTEN: "${GSM_LISTEN:-:8082}"
+      GSM_API_TOKEN: "${GSM_API_TOKEN:-}"
     logging:
       driver: json-file
       options:

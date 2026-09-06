@@ -85,10 +85,10 @@ RUN for f in /usr/lib/liba53* /usr/lib/libcoredumper* /usr/lib/x86_64-linux-gnu/
 RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
 
 # ---------- stage 3: Go API server (replaces Python/Flask) ----------
-FROM golang:1.22-bookworm AS go-builder
+FROM golang:1.26.8-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download || true
+RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/gsm-system ./cmd/server
 
@@ -123,6 +123,7 @@ COPY configs/ /app/configs/
 RUN cp /app/configs/app.yaml.example /app/configs/app.yaml \
  && mkdir -p /data/conf /data/log /etc/OpenBTS /var/run /var/lib/asterisk/sqlite3dir
 COPY deploy/docker/entrypoint.sh /entrypoint.sh
+COPY deploy/docker/persistent-state.sh /usr/local/lib/gsm-persistent-state.sh
 RUN chmod +x /entrypoint.sh /OpenBTS/OpenBTSDo
 
 ENV GSM_CONFIG=/app/configs/app.yaml \

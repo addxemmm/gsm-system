@@ -43,3 +43,19 @@ stack moved to UHD 4.1.0.0 on Ubuntu 22.04:
 
 `gsmsystem-dep:2.0` (xenial line) stays on host as rollback; it needs a
 genuine Spartan-6 B210 (verified: cannot drive the clone board).
+
+## Reliability migration (2026-09) / 可靠性迁移
+
+Native database persistence is now implemented rather than only documented:
+`/etc/OpenBTS` links to `/data/state/OpenBTS`, and
+`/var/lib/asterisk/sqlite3dir` links to `/data/state/asterisk`. Existing databases
+win over image seeds and are checked before boot; TMSI remains volatile.
+原生数据库持久化现已落地：上述原生目录链接到 `/data/state`；已有数据库优先于镜像种子，
+启动前检查完整性，TMSI 仍保持易失。首次切换前须在旧容器中用 SQLite `.backup` 迁出数据库，
+详见 [DEPLOY](DEPLOY.md)。不要先删除或重建旧容器。
+
+The Go image builder is pinned to 1.26.8 while the source still targets Go 1.22
+compatibility. Go supports the two newest major releases; the old Go 1.22
+runtime is outside that window. 镜像构建器升级到 1.26.8，源码仍测试 1.22 兼容性；
+旧 1.22 运行时已超出上游维护窗口。
+Source / 来源：[Go release history and support policy](https://go.dev/doc/devel/release).

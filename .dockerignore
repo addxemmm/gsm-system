@@ -14,3 +14,8 @@ gsmsystem/smqueue_5.0_amd64.deb
 *.log
 # Stale prefetch dir from the first attempt (renamed to third_party/).
 vendor/
+.env
+.env.*
+__pycache__/
+crash/
+*_run.conf
