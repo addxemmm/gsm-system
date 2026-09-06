@@ -12,6 +12,9 @@ mkdir -p third_party
   https://github.com/EttusResearch/uhd.git third_party/uhd
 [ -d third_party/openbts ] || git clone --recursive \
   https://github.com/RangeNetworks/openbts.git third_party/openbts
+# smqueue left the openbts tree upstream; standalone repo, same Makefile.
+[ -d third_party/smqueue ] || git clone \
+  https://github.com/RangeNetworks/smqueue.git third_party/smqueue
 [ -d third_party/liba53 ] || git clone \
   https://github.com/RangeNetworks/liba53.git third_party/liba53
 [ -d third_party/libcoredumper ] || git clone \
