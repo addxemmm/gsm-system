@@ -1,0 +1,62 @@
+IMAGE          CREATED         CREATED BY                                      SIZE      COMMENT
+20a0b2d71202   4 minutes ago   /sbin/init                                      36.2MB    Slimming
+52f474151b23   2 days ago      /sbin/init                                      7.84GB    gsmsystem v1.0
+ac1f825ef40b   2 years ago     /bin/sh -c sed -i 's/^PermitEmptyPasswords n…   2.55kB    
+<missing>      2 years ago     /bin/sh -c sed -i 's/^Port 22$/Port 39775/' …   2.54kB    
+<missing>      2 years ago     /bin/sh -c ${APT} install openssh-server        12.2MB    
+<missing>      2 years ago     /bin/sh -c #(nop)  CMD ["/sbin/init"]           0B        
+<missing>      2 years ago     /bin/sh -c #(nop) WORKDIR /OpenBTS              0B        
+<missing>      2 years ago     /bin/sh -c systemctl enable openbts             35B       
+<missing>      2 years ago     /bin/sh -c sed -i "s/^Description=OpenBTS$/D…   188B      
+<missing>      2 years ago     /bin/sh -c sed -i "s/^Description=smqueue$/D…   172B      
+<missing>      2 years ago     /bin/sh -c sed -i "s/^Description=sipauthser…   174B      
+<missing>      2 years ago     /bin/sh -c cp -r /home/cxlbadm/openbts_syste…   676B      
+<missing>      2 years ago     /bin/sh -c #(nop)  USER root                    0B        
+<missing>      2 years ago     /bin/sh -c git clone --recursive https://git…   32.3kB    
+<missing>      2 years ago     /bin/sh -c #(nop) WORKDIR /home/cxlbadm         0B        
+<missing>      2 years ago     /bin/sh -c #(nop)  USER cxlbadm                 0B        
+<missing>      2 years ago     /bin/sh -c cd $(find BUILDS -type d -exec st…   147MB     
+<missing>      2 years ago     /bin/sh -c #(nop)  USER root                    0B        
+<missing>      2 years ago     /bin/bash -c sudo() { /usr/bin/sudo -A "$@" …   1.33GB    
+<missing>      2 years ago     /bin/sh -c #(nop)  ENV SUDO_ASKPASS=/home/cx…   0B        
+<missing>      2 years ago     /bin/sh -c echo "#!/bin/bash\necho" > /home/…   17B       
+<missing>      2 years ago     /bin/sh -c sed -i -e 's/installIfMissing () …   6.83kB    
+<missing>      2 years ago     /bin/sh -c ./switchto.sh master                 165kB     
+<missing>      2 years ago     /bin/sh -c ./clone.sh                           21.8MB    
+<missing>      2 years ago     /bin/sh -c #(nop) WORKDIR /home/cxlbadm/dev     0B        
+<missing>      2 years ago     /bin/sh -c git clone https://github.com/Rang…   124kB     
+<missing>      2 years ago     /bin/sh -c #(nop) WORKDIR /home/cxlbadm         0B        
+<missing>      2 years ago     /bin/sh -c #(nop)  USER cxlbadm                 0B        
+<missing>      2 years ago     /bin/sh -c uhd_images_downloader                103MB     
+<missing>      2 years ago     /bin/sh -c ldconfig                             112kB     
+<missing>      2 years ago     /bin/sh -c make install                         31.3MB    
+<missing>      2 years ago     /bin/sh -c #(nop)  USER root                    0B        
+<missing>      2 years ago     /bin/sh -c make -j4                             110MB     
+<missing>      2 years ago     /bin/sh -c cmake ../                            2.13MB    
+<missing>      2 years ago     /bin/sh -c #(nop) WORKDIR /home/cxlbadm/uhd/…   0B        
+<missing>      2 years ago     /bin/sh -c mkdir host/build                     0B        
+<missing>      2 years ago     /bin/sh -c git checkout release_003_009_000     6.32MB    
+<missing>      2 years ago     /bin/sh -c #(nop) WORKDIR /home/cxlbadm/uhd     0B        
+<missing>      2 years ago     /bin/sh -c git clone --recursive https://git…   430MB     
+<missing>      2 years ago     /bin/sh -c #(nop) WORKDIR /home/cxlbadm         0B        
+<missing>      2 years ago     /bin/sh -c #(nop)  USER cxlbadm                 0B        
+<missing>      2 years ago     /bin/sh -c sed -i -e 's%cxlbadm:\*:%cxlbadm:…   923B      
+<missing>      2 years ago     /bin/sh -c adduser cxlbadm sudo                 2.68kB    
+<missing>      2 years ago     /bin/sh -c adduser --disabled-password cxlba…   336kB     
+<missing>      2 years ago     /bin/sh -c pip install mako                     0B        
+<missing>      2 years ago     /bin/sh -c pip install --upgrade pip            9.39MB    
+<missing>      2 years ago     /bin/sh -c ${APT} install locales python-sof…   2.03GB    
+<missing>      2 years ago     /bin/sh -c echo "resolvconf resolvconf/linki…   1.1MB     
+<missing>      2 years ago     /bin/sh -c ${APT} update || true                669kB     
+<missing>      2 years ago     /bin/sh -c add-apt-repository ppa:chris-lea/…   6.3kB     
+<missing>      2 years ago     /bin/sh -c add-apt-repository ppa:nilarimoga…   12.2kB    
+<missing>      2 years ago     /bin/sh -c ${APT} install software-propertie…   111MB     
+<missing>      2 years ago     /bin/sh -c ${APT} update && ${APT} upgrade      33MB      
+<missing>      2 years ago     /bin/sh -c #(nop)  ENV DEBIAN_FRONTEND=nonin…   0B        
+<missing>      2 years ago     /bin/sh -c #(nop)  USER root                    0B        
+<missing>      2 years ago     /bin/sh -c #(nop)  ENV APT=apt-get -y           0B        
+<missing>      2 years ago     /bin/sh -c #(nop)  CMD ["/bin/bash"]            0B        
+<missing>      2 years ago     /bin/sh -c mkdir -p /run/systemd && echo 'do…   7B        
+<missing>      2 years ago     /bin/sh -c rm -rf /var/lib/apt/lists/*          0B        
+<missing>      2 years ago     /bin/sh -c set -xe   && echo '#!/bin/sh' > /…   745B      
+<missing>      2 years ago     /bin/sh -c #(nop) ADD file:a65e0467dbedc0992…   119MB     

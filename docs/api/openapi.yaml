@@ -1,0 +1,128 @@
+openapi: 3.0.3
+info:
+  title: gsm-system API v1
+  version: 2.0.0
+  description: |
+    Standard REST API for the stateless GSM lab-cell toolkit (OpenBTS +
+    Asterisk + smqueue). Legacy ad-hoc routes (/start, /stop, ...) remain
+    frozen for compatibility; new integrations must use /api/v1.
+servers:
+  - url: http://<server>:8082
+    description: SDR host (replace with yours)
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Required only when GSM_API_TOKEN is set on the server.
+  schemas:
+    Envelope:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code: { type: integer, description: '0 = success; HTTP*100+seq otherwise', example: 0 }
+        message: { type: string, example: cell started }
+        data: { description: endpoint payload }
+        request_id: { type: string }
+    FieldError:
+      type: object
+      required: [field, reason]
+      properties:
+        field: { type: string, example: band }
+        reason: { type: string, example: must be 900 or 1800 }
+    CellStart:
+      type: object
+      properties:
+        arfcns: { type: string, example: "1" }
+        c0: { type: string, example: "540" }
+        band: { type: string, enum: ["900", "1800"] }
+        mcc: { type: string, example: "001" }
+        mnc: { type: string, example: "01" }
+        lac: { type: string, example: "4420" }
+        ci: { type: string, example: "41240" }
+        short_name: { type: string, example: test }
+        network: { type: string, example: eth0 }
+      description: Empty object {} reuses the saved profile.
+paths:
+  /api/v1/cell:
+    post:
+      summary: Start the cell (empty body reuses saved profile)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CellStart' }
+      responses:
+        '200': { description: started }
+        '400': { description: malformed body }
+        '409': { description: cell already running }
+        '422': { description: validation failed }
+        '503': { description: no SDR attached }
+    get:
+      summary: Cell status
+      responses:
+        '200': { description: '{running,openbts,transceiver,sipauthserve,smqueue,asterisk}' }
+    delete:
+      summary: Stop the cell (idempotent)
+      responses:
+        '200': { description: '{stopped:true|false}' }
+  /api/v1/ue:
+    get:
+      summary: Attached UE list
+      responses:
+        '200': { description: '{ues[],count}' }
+        '404': { description: no UE attached }
+        '412': { description: cell not running }
+  /api/v1/sms:
+    get:
+      summary: SMS list from smqueue log
+      responses:
+        '200': { description: '{sms[],count}' }
+        '404': { description: no SMS yet }
+    post:
+      summary: Send SMS via OpenBTS
+      responses:
+        '200': { description: submitted }
+        '412': { description: cell not running }
+        '422': { description: validation failed (incl. non-GSM7) }
+  /api/v1/subscribers:
+    get:
+      summary: Explicit subscriber registry (no implicit behavior)
+      responses:
+        '200': { description: '{subscribers[]}' }
+    post:
+      summary: Set subscriber number (explicit upsert)
+      responses:
+        '200': { description: updated }
+        '404': { description: imsi not found }
+        '412': { description: not in asterisk registry }
+        '422': { description: validation failed }
+  /api/v1/config:
+    get:
+      summary: Full OpenBTS config
+      responses:
+        '200': { description: '{config[]}' }
+    patch:
+      summary: Update single config key (cell must be stopped)
+      responses:
+        '200': { description: updated }
+        '409': { description: cell running }
+        '422': { description: invalid name/value }
+  /api/v1/network:
+    post:
+      summary: Set uplink iface MASQUERADE
+      responses:
+        '200': { description: configured }
+        '422': { description: bad iface }
+  /api/v1/profile:
+    get:
+      summary: Saved profile + subscribers (no secrets)
+      responses:
+        '200': { description: '{has_profile,profile?,ues[]}' }
+  /api/v1/health:
+    get:
+      summary: Health + SDR detection
+      responses:
+        '200': { description: '{ok,running,cell,sdr,time}' }
