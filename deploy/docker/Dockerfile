@@ -49,9 +49,9 @@ RUN cmake ../ -DCMAKE_BUILD_TYPE=Release \
 FROM ubuntu:16.04 AS openbts-builder
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential autoconf automake libtool pkg-config dpkg-dev debhelper \
+    build-essential autoconf automake libtool pkg-config dpkg-dev debhelper git \
     sqlite3 libsqlite3-dev libortp-dev libusb-1.0-0-dev libreadline-dev \
-    libzmq3-dev wget ca-certificates \
+    libboost-all-dev libzmq3-dev wget ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=uhd-builder /usr/local /usr/local
 RUN ldconfig
