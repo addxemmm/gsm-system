@@ -15,8 +15,8 @@ services:
       - gsm-data:/data
     environment:
       GSM_CONFIG: /app/configs/app.yaml
-      # A/B with the main line (which owns :8082 on host net).
-      GSM_LISTEN: ":8083"
+      # Canonical GSM API port (v2 retired, :8082 is free).
+      GSM_LISTEN: ":8082"
       UHD_IMAGES_DIR: /usr/share/uhd/images
     logging:
       driver: json-file
