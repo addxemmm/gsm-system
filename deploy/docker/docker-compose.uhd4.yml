@@ -1,0 +1,26 @@
+# folk/uhd4 experiment compose (22.04 + UHD 4.1 + clone FPGA).
+# Kept separate from the main line; promotes to deploy/docker/ on success.
+services:
+  gsm-system-uhd4:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.uhd4
+    image: gsmsystem-uhd4:test
+    container_name: gsmsystem-uhd4
+    network_mode: host
+    privileged: true
+    restart: "no"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - gsm-data:/data
+    environment:
+      GSM_CONFIG: /app/configs/app.yaml
+      UHD_IMAGES_DIR: /usr/share/uhd/images
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  gsm-data:

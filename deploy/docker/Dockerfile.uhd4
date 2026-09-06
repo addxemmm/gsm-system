@@ -1,0 +1,115 @@
+# syntax=docker/dockerfile:1
+# gsm-system folk/uhd4 EXPERIMENT (Round 1): OpenBTS 5.0 + UHD 4.1.0.0 on 22.04.
+# Why: the GSM-VM board is an Artix-7 BlackSDR mini clone; only the 4.x-era
+# clone FPGA image configures it, so the radio stack must move to UHD 4.x.
+# Upstream OpenBTS caps at UHD 3.x (uhd::msg was removed in 4.0); the port
+# surface is one file (Transceiver52M/UHDDevice.cpp, ~25 symbols) + the
+# compat/uhd/utils/msg.hpp shim in this repo. Timeboxed: 2 rounds, then stop.
+#
+# Base is Ubuntu 22.04 (gcc-11 builds UHD 4.1; xenial gcc-5 cannot).
+# 2019-era C++ + gcc-11 + upstream -Werror does not mix, so user code builds
+# with -w (see below); warnings from a decade-old tree on a new compiler are
+# noise, not signal. Hermetic like the main Dockerfile: sources come from
+# server-side third_party/ (see scripts/prefetch_vendor.sh), zero builder git.
+#
+# Stages:
+#   uhd4-builder     -> UHD v4.1.0.0 (host-only, no FPGA build needed)
+#   openbts4-builder -> liba53 + libcoredumper + openbts + smqueue + subscriberRegistry
+#   go-builder       -> Go single binary (same as main line)
+#   runtime          -> clone FPGA image + asterisk + seeds. NO python env needed
+#                      by us (apt may pull python3 for asterisk deps; untouched).
+
+# ---------- stage 1: UHD 4.1.0.0 ----------
+FROM ubuntu:22.04 AS uhd4-builder
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake pkg-config python3 python3-mako \
+    libboost-all-dev libusb-1.0-0-dev ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY third_party/uhd4 /src/uhd
+WORKDIR /src/uhd/host/build
+RUN cmake ../ -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_UTILS=ON \
+ && make -j$(nproc) \
+ && make install \
+ && ldconfig
+
+# ---------- stage 2: OpenBTS family on gcc-11 ----------
+FROM ubuntu:22.04 AS openbts4-builder
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential autoconf automake libtool pkg-config dpkg-dev debhelper git \
+    sqlite3 libsqlite3-dev libortp-dev libusb-1.0-0-dev libreadline-dev \
+    libboost-all-dev libzmq3-dev libcppzmq-dev libosip2-dev \
+    wget ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=uhd4-builder /usr/local /usr/local
+RUN ldconfig
+# msg shim for uhd::msg (removed in UHD 4.0); -I order puts it first.
+COPY compat /app/compat
+ENV CXXFLAGS="-g -O2 -w -I/app/compat"
+WORKDIR /src
+COPY third_party/liba53 ./liba53
+COPY third_party/libcoredumper ./libcoredumper
+RUN cd liba53 && dpkg-buildpackage -us -uc && cd .. && dpkg -i liba53*.deb \
+ && cd libcoredumper && (test -f coredumper-1.2.1.tar.gz || wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/google-coredumper/coredumper-1.2.1.tar.gz) && ./build.sh && dpkg -i *.deb
+COPY third_party/openbts ./openbts
+WORKDIR /src/openbts
+RUN ./autogen.sh \
+ && ./configure --with-uhd \
+ && make -j$(nproc) \
+ && make install \
+ && ldconfig
+COPY third_party/smqueue ./smqueue
+RUN apt-get update && apt-get install -y --no-install-recommends libosip2-dev && rm -rf /var/lib/apt/lists/* \
+ && cd smqueue && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
+COPY third_party/subscriberRegistry ./subscriberRegistry
+RUN cd subscriberRegistry && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
+# Normalize Debian-packaged libs for the runtime COPY + fail loudly if absent.
+RUN for f in /usr/lib/liba53* /usr/lib/libcoredumper* /usr/lib/x86_64-linux-gnu/liba53* /usr/lib/x86_64-linux-gnu/libcoredumper*; do [ -e "$f" ] && cp -P "$f" /usr/local/lib/; done; ldconfig; ls /usr/local/lib/liba53* /usr/local/lib/libcoredumper*
+RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
+
+# ---------- stage 3: Go API server (same as main line) ----------
+FROM golang:1.22-bookworm AS go-builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download || true
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/gsm-system ./cmd/server
+
+# ---------- stage 4: runtime ----------
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsqlite3-0 libortp15 libusb-1.0-0 libreadline8 libzmq5 \
+    libboost-date-time1.74.0 libboost-filesystem1.74.0 libboost-regex1.74.0 \
+    libboost-system1.74.0 libboost-thread1.74.0 libboost-serialization1.74.0 \
+    libboost-program-options1.74.0 \
+    asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates psmisc \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=openbts4-builder /usr/local /usr/local
+# Clone-board FPGA image (Artix-7), paired with UHD 4.1 on this stack.
+COPY firmware/uhd/usrp_b210_fpga.blacksdr.bin /usr/share/uhd/images/usrp_b210_fpga.bin
+COPY --from=openbts4-builder /OpenBTS/OpenBTS /OpenBTS/transceiver /OpenBTS/OpenBTSCLI /OpenBTS/OpenBTSDo /OpenBTS/
+COPY --from=openbts4-builder /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue /usr/local/sbin/comp128 /usr/local/sbin/
+RUN ldconfig \
+ && ln -sf /usr/local/sbin/sipauthserve /OpenBTS/sipauthserve \
+ && ln -sf /usr/local/sbin/smqueue /OpenBTS/smqueue \
+ && ldd /OpenBTS/transceiver | grep -q libuhd \
+ && ldd /OpenBTS/OpenBTS | grep -c "not found" | grep -q "^0$"
+COPY gsmsystem/asterisk/ /etc/asterisk/
+COPY configs/seeds/TMSITable_init.db configs/seeds/sqlite3_init.db /OpenBTS/
+COPY configs/seeds/run.so /OpenBTS/run.so
+COPY --from=openbts4-builder /src/openbts/apps/OpenBTS.example.sql /app/seeds/OpenBTS.example.sql
+COPY --from=go-builder /out/gsm-system /usr/local/bin/gsm-system
+COPY configs/ /app/configs/
+RUN cp /app/configs/app.yaml.example /app/configs/app.yaml \
+ && mkdir -p /data/conf /data/log /etc/OpenBTS /var/run /var/lib/asterisk/sqlite3dir
+COPY deploy/docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh /OpenBTS/OpenBTSDo
+
+ENV GSM_CONFIG=/app/configs/app.yaml \
+    GSM_DATA_DIR=/data \
+    UHD_IMAGES_DIR=/usr/share/uhd/images
+
+EXPOSE 8082
+ENTRYPOINT ["/entrypoint.sh"]

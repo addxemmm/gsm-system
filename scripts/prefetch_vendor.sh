@@ -10,6 +10,10 @@ cd "$(dirname "$0")/.."
 mkdir -p third_party
 [ -d third_party/uhd ] || git clone --depth 1 --branch release_003_009_000 --recursive \
   https://github.com/EttusResearch/uhd.git third_party/uhd
+# folk/uhd4: UHD 4.1.0.0 host-only (no FPGA submodule needed; .bin ships in
+# firmware/uhd/). Paired with the BlackSDR-mini clone image on this board.
+[ -d third_party/uhd4 ] || git clone --depth 1 --branch v4.1.0.0 \
+  https://github.com/EttusResearch/uhd.git third_party/uhd4
 [ -d third_party/openbts ] || git clone --recursive \
   https://github.com/RangeNetworks/openbts.git third_party/openbts
 # smqueue + subscriberRegistry (sipauthserve) both left the openbts tree upstream.
