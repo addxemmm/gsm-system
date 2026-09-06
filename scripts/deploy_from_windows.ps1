@@ -8,7 +8,7 @@ Never rebuilds containers here (avoids interrupting live cell).
 param([string]$HostAlias = "vm-sdr", [switch]$Build)
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$root = Split-Path -Parent $PSScriptRoot
 $tgz = Join-Path ([System.IO.Path]::GetTempPath()) "gsm-system.tgz"
 
 Push-Location $root
