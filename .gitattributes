@@ -7,4 +7,6 @@
 *.sql text eol=lf
 *.db binary
 *.bin binary
+*.hex binary
+*.img binary
 *.pdf binary
