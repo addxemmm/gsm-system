@@ -26,7 +26,9 @@ ARG OPENBTS_REV=master
 ARG UHD_REV=release_003_009_000
 
 # ---------- stage 0: legacy FPGA images only ----------
-FROM gsmsystem-dep:1.3 AS legacy
+# NOTE: was gsmsystem-dep:1.3 (GC'd on host 2026-09-06); 1.0 carries the
+# identical 2019 B210 FPGA file. Keep the 1.0 image until v2 is RF-verified.
+FROM gsmsystem-dep:1.0 AS legacy
 
 # ---------- stage 1: UHD ----------
 FROM ubuntu:16.04 AS uhd-builder
