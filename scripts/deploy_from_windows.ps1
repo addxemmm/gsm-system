@@ -13,9 +13,11 @@ $tgz = Join-Path ([System.IO.Path]::GetTempPath()) "gsm-system.tgz"
 
 Push-Location $root
 try {
-  tar --exclude=.git --exclude=bin --exclude=var -czf $tgz . | Out-Null
+  # git archive (not tar .) — OneDrive file locks break bsdtar reads;
+  # archive comes from committed HEAD, so commit before syncing.
+  git archive --format=tar.gz -o $tgz HEAD | Out-Null
   scp -o BatchMode=yes $tgz "${HostAlias}:~/gsm-system.tgz"
-  ssh -o BatchMode=yes $HostAlias "mkdir -p ~/gsm-system && tar -xzf ~/gsm-system.tgz -C ~/gsm-system && echo SYNCED"
+  ssh -o BatchMode=yes $HostAlias "mkdir -p ~/gsm-system && chmod -R u+rwx ~/gsm-system ; tar -xzf ~/gsm-system.tgz -C ~/gsm-system && echo SYNCED"
   if ($Build) {
     ssh -o BatchMode=yes $HostAlias "cd ~/gsm-system && docker compose -f deploy/docker/docker-compose.yml build 2>&1 | tail -5"
   }
