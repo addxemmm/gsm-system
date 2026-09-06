@@ -16,6 +16,4 @@ mkdir -p third_party
   https://github.com/RangeNetworks/liba53.git third_party/liba53
 [ -d third_party/libcoredumper ] || git clone \
   https://github.com/RangeNetworks/libcoredumper.git third_party/libcoredumper
-[ -d third_party/libzmq ] || git clone --depth 1 --branch v4.3.4 \
-  https://github.com/zeromq/libzmq.git third_party/libzmq
 du -sh third_party

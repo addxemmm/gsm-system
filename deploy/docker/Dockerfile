@@ -18,7 +18,8 @@
 # Stages:
 #   legacy         -> FPGA images only (gsmsystem-dep:1.3, local, no pull)
 #   uhd-builder    -> UHD release_003_009_000 from third_party/
-#   openbts-builder -> libzmq (source) + liba53 + libcoredumper + openbts + smqueue
+#   openbts-builder -> liba53 + libcoredumper + openbts + smqueue
+#                     (zeromq via stock xenial libzmq3-dev, same as legacy)
 #   go-builder     -> Go single binary (replaces Python/Flask/gunicorn)
 #   runtime        -> binaries + runtime libs + asterisk + seeds. NO python.
 ARG OPENBTS_REV=master
@@ -48,14 +49,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential autoconf automake libtool pkg-config dpkg-dev debhelper \
     sqlite3 libsqlite3-dev libortp-dev libusb-1.0-0-dev libreadline-dev \
-    wget ca-certificates \
+    libzmq3-dev wget ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=uhd-builder /usr/local /usr/local
 RUN ldconfig
 WORKDIR /src
-# libzmq from source (replaces the dead chris-lea PPA path in install_libzmq.sh).
-COPY third_party/libzmq ./libzmq
-RUN cd libzmq && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
 # liba53 (A5/3) + libcoredumper, per upstream .travis.yml build recipe.
 COPY third_party/liba53 ./liba53
 COPY third_party/libcoredumper ./libcoredumper
@@ -87,7 +85,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/gsm-system 
 FROM ubuntu:16.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsqlite3-0 libortp9 libusb-1.0-0 libreadline6 \
+    libsqlite3-0 libortp9 libusb-1.0-0 libreadline6 libzmq5 \
     libboost-date-time1.58.0 libboost-filesystem1.58.0 libboost-regex1.58.0 \
     libboost-system1.58.0 libboost-thread1.58.0 libboost-serialization1.58.0 \
     asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates \
