@@ -1,0 +1,26 @@
+# gsm-system compose (Ubuntu SDR host with USRP B210 attached)
+# Host networking REQUIRED (OpenBTS + uplink iface name).
+# USB passthrough REQUIRED for USRP.
+services:
+  gsm-system:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: gsmsystem-dep:2.0
+    container_name: gsmsystem-v2
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - gsm-data:/data
+    environment:
+      GSM_CONFIG: /app/configs/app.yaml
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  gsm-data:

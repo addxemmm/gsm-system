@@ -1,0 +1,33 @@
+listen_addr: ":8082"
+data_dir: "/data"
+conf_dir: ""
+log_dir: ""
+
+openbts_bin: "/OpenBTS/OpenBTS"
+transceiver_bin: "transceiver"
+sipauthserve_bin: "sipauthserve"
+smqueue_bin: "smqueue"
+asterisk_bin: "asterisk"
+openbts_cli_bin: "/OpenBTS/OpenBTSCLI"
+sqlite3_bin: "sqlite3"
+uhd_find_bin: "uhd_find_devices"
+iptables_bin: "iptables"
+
+openbts_db_path: "/etc/OpenBTS/OpenBTS.db"
+tmsi_table_path: "/var/run/TMSITable.db"
+asterisk_db_path: "/var/lib/asterisk/sqlite3dir/sqlite3.db"
+smqueue_seed_path: "/app/configs/smqueue.seed.sql"
+
+smqueue_log_name: "smqueue.log"
+openbts_log_name: "openbts.log"
+
+default_arfcns: "1"
+default_c0: "540"
+default_band: "1800"
+default_mcc: "001"
+default_mnc: "01"
+default_lac: "4420"
+default_ci: "41240"
+default_short_name: "test"
+
+max_upload_bytes: 8388608
