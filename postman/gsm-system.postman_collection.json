@@ -1,0 +1,291 @@
+{
+	"info": {
+		"_postman_id": "gsm-system-bilingual-v1",
+		"name": "gsm-system API (legacy + v1) / 新旧接口全集",
+		"description": "GSM lab-cell toolkit: 10 frozen legacy routes (HTTP 200 always, status/message_id/message) + /api/v1 standard REST (proper status codes, code/message/data/request_id envelope, OpenAPI: docs/api/openapi.yaml).\n\nVariables 变量: baseUrl defaults to the main line http://127.0.0.1:8082 (Go+OpenBTS/UHD3.9). For the folk/uhd4 stack use http://127.0.0.1:8083.\nAuth 鉴权: only when the server sets GSM_API_TOKEN; then add header Authorization: Bearer <token> to every request, else 401.\n\nTypical flow 典型流程: health -> cell start ({}) -> ue -> subscribers set number -> sms send -> sms list -> cell delete(stop).\nRF note: /start actually transmits. IMSI/number values below are lab-test placeholders, replace with yours.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://127.0.0.1:8082",
+			"description": "Main line :8082. folk/uhd4 stack uses :8083."
+		}
+	],
+	"item": [
+		{
+			"name": "legacy 旧版冻结接口 (POST, HTTP always 200)",
+			"description": "Frozen verbatim compat routes from gsmsystem/run.py. success/failure is in JSON status/message_id, NOT the HTTP code. See docs/API_LEGACY.md.",
+			"item": [
+				{
+					"name": "POST /start 启动",
+					"request": {
+						"description": "No required args. Empty body reuses saved profile/defaults (id=0 equivalent). Responses: 1 Start successfully / 2 is running / 3 device not connected / 0 Start Failed.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/start", "host": ["{{baseUrl}}"], "path": ["start"] },
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /stop 停止",
+					"request": {
+						"description": "Responses: 1 Stop successfully. / 2 Not running. / 0 Stop failed.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/stop", "host": ["{{baseUrl}}"], "path": ["stop"] },
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /config 预设配置 (id 0-4)",
+					"request": {
+						"description": "Preset ids: 0 test 1800 / 1 CMCC 900 / 2 CMCC 1800 / 3 CU 900 / 4 CU 1800. Stops the cell first. 1 Success,please start manually / 2 stop failed / 3 no db / 4 bad id.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/config", "host": ["{{baseUrl}}"], "path": ["config"] },
+						"body": { "mode": "raw", "raw": "{\n    \"id\": 0\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /getconfig 读全量配置",
+					"request": {
+						"description": "Returns data:[[KEY,VALUE]...] from /etc/OpenBTS/OpenBTS.db CONFIG table.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/getconfig", "host": ["{{baseUrl}}"], "path": ["getconfig"] },
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /allconfig 改单项配置",
+					"request": {
+						"description": "Stops the cell first. Example renames the network short name.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/allconfig", "host": ["{{baseUrl}}"], "path": ["allconfig"] },
+						"body": { "mode": "raw", "raw": "{\n    \"name\": \"GSM.Identity.ShortName\",\n    \"value\": \"test\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /iptables 出口转发",
+					"request": {
+						"description": "iface = uplink interface name (ip route get 8.8.8.8 -> dev). Adds MASQUERADE for 192.168.99.0/24. Run once per boot (or when uplink changes).",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/iptables", "host": ["{{baseUrl}}"], "path": ["iptables"] },
+						"body": { "mode": "raw", "raw": "{\n    \"iface\": \"eth0\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /smsinfo 查短信",
+					"request": {
+						"description": "infos:[[time,text,from_num,from_imsi,to_num,to_imsi]], null when missing. 3 = no SMS yet. Chinese content is NOT retrievable (OpenBTS limitation).",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/smsinfo", "host": ["{{baseUrl}}"], "path": ["smsinfo"] },
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /ueinfo 查终端",
+					"request": {
+						"description": "infos:[[imsi,imei,number,ip]]. 2 = cell not running. 3 = no UE attached. ip may be none/null before PDP.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/ueinfo", "host": ["{{baseUrl}}"], "path": ["ueinfo"] },
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /setphonenumber 配号码",
+					"request": {
+						"description": "Binds number to an attached IMSI (TMSITable + asterisk dbs). 3 = imsi unknown (attach UE first). 4 = not in asterisk registry.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/setphonenumber", "host": ["{{baseUrl}}"], "path": ["setphonenumber"] },
+						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"number\": \"10000001\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /sendsms 发短信",
+					"request": {
+						"description": "ASCII only (Chinese unsupported, will fail opaquely). 1 Send successfully. / 2 Not running. / 0 Send failed.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/sendsms", "host": ["{{baseUrl}}"], "path": ["sendsms"] },
+						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"sender\": \"101\",\n    \"smsmessage\": \"hello\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				}
+			]
+		},
+		{
+			"name": "v1 小区 cell",
+			"description": "Standard REST. Proper HTTP codes + code/message/data/request_id envelope. See docs/API.md.",
+			"item": [
+				{
+					"name": "POST /api/v1/cell 启动(显式参数)",
+					"request": {
+						"description": "Explicit GSM params, strict validation (band 900/1800 only, mcc 3 digits...). 200 started / 422 validation (data.errors) / 409 already running / 503 no SDR.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] },
+						"body": { "mode": "raw", "raw": "{\n    \"arfcns\": \"1\",\n    \"c0\": \"540\",\n    \"band\": \"1800\",\n    \"mcc\": \"001\",\n    \"mnc\": \"01\",\n    \"lac\": \"4420\",\n    \"ci\": \"41240\",\n    \"short_name\": \"test\",\n    \"network\": \"eth0\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /api/v1/cell 启动(复用存档)",
+					"request": {
+						"description": "Empty body reuses /data/last_start.json (same as lte-system). First boot without profile -> 422.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] },
+						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "GET /api/v1/cell 状态",
+					"request": {
+						"description": "{running,openbts,transceiver,sipauthserve,smqueue,asterisk,started_at?,band?,short_name?}",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] }
+					}
+				},
+				{
+					"name": "DELETE /api/v1/cell 停止(幂等)",
+					"request": {
+						"description": "Idempotent: stopping an idle cell still returns 200 stopped:false (legacy returned failure).",
+						"method": "DELETE",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "v1 终端短信签约 ue/sms/subscribers",
+			"description": "UE snapshot, SMS list/send, explicit subscriber registry (no implicit writes).",
+			"item": [
+				{
+					"name": "GET /api/v1/ue 终端列表",
+					"request": {
+						"description": "{ues:[{imsi,imei,number,ip}],count}. 412 cell not running. 404 no UE attached.",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/ue", "host": ["{{baseUrl}}"], "path": ["api", "v1", "ue"] }
+					}
+				},
+				{
+					"name": "GET /api/v1/sms 短信列表",
+					"request": {
+						"description": "{sms:[{time,text,sender_number,sender_imsi,receiver_number,receiver_imsi}],count}. 404 no SMS yet.",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/sms", "host": ["{{baseUrl}}"], "path": ["api", "v1", "sms"] }
+					}
+				},
+				{
+					"name": "POST /api/v1/sms 发短信",
+					"request": {
+						"description": "Non-GSM7 (e.g. Chinese) is rejected with explicit 422 (legacy failed opaquely). smsmessage is accepted as alias for text.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/v1/sms", "host": ["{{baseUrl}}"], "path": ["api", "v1", "sms"] },
+						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"sender\": \"101\",\n    \"text\": \"hello\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "GET /api/v1/subscribers 查签约",
+					"request": {
+						"description": "Explicit registry read: {subscribers:[{imsi,number}]}. SIMs are provisioned externally; no writer API by design (see docs/SIM.md).",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/subscribers", "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscribers"] }
+					}
+				},
+				{
+					"name": "POST /api/v1/subscribers 设号码",
+					"request": {
+						"description": "Explicit upsert (imsi 15 digits, number 2-15 digits). 200 updated / 404 imsi not found (attach UE first) / 412 not in asterisk registry.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/v1/subscribers", "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscribers"] },
+						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"number\": \"10000001\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				}
+			]
+		},
+		{
+			"name": "v1 配置运维 config/network/profile/health",
+			"description": "Config, uplink NAT, saved profile, health/SDR detection, plus legacy GET status endpoints.",
+			"item": [
+				{
+					"name": "GET /api/v1/config 读配置",
+					"request": {
+						"description": "{config:[{key,value}]} from OpenBTS.db CONFIG. 404 db not found.",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/config", "host": ["{{baseUrl}}"], "path": ["api", "v1", "config"] }
+					}
+				},
+				{
+					"name": "PATCH /api/v1/config 改单项",
+					"request": {
+						"description": "Cell must be stopped first (else 409). Invalid name/value -> 422.",
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/v1/config", "host": ["{{baseUrl}}"], "path": ["api", "v1", "config"] },
+						"body": { "mode": "raw", "raw": "{\n    \"name\": \"GSM.Identity.ShortName\",\n    \"value\": \"lab\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "POST /api/v1/network 配出口网卡",
+					"request": {
+						"description": "MASQUERADE for 192.168.99.0/24 via uplink iface. Shell metachars rejected.",
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/v1/network", "host": ["{{baseUrl}}"], "path": ["api", "v1", "network"] },
+						"body": { "mode": "raw", "raw": "{\n    \"iface\": \"eth0\"\n}", "options": { "raw": { "language": "json" } } }
+					}
+				},
+				{
+					"name": "GET /api/v1/profile 存档",
+					"request": {
+						"description": "{has_profile,profile?,ues[]} — no secrets. Backs the empty-body restart flow (RULES.md).",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/profile", "host": ["{{baseUrl}}"], "path": ["api", "v1", "profile"] }
+					}
+				},
+				{
+					"name": "GET /api/v1/health 健康+SDR",
+					"request": {
+						"description": "{ok,running,cell,sdr,time}. Check sdr.uhd_b210 before /start (false -> 503).",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/health", "host": ["{{baseUrl}}"], "path": ["api", "v1", "health"] }
+					}
+				},
+				{
+					"name": "GET /healthz (legacy)",
+					"request": {
+						"description": "Legacy plain-JSON health (no envelope): {ok,running,sdr,time}.",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/healthz", "host": ["{{baseUrl}}"], "path": ["healthz"] }
+					}
+				},
+				{
+					"name": "GET /status (legacy)",
+					"request": {
+						"description": "Legacy cell status object (same shape as v1 cell data).",
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/status", "host": ["{{baseUrl}}"], "path": ["status"] }
+					}
+				}
+			]
+		}
+	]
+}
