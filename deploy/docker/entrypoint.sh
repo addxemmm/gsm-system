@@ -4,6 +4,8 @@
 # then exec the Go API server. No Python, no Flask, no gunicorn.
 set -eu
 mkdir -p /data/conf /data/log /etc/OpenBTS /var/run /var/lib/asterisk/sqlite3dir
+# smqueue writes CDRs here; missing dir kills it at boot (seen live).
+mkdir -p /var/lib/OpenBTS
 # One-time DB creation from the freshly built example schema.
 if [ ! -f /etc/OpenBTS/OpenBTS.db ] && [ -f /app/seeds/OpenBTS.example.sql ]; then
   sqlite3 /etc/OpenBTS/OpenBTS.db < /app/seeds/OpenBTS.example.sql

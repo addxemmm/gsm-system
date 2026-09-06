@@ -116,7 +116,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-date-time1.74.0 libboost-filesystem1.74.0 libboost-regex1.74.0 \
     libboost-system1.74.0 libboost-thread1.74.0 libboost-serialization1.74.0 \
     libboost-program-options1.74.0 libboost-chrono1.74.0 \
-    libosip2-11 \
+    libosip2-11 libsqliteodbc \
     asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates psmisc \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=openbts4-builder /usr/local /usr/local
@@ -133,6 +133,8 @@ RUN ldconfig \
  && ldd /OpenBTS/transceiver | grep -q libuhd \
  && ldd /OpenBTS/OpenBTS | grep -c "not found" | grep -q "^0$"
 COPY gsmsystem/asterisk/ /etc/asterisk/
+COPY deploy/docker/odbc.ini /etc/odbc.ini
+COPY deploy/docker/odbcinst.ini /etc/odbcinst.ini
 COPY configs/seeds/TMSITable_init.db configs/seeds/sqlite3_init.db /OpenBTS/
 COPY configs/seeds/run.so /OpenBTS/run.so
 COPY --from=openbts4-builder /src/openbts/apps/OpenBTS.example.sql /app/seeds/OpenBTS.example.sql
