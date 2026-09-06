@@ -116,11 +116,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-date-time1.74.0 libboost-filesystem1.74.0 libboost-regex1.74.0 \
     libboost-system1.74.0 libboost-thread1.74.0 libboost-serialization1.74.0 \
     libboost-program-options1.74.0 libboost-chrono1.74.0 \
+    libosip2-11 \
     asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates psmisc \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=openbts4-builder /usr/local /usr/local
-# Clone-board FPGA image (Artix-7), paired with UHD 4.1 on this stack.
+# Clone-board FPGA image (Artix-7) + B2xx FX3 firmware, paired with UHD 4.1.
+# Provenance: FPGA from vendor bundle (firmware/uhd/README.md); fw/bl from
+# the 4.x images set (verified on-wire: loopback passed on serial 2548123).
 COPY firmware/uhd/usrp_b210_fpga.blacksdr.bin /usr/share/uhd/images/usrp_b210_fpga.bin
+COPY firmware/uhd/usrp_b200_fw.hex firmware/uhd/usrp_b200_bl.img /usr/share/uhd/images/
 COPY --from=openbts4-builder /OpenBTS/OpenBTS /OpenBTS/transceiver /OpenBTS/OpenBTSCLI /OpenBTS/OpenBTSDo /OpenBTS/
 COPY --from=openbts4-builder /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue /usr/local/sbin/comp128 /usr/local/sbin/
 RUN ldconfig \
