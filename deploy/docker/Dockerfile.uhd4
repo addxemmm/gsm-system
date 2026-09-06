@@ -89,9 +89,13 @@ RUN ./autogen.sh \
  && ldconfig
 COPY third_party/smqueue ./smqueue
 RUN apt-get update && apt-get install -y --no-install-recommends libosip2-dev && rm -rf /var/lib/apt/lists/* \
- && cd smqueue && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
+ && cd smqueue \
+ && grep -rl '!defined(gettid)' CommonLibs SR/CommonLibs 2>/dev/null | xargs -r sed -i 's/#if !defined(gettid)/#if !defined(gettid) \&\& !__GLIBC_PREREQ(2,30)/' \
+ && ./autogen.sh && ./configure && make -j$(nproc) -k && make install && ldconfig
 COPY third_party/subscriberRegistry ./subscriberRegistry
-RUN cd subscriberRegistry && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
+RUN cd subscriberRegistry \
+ && grep -rl '!defined(gettid)' CommonLibs 2>/dev/null | xargs -r sed -i 's/#if !defined(gettid)/#if !defined(gettid) \&\& !__GLIBC_PREREQ(2,30)/' \
+ && ./autogen.sh && ./configure && make -j$(nproc) -k && make install && ldconfig
 # Normalize Debian-packaged libs for the runtime COPY + fail loudly if absent.
 RUN for f in /usr/lib/liba53* /usr/lib/libcoredumper* /usr/lib/x86_64-linux-gnu/liba53* /usr/lib/x86_64-linux-gnu/libcoredumper*; do [ -e "$f" ] && cp -P "$f" /usr/local/lib/; done; ldconfig; ls /usr/local/lib/liba53* /usr/local/lib/libcoredumper*
 RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
