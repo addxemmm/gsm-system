@@ -48,7 +48,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential autoconf automake libtool pkg-config dpkg-dev debhelper \
     sqlite3 libsqlite3-dev libortp-dev libusb-1.0-0-dev libreadline-dev \
-    ca-certificates \
+    wget ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=uhd-builder /usr/local /usr/local
 RUN ldconfig
