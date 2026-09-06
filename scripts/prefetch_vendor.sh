@@ -14,6 +14,10 @@ mkdir -p third_party
 # firmware/uhd/). Paired with the BlackSDR-mini clone image on this board.
 [ -d third_party/uhd4 ] || git clone --depth 1 --branch v4.1.0.0 \
   https://github.com/EttusResearch/uhd.git third_party/uhd4
+# folk/uhd4: cppzmq single header (no 22.04 package; zmq.hpp split from
+# libzmq in 4.2+). v4.7.x is era-correct for libzmq 4.3.x.
+[ -d third_party/cppzmq ] || git clone --depth 1 --branch v4.7.1 \
+  https://github.com/zeromq/cppzmq.git third_party/cppzmq
 [ -d third_party/openbts ] || git clone --recursive \
   https://github.com/RangeNetworks/openbts.git third_party/openbts
 # smqueue + subscriberRegistry (sipauthserve) both left the openbts tree upstream.

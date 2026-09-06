@@ -39,9 +39,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential autoconf automake libtool pkg-config dpkg-dev debhelper git \
     sqlite3 libsqlite3-dev libortp-dev libusb-1.0-0-dev libreadline-dev \
-    libboost-all-dev libzmq3-dev libcppzmq-dev libosip2-dev \
+    libboost-all-dev libzmq3-dev libosip2-dev \
     wget ca-certificates \
  && rm -rf /var/lib/apt/lists/*
+# cppzmq.hpp has no 22.04 package: vendor the single header (era: v4.7.x).
+COPY third_party/cppzmq/zmq.hpp third_party/cppzmq/zmq_addon.hpp /usr/include/
 COPY --from=uhd4-builder /usr/local /usr/local
 RUN ldconfig
 # msg shim for uhd::msg (removed in UHD 4.0); -I order puts it first.
