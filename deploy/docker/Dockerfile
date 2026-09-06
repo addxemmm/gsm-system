@@ -74,6 +74,9 @@ RUN ./autogen.sh \
 COPY third_party/smqueue ./smqueue
 RUN apt-get update && apt-get install -y --no-install-recommends libosip2-dev && rm -rf /var/lib/apt/lists/* \
  && cd smqueue && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
+# subscriberRegistry (sipauthserve) also left the openbts tree upstream.
+COPY third_party/subscriberRegistry ./subscriberRegistry
+RUN cd subscriberRegistry && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
 RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
 
 # ---------- stage 3: Go API server (replaces Python/Flask) ----------
