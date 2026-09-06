@@ -51,8 +51,11 @@ RUN ldconfig
 # where dynamic exception specs and `register` are hard errors, not warnings).
 # -fpermissive: era int<->pointer conversions (e.g. dialog IDs as void*).
 # -k on make: surface ALL translation-unit errors per run, not just the first.
+# -DORTP_NEW_API=1: configure's compile-test mis-detects ortp5 as <0.22.0;
+# the 4-arg rtp_session_set_local_addr is verified present in
+# /usr/include/ortp/rtpsession.h, and upstream code already handles it.
 COPY compat /app/compat
-ENV CXXFLAGS="-g -O2 -w -std=gnu++14 -fpermissive -I/app/compat"
+ENV CXXFLAGS="-g -O2 -w -std=gnu++14 -fpermissive -DORTP_NEW_API=1 -I/app/compat"
 WORKDIR /src
 COPY third_party/liba53 ./liba53
 COPY third_party/libcoredumper ./libcoredumper
@@ -78,7 +81,7 @@ RUN cd openbts \
 WORKDIR /src/openbts
 RUN ./autogen.sh \
  && ./configure --with-uhd \
- && make -jk$(nproc) \
+ && make -j$(nproc) -k \
  && make install \
  && ldconfig
 COPY third_party/smqueue ./smqueue
