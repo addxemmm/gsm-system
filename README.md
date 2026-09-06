@@ -34,12 +34,16 @@ internal/api          v1 标准接口 + 旧版冻结 + 中间件（鉴权/审计
 internal/gsm          OpenBTS 启停 + 参数校验 + 预设 + sqlite/订阅管理
 internal/parser       smqueue 短信 + sgsn/tmsis 解析（正则，无下标魔数）
 internal/sdr          B210 探测
-internal/sysop        无 shell 注入的进程管理（Z排除solete）
+internal/sysop        无 shell 注入的进程管理（Z排除，失败路径回收）
 internal/config       env+yaml 配置
-configs/              app.yaml.example + smqueue 种子
-deploy/docker/        Dockerfile（复用1.3层+换Go二进制）+ compose + entrypoint
+compat/               UHD4 垫片 (msg) + 上游兼容补丁
+firmware/uhd/         克隆板 FPGA + FX3 固件 (SHA256 锁定)
+configs/              app.yaml.example + 干净 DB 种子 (seeds/)
+deploy/docker/        Dockerfile.uhd4（现行，22.04+UHD4.1）/ Dockerfile（Xenial 备用）
+                      + compose + entrypoint
+postman/              全接口 Postman 集 (legacy+v1, 26 请求)
 docs/                 QUICKSTART / API / API_LEGACY / RULES / SIM / SDR / MIGRATION / DEPLOY
-scripts/              deploy_from_windows.ps1（tar+scp同步）
+scripts/              deploy_from_windows.ps1（git-archive 同步）+ prefetch_vendor.sh（服务端源码预取）
 gsmsystem/            旧 Python 实现只读存档 v1 (Flask run.py + OpenBTS/asterisk dumps)
 gsmsystem_v1.3/       旧手动启动脚本只读存档 (含DB重置 stop.sh)
 docs/legacy/          旧中文手册存档 (520行 README.v1)
@@ -49,7 +53,7 @@ docs/legacy/          旧中文手册存档 (520行 README.v1)
 
 ```bash
 cd ~/gsm-system
-sudo docker compose -f deploy/docker/docker-compose.yml up -d --build
+docker compose -f deploy/docker/docker-compose.uhd4.yml up -d --build
 curl -s http://127.0.0.1:8082/api/v1/health; echo
 ```
 
@@ -61,8 +65,8 @@ curl -X POST http://127.0.0.1:8082/api/v1/cell -H 'Content-Type: application/jso
   -d '{"arfcns":"1","c0":"540","band":"1800","mcc":"001","mnc":"01","lac":"4420","ci":"41240","short_name":"test","network":"eth0"}'
 ```
 
-完整入网→短信→互拨见 [`docs/QUICKSTART.md`](docs/QUICKSTART.md)（射频步骤须在服务器实测）。
-Full attach→SMS→voice flow: [`docs/QUICKSTART.md`](docs/QUICKSTART.md) (RF steps need on-server verification).
+完整入网→短信→互拨见 [`docs/QUICKSTART.md`](docs/QUICKSTART.md)（小区已点亮；入网待真机）。
+Full attach→SMS→voice flow: [`docs/QUICKSTART.md`](docs/QUICKSTART.md) (cell verified live; UE attach pending handsets).
 
 本地验证 Local checks (e.g. Windows PowerShell):
 

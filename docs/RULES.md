@@ -8,8 +8,8 @@ This tool has **no accounts, no background jobs, no Go-layer database**:
 
 | State 状态 | Location 位置 | Lifetime 生命周期 |
 |---|---|---|
-| Last launch params 上次启动参数 (arfcns/c0/band/mcc/mnc/lac/ci/short_name/network) | `/data/last_start.json` (volume `gsm-data`) | survives recreates 重建不丢 |
-| Seeds 种子 (smqueue seed SQL, OpenBTS dumps) | image `/app/configs/` | follow image 跟随镜像 |
+| Last launch params 上次启动参数 (arfcns/c0/band/mcc/mnc/lac/ci/short_name/network) | `/data/last_start.json` (volume `docker_gsm-data`) | survives recreates 重建不丢 |
+| Seeds 种子 (OpenBTS example schema, clean-DB inits) | image `/app/seeds/` + `/OpenBTS/*_init.db` | follow image 跟随镜像 |
 | Runtime 运行态 (OpenBTS/transceiver/sipauthserve/smqueue/asterisk, attached UE, smqueue.log) | memory + `/data/log/` | `/stop` or recreate clears 清零 |
 
 In short 简言之：**configure once, reuse; stop means fully stopped, no ghost processes 配一次、复用；停即全停、无幽灵进程。**
@@ -36,13 +36,17 @@ curl -X DELETE http://127.0.0.1:8082/api/v1/cell
 ```
 
 - One cell at a time; start while running → `409`. Stop first.
-- `/stop` kills the 5 processes and removes our NAT rule; other host rules untouched.
+- `/stop` kills the 5 processes. NAT rules are NOT managed by start/stop:
+  they are added only by explicit `POST /iptables` or `/api/v1/network`
+  calls and persist until you delete them (same as legacy behavior).
 - Recreate never auto-transmits (compliance); manual start with `{}` restores.
 
 ## 3. Config precedence 配置优先级
 
-`/start` params (highest 最高) → saved `last_start.json` (inherit 空字段继承) →
-server defaults `configs/app.yaml.example`.
+`/start` params (highest 最高) → saved `last_start.json` (empty fields
+inherit 空字段继承). There are no other server-side defaults on the v1
+path: missing required fields → `422` (legacy bare `POST /start` without
+any profile falls back to the id=0 preset instead — frozen behavior).
 
 ## 4. Subscribers & SIM 签约与SIM卡
 
@@ -55,9 +59,9 @@ server defaults `configs/app.yaml.example`.
 ## 5. Upgrade & rollback 升级与回滚
 
 ```bash
-cd ~/gsm-system && git pull
-sudo docker compose -f deploy/docker/docker-compose.yml up -d --build
-# Rollback 回滚：old image gsmsystem-dep:1.3 + container gsmsystem keeps on host.
+cd ~/gsm-system && docker compose -f deploy/docker/docker-compose.uhd4.yml up -d --build
+# Rollback 回滚：image gsmsystem-dep:2.0 stays on host until the uhd4 line
+# passes the full RF chain (xenial line needs a genuine Spartan-6 B210).
 ```
 
 `/data` volume (profile/logs) survives upgrades.

@@ -139,7 +139,9 @@ func (m *Manager) Start(ctx context.Context, p StartParams) error {
 	// Wait for "system ready" (max ~20s), like run.sh timer-loopback wait.
 	if !waitForReady(m.cfg.LogPath(m.cfg.OpenBTSLogName), 20*time.Second) {
 		_ = cmd.Process.Kill()
+		reap(cmd)
 		m.openbtsCmd = nil
+		_ = logF.Close()
 		return fmt.Errorf("OpenBTS did not become ready, see %s", m.cfg.LogPath(m.cfg.OpenBTSLogName))
 	}
 	// Legacy run.py: clear tmsis after successful start.
@@ -271,7 +273,13 @@ func startDetached(bin string, args ...string) error {
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Reap on exit: otherwise every start leaves <defunct> zombies
+	// parented to PID 1 (observed live on vm-sdr 2026-09-06).
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 func waitForReady(logPath string, timeout time.Duration) bool {

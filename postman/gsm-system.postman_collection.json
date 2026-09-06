@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "gsm-system-bilingual-v1",
 		"name": "gsm-system API (legacy + v1) / 新旧接口全集",
-		"description": "GSM lab-cell toolkit: 10 frozen legacy routes (HTTP 200 always, status/message_id/message) + /api/v1 standard REST (proper status codes, code/message/data/request_id envelope, OpenAPI: docs/api/openapi.yaml).\n\nVariables 变量: baseUrl defaults to the main line http://127.0.0.1:8082 (Go+OpenBTS/UHD3.9). For the folk/uhd4 stack use http://127.0.0.1:8083.\nAuth 鉴权: only when the server sets GSM_API_TOKEN; then add header Authorization: Bearer <token> to every request, else 401.\n\nTypical flow 典型流程: health -> cell start ({}) -> ue -> subscribers set number -> sms send -> sms list -> cell delete(stop).\nRF note: /start actually transmits. IMSI/number values below are lab-test placeholders, replace with yours.",
+		"description": "GSM lab-cell toolkit: 10 frozen legacy routes (HTTP 200 always, status/message_id/message) + /api/v1 standard REST (proper status codes, code/message/data/request_id envelope, OpenAPI: docs/api/openapi.yaml).\n\nVariables 变量: baseUrl defaults to http://127.0.0.1:8082 (live uhd4 stack; the retired xenial line used the same port).\nAuth 鉴权: only when the server sets GSM_API_TOKEN; then add header Authorization: Bearer <token> to every request, else 401.\n\nTypical flow 典型流程: health -> cell start ({}) -> ue -> subscribers set number -> sms send -> sms list -> cell delete(stop).\nRF note: /start actually transmits. IMSI/number values below are lab-test placeholders, replace with yours.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -126,7 +126,7 @@
 				{
 					"name": "POST /api/v1/cell 启动(显式参数)",
 					"request": {
-						"description": "Explicit GSM params, strict validation (band 900/1800 only, mcc 3 digits...). 200 started / 422 validation (data.errors) / 409 already running / 503 no SDR.",
+						"description": "Explicit GSM params, strict validation (band 900/1800 only, mcc 3 digits...). Unknown JSON fields are rejected (400). 200 started / 422 validation (data.errors) / 409 already running / 503 no SDR.",
 						"method": "POST",
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] },

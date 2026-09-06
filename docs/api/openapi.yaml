@@ -9,14 +9,14 @@ info:
 servers:
   - url: http://<server>:8082
     description: SDR host (replace with yours)
-security:
-  - bearerAuth: []
+# NOTE: the server runs OPEN by default (no token). Only when GSM_API_TOKEN
+# is set must callers send `Authorization: Bearer <token>` on every call.
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Required only when GSM_API_TOKEN is set on the server.
+      description: Send only when GSM_API_TOKEN is set on the server; otherwise omit.
   schemas:
     Envelope:
       type: object
@@ -44,7 +44,7 @@ components:
         ci: { type: string, example: "41240" }
         short_name: { type: string, example: test }
         network: { type: string, example: eth0 }
-      description: Empty object {} reuses the saved profile.
+      description: Empty object {} reuses the saved profile. Unknown fields are rejected (400).
 paths:
   /api/v1/cell:
     post:
@@ -56,9 +56,10 @@ paths:
             schema: { $ref: '#/components/schemas/CellStart' }
       responses:
         '200': { description: started }
-        '400': { description: malformed body }
+        '400': { description: malformed body (incl. unknown fields) }
         '409': { description: cell already running }
         '422': { description: validation failed }
+        '500': { description: start failed, see message }
         '503': { description: no SDR attached }
     get:
       summary: Cell status
@@ -83,10 +84,22 @@ paths:
         '404': { description: no SMS yet }
     post:
       summary: Send SMS via OpenBTS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                imsi: { type: string, example: "001010123456780", description: 15 digits }
+                sender: { type: string, example: "101" }
+                text: { type: string, example: hello, description: GSM7 only; smsmessage accepted as alias }
       responses:
         '200': { description: submitted }
+        '400': { description: malformed body }
         '412': { description: cell not running }
         '422': { description: validation failed (incl. non-GSM7) }
+        '500': { description: send failed }
   /api/v1/subscribers:
     get:
       summary: Explicit subscriber registry (no implicit behavior)
@@ -94,8 +107,18 @@ paths:
         '200': { description: '{subscribers[]}' }
     post:
       summary: Set subscriber number (explicit upsert)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                imsi: { type: string, example: "001010123456780", description: 15 digits }
+                number: { type: string, example: "10000001", description: 2-15 digits }
       responses:
         '200': { description: updated }
+        '400': { description: malformed body }
         '404': { description: imsi not found }
         '412': { description: not in asterisk registry }
         '422': { description: validation failed }
@@ -106,16 +129,36 @@ paths:
         '200': { description: '{config[]}' }
     patch:
       summary: Update single config key (cell must be stopped)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, example: GSM.Identity.ShortName }
+                value: { type: string, example: lab }
       responses:
         '200': { description: updated }
+        '400': { description: malformed body }
         '409': { description: cell running }
         '422': { description: invalid name/value }
   /api/v1/network:
     post:
       summary: Set uplink iface MASQUERADE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                iface: { type: string, example: eth0 }
       responses:
         '200': { description: configured }
+        '400': { description: malformed body }
         '422': { description: bad iface }
+        '500': { description: iptables failed }
   /api/v1/profile:
     get:
       summary: Saved profile + subscribers (no secrets)

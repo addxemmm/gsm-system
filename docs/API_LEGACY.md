@@ -11,7 +11,7 @@
 - **HTTP status always 200 恒为200** (success or failure); check JSON `status`.
 - Envelope 包络：`{"status": bool, "message_id": int, "message": str, ...}`.
 - `message_id = 0` everywhere = generic failure, inspect logs
-  (`docker logs gsmsystem` / `/data/log/`).
+  (`docker logs gsmsystem-uhd4` / `/data/log/`).
 - Non-POST to a POST route returns that route's own `message_id 0` text.
 
 ## Compatibility Matrix 兼容矩阵

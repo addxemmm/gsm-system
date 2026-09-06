@@ -35,7 +35,8 @@ curl -X POST http://127.0.0.1:8082/api/v1/cell -d '{}'  # reuse profile 复用�
 | other | 500 | 50001 | `start failed: <reason>` |
 
 Strictness vs legacy 严格化差异：`band` must be `900/1800` (else 422);
-`mcc` 3 digits, `mnc` 2-3 digits; `network` metachar-rejected; unknown JSON fields rejected.
+`mcc` 3 digits, `mnc` 2-3 digits; `network` metachar-rejected; unknown JSON
+fields rejected (→ same 400 as malformed body).
 
 ### GET /api/v1/cell — status 状态
 
@@ -103,7 +104,6 @@ Legacy `POST /setphonenumber` frozen (message_id 3/4 kept).
 | 40501 | 405 | method not allowed |
 | 40901 | 409 | conflict (cell running / config while running) |
 | 41201 | 412 | precondition (cell not running / not in registry) |
-| 41301 | 413 | upload too large |
 | 42201 | 422 | validation failed (`data.errors`) |
 | 50001 | 500 | internal (message carries reason) |
 | 50301 | 503 | no hardware (no SDR) |
