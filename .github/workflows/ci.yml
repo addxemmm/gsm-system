@@ -19,4 +19,11 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - run: sh deploy/docker/test-persistent-state.sh
+      - run: sh scripts/tests/test_deploy_to_ubuntu.sh
       - run: GOOS=linux GOARCH=amd64 go build -o /tmp/gsm-system ./cmd/server
+
+  windows-deploy:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pwsh -NoProfile -File scripts/tests/deploy_from_windows.Tests.ps1

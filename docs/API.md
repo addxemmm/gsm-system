@@ -133,7 +133,7 @@ Legacy `POST /setphonenumber` frozen (message_id 3/4 kept).
 | `POST /ueinfo` | `GET /api/v1/ue` | array rows → objects; no-UE → 404 |
 | `POST /smsinfo` | `GET /api/v1/sms` | same source; structured objects |
 | `POST /sendsms` | `POST /api/v1/sms` | non-GSM7 → explicit 422 |
-| `POST /setphonenumber` | `POST /api/v1/subscribers` | explicit upsert + 404/412 |
+| `POST /setphonenumber` | `POST /api/v1/subscribers` | explicit existing-subscriber update + 404/412/500 / 显式更新已有签约 |
 | `POST /config {id}` | `POST /api/v1/cell` (explicit) | presets kept server-side; new callers send explicit fields |
 | `POST /getconfig` | `GET /api/v1/config` | objects instead of pairs |
 | `POST /allconfig` | `PATCH /api/v1/config` | running-cell guard → 409 |

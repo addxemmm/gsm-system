@@ -42,3 +42,6 @@ volumes:
     # Keep the existing data volume when using a new release project name.
     # 切换发布项目名称时仍使用现有卷，保留配置及签约。
     name: "${GSM_DATA_VOLUME:-docker_gsm-data}"
+    # Lifecycle is operator-owned, not tied to compose down -v.
+    # 数据卷由运维显式管理，避免随 Compose 项目删除。
+    external: true

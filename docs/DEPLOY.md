@@ -129,6 +129,12 @@ old image, or stopped old container until full RF acceptance. UHD4 Compose 使�
 新项目能读取迁移数据，又不会接管/删除旧项目容器；完整射频验收前保留备份目录、旧镜像
 和停止态旧容器。
 
+The data volume is declared `external: true`: Compose neither creates nor deletes
+it. On a new installation, run `docker volume create "${GSM_DATA_VOLUME:-docker_gsm-data}"`
+once before startup. Existing installations reuse their current volume unchanged.
+数据卷声明为外部卷，由运维管理；新安装需先显式创建，现有安装原样复用。此设置也避免卷被
+`compose down -v` 随项目删除；仍应保留“不在常规升级中删除卷”的操作纪律。
+
 ## Start and verify / 启动与验证 (server / 服务器)
 
 Starting/replacing a container is an explicit server-side step and may interrupt
@@ -193,6 +199,21 @@ pwsh -NoProfile -File .\scripts\tests\deploy_from_windows.Tests.ps1
 ```bash
 sh ./scripts/tests/test_deploy_to_ubuntu.sh
 ```
+
+On the SDR server, smoke-test a built image in a random isolated container and
+volume before any live rollout. It uses `--network none`, no USB/privileged/RF
+access, never starts the cell, verifies API/auth/body limits, SQLite persistence,
+and ODBC loading, then removes only its labelled fixtures. 在服务器上线前，可用随机隔离
+容器和数据卷检查镜像；测试无网络、无 USB/特权/射频权限，绝不启动小区，只清理自身标签资源。
+
+```bash
+sh ./scripts/tests/test_image.sh                      # gsmsystem-uhd4:test
+sh ./scripts/tests/test_image.sh IMAGE_TAG            # explicit image / 指定镜像
+```
+
+Failures print the isolated container and Asterisk logs before cleanup. Run this
+only on the server with Docker available. 失败时会先输出隔离容器和 Asterisk 日志再清理；
+本测试仅在装有 Docker 的服务器执行。
 
 ## Rollback / 回滚
 

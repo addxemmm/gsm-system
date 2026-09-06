@@ -51,9 +51,15 @@ docs/legacy/          旧中文手册存档 (520行 README.v1)
 
 ## 快速开始（服务器端） Quick Start (Server Side)
 
+旧版容器首次升级须先按 [`docs/DEPLOY.md`](docs/DEPLOY.md) 备份并迁移四份数据库，
+不要直接重建；本次审计及验收边界见 [`docs/AUDIT-2026-09.md`](docs/AUDIT-2026-09.md)。
+For an existing pre-persistence container, back up and migrate the four native
+databases before recreating it. See the deployment guide and audit report above.
+
 ```bash
 cd ~/gsm-system
-docker compose -f deploy/docker/docker-compose.uhd4.yml up -d --build
+docker volume create "${GSM_DATA_VOLUME:-docker_gsm-data}"  # new installations / 新安装创建卷
+docker compose -p gsm-system-live -f deploy/docker/docker-compose.uhd4.yml up -d --build
 curl -s http://127.0.0.1:8082/api/v1/health; echo
 ```
 
