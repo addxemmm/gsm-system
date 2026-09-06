@@ -6,8 +6,9 @@
 #
 # Base is Ubuntu 16.04 Xenial ON PURPOSE: OpenBTS 5.0-era code links
 # libortp.so.9 / boost-1.58 / icu55 and pairs with Asterisk 11-13 chan_sip.
-# Xenial is EOL, so apt is pointed at old-releases (see below).
-# No PPAs: zeromq comes from NodeManager/install_libzmq.sh (upstream path).
+# Stock archive.ubuntu.com still serves xenial (verified 2026), so default
+# sources are kept as-is. No PPAs: zeromq comes from
+# NodeManager/install_libzmq.sh (upstream path).
 #
 # Stages:
 #   uhd-builder  -> UHD release_003_009_000 + FPGA images
@@ -21,8 +22,7 @@ ARG UHD_REV=release_003_009_000
 FROM ubuntu:16.04 AS uhd-builder
 ARG UHD_REV
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g; s|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list \
- && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git pkg-config python python-mako \
     libboost-all-dev libusb-1.0-0-dev ca-certificates \
  && rm -rf /var/lib/apt/lists/*
@@ -41,8 +41,7 @@ RUN /usr/local/bin/uhd_images_downloader.py || /usr/local/lib/uhd/utils/uhd_imag
 FROM ubuntu:16.04 AS openbts-builder
 ARG OPENBTS_REV
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g; s|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list \
- && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential autoconf automake libtool git pkg-config dpkg-dev \
     sqlite3 libsqlite3-dev libortp-dev libusb-1.0-0-dev libreadline-dev \
     libzmq3-dev ca-certificates \
@@ -82,8 +81,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/gsm-system 
 # ---------- stage 4: slim runtime (NO python) ----------
 FROM ubuntu:16.04
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g; s|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list \
- && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 libortp9 libusb-1.0-0 libreadline6 libzmq5 \
     libboost-date-time1.58.0 libboost-filesystem1.58.0 libboost-regex1.58.0 \
     libboost-system1.58.0 libboost-thread1.58.0 libboost-serialization1.58.0 \
