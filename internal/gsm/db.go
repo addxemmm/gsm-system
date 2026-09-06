@@ -22,6 +22,17 @@ var configKeys = map[string]bool{
 	"GSM.Identity.CI": true, "GSM.Identity.ShortName": true,
 }
 
+var presetConfigKeys = []string{
+	"GSM.Radio.ARFCNs",
+	"GSM.Radio.C0",
+	"GSM.Radio.Band",
+	"GSM.Identity.MCC",
+	"GSM.Identity.MNC",
+	"GSM.Identity.LAC",
+	"GSM.Identity.CI",
+	"GSM.Identity.ShortName",
+}
+
 // applyConfigLocked writes the 8 radio keys (preset-equivalent).
 func (m *Manager) applyConfigLocked(p StartParams) error {
 	kvs := map[string]string{
@@ -30,32 +41,36 @@ func (m *Manager) applyConfigLocked(p StartParams) error {
 		"GSM.Identity.LAC": p.LAC, "GSM.Identity.CI": p.CI,
 		"GSM.Identity.ShortName": p.ShortName,
 	}
-	for k, v := range kvs {
-		if err := sqliteUpdate(m.cfg.OpenBTSDbPath, "CONFIG", "VALUESTRING", v, "KEYSTRING", k); err != nil {
-			return fmt.Errorf("config %s: %w", k, err)
-		}
+	updates := make([][2]string, 0, len(presetConfigKeys))
+	for _, key := range presetConfigKeys {
+		updates = append(updates, [2]string{key, kvs[key]})
+	}
+	if err := m.updateConfigTransaction(updates); err != nil {
+		return fmt.Errorf("apply radio config: %w", err)
 	}
 	return nil
 }
 
 // ApplyPreset is the legacy /config id path (stops cell first, like run.py).
 func (m *Manager) ApplyPreset(id int) error {
-	p, err := PresetParams(id, m.lastNet)
+	p, err := PresetParams(id, "")
 	if err != nil {
 		return err
 	}
-	// Inherit network from profile when unset (config does not carry iface).
-	if p.Network == "" {
-		if saved, ok := m.LoadProfile(); ok {
-			p.Network = saved.Network
-		}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, stopped := m.stopLocked()
+	if !stopped {
+		return ErrStopFailed
 	}
 	return m.applyConfigLocked(p)
 }
 
 // GetAllConfig returns every KEYSTRING,VALUESTRING row.
 func (m *Manager) GetAllConfig() ([][2]string, error) {
-	out, err := sqliteQuery2(m.cfg.OpenBTSDbPath, "SELECT KEYSTRING,VALUESTRING FROM CONFIG;")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out, err := m.sqliteQuery2("SELECT KEYSTRING,VALUESTRING FROM CONFIG;")
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +85,12 @@ func (m *Manager) SetSingleConfig(name, value string) error {
 			return fmt.Errorf("invalid config name/value")
 		}
 	}
-	return sqliteUpdate(m.cfg.OpenBTSDbPath, "CONFIG", "VALUESTRING", value, "KEYSTRING", name)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cellRunningLocked() {
+		return ErrCellRunning
+	}
+	return m.updateConfigTransaction([][2]string{{name, value}})
 }
 
 func isConfigKeyShape(s string) bool {
@@ -85,39 +105,53 @@ func isConfigKeyShape(s string) bool {
 	return strings.Contains(s, ".")
 }
 
-func sqliteUpdate(db, table, setCol, setVal, whereCol, whereVal string) error {
-	// Use bound-style escaping via sqlite quote(): still argv-safe, no shell.
-	sql := fmt.Sprintf("UPDATE %s SET %s='%s' WHERE %s='%s';",
-		table, setCol, sqliteEscape(setVal), whereCol, sqliteEscape(whereVal))
-	return sqliteExec(db, sql)
-}
-
 func sqliteEscape(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
-func sqliteExec(db, sql string) error {
-	if _, err := os.Stat(db); err != nil {
-		return fmt.Errorf("can not find database file")
+// updateConfigTransaction applies every update in one sqlite process and one
+// BEGIN IMMEDIATE transaction. The guard CHECK turns a missing/duplicate key
+// into a sqlite error; -bail then exits and the uncommitted transaction rolls
+// back instead of silently applying a partial preset.
+func (m *Manager) updateConfigTransaction(updates [][2]string) error {
+	var sql strings.Builder
+	sql.WriteString("PRAGMA busy_timeout=5000;\n")
+	sql.WriteString("BEGIN IMMEDIATE;\n")
+	sql.WriteString("CREATE TEMP TABLE _gsm_config_guard(ok INTEGER CHECK(ok = 1));\n")
+	for _, kv := range updates {
+		fmt.Fprintf(&sql, "UPDATE CONFIG SET VALUESTRING='%s' WHERE KEYSTRING='%s';\n",
+			sqliteEscape(kv[1]), sqliteEscape(kv[0]))
+		sql.WriteString("INSERT INTO _gsm_config_guard VALUES(changes());\n")
+	}
+	sql.WriteString("DROP TABLE _gsm_config_guard;\nCOMMIT;\n")
+	return m.sqliteExec(sql.String())
+}
+
+func (m *Manager) sqliteExec(sql string) error {
+	if _, err := os.Stat(m.cfg.OpenBTSDbPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s", ErrDatabaseNotFound, m.cfg.OpenBTSDbPath)
+		}
+		return fmt.Errorf("stat sqlite database: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// sqlite3 CLI from the configured binary path.
-	bin := "sqlite3"
-	// Manager does not carry bin override here; resolved by caller env.
-	// Keep tiny: use PATH lookup (container has sqlite3).
-	cmd := exec.CommandContext(ctx, bin, db, sql)
+	cmd := exec.CommandContext(ctx, m.cfg.Sqlite3Bin, "-batch", "-bail", m.cfg.OpenBTSDbPath)
+	cmd.Stdin = strings.NewReader(sql)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("sqlite: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-func sqliteQuery2(db, sql string) ([][2]string, error) {
-	if _, err := os.Stat(db); err != nil {
-		return nil, fmt.Errorf("can not find database file")
+func (m *Manager) sqliteQuery2(sql string) ([][2]string, error) {
+	if _, err := os.Stat(m.cfg.OpenBTSDbPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s", ErrDatabaseNotFound, m.cfg.OpenBTSDbPath)
+		}
+		return nil, fmt.Errorf("stat sqlite database: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sqlite3", "-separator", "\x1f", db, sql)
+	cmd := exec.CommandContext(ctx, m.cfg.Sqlite3Bin, "-batch", "-bail", "-separator", "\x1f", m.cfg.OpenBTSDbPath, sql)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("sqlite query: %w", err)
@@ -134,24 +168,4 @@ func sqliteQuery2(db, sql string) ([][2]string, error) {
 		rows = append(rows, [2]string{parts[0], parts[1]})
 	}
 	return rows, nil
-}
-
-// resetSmqueueLocked rebuilds the smqueue queue DB from seed (stateless:
-// every start begins with a clean queue; SMS history stays in smqueue.log).
-func (m *Manager) resetSmqueueLocked() error {
-	seed := m.cfg.SmqueueSeedPath
-	if _, err := os.Stat(seed); err != nil {
-		return nil // no seed bundled: skip (documented)
-	}
-	b, err := os.ReadFile(seed)
-	if err != nil {
-		return nil
-	}
-	_ = b
-	// Actual rebuild happens in entrypoint (sqlite3 < seed); here best-effort
-	// vacuum of stale WAL so a kill -9 residue never blocks start.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = exec.CommandContext(ctx, "sqlite3", m.cfg.OpenBTSDbPath, "PRAGMA wal_checkpoint(TRUNCATE);").Run()
-	return nil
 }

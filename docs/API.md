@@ -10,6 +10,11 @@
 - Optional auth 可选鉴权：set `GSM_API_TOKEN` → all routes require
   `Authorization: Bearer <token>`, else 401. Unset = open LAN mode (WARNING at boot).
 - `404/405` are JSON envelopes under `/api/*`; legacy root 404 stays plain-text.
+- v1 JSON bodies must contain exactly one JSON object. `POST /api/v1/cell` is
+  limited to 1 MiB; other v1 JSON bodies are limited to 64 KiB. The limit
+  includes trailing data; overflow returns `413/41301`.
+  v1 JSON 请求体必须且只能包含一个 JSON 对象；小区启动上限 1 MiB，其余请求上限
+  64 KiB，尾随数据也计入限制，超限返回 `413/41301`。
 
 ## 1. Cell 小区
 
@@ -28,6 +33,7 @@ curl -X POST http://127.0.0.1:8082/api/v1/cell -d '{}'  # reuse profile 复用�
 |---|---|---|---|
 | success | 200 | 0 | `cell started` |
 | malformed JSON | 400 | 40001 | `malformed JSON body` |
+| body over 1 MiB | 413 | 41301 | `request body too large` |
 | validation | 422 | 42201 | `validation failed` (`data.errors:[{field,reason}]`) |
 | already running | 409 | 40901 | `cell already running` |
 | no SDR | 503 | 50301 | `no SDR device attached` |
@@ -45,6 +51,9 @@ fields rejected (→ same 400 as malformed body).
 ### DELETE /api/v1/cell — stop 停止 (idempotent 幂等)
 
 Running → `200 stopped:true`; idle → `200 stopped:false` (legacy returned failure; v1 succeeds).
+If any OpenBTS/transceiver/sipauthserve/smqueue/Asterisk process remains after
+the stop attempt, the API returns `500` instead of reporting a false success.
+停止后若任一小区相关进程仍存活，接口返回 `500`，不再误报停止成功。
 
 ## 2. UE 终端
 
@@ -75,17 +84,23 @@ counterpart is the OpenBTS subscriber registry
 (`TMSITable.db` volatile + `sqlite3.db` persistent). v1 makes add/query explicit —
 no implicit side effects.
 
-- `GET /api/v1/subscribers` → `200 {subscribers:[{imsi,number}]}`.
+- `GET /api/v1/subscribers` → `200 {subscribers:[{imsi,number}]}`;
+  missing registry DB `404`, query failure `500`（签约库缺失返回 `404`，查询失败返回 `500`）。
 - `POST /api/v1/subscribers {"imsi":"...","number":"..."}` → `200 subscriber updated`;
-  `404 imsi not found (attach UE first)`; `412 not in asterisk registry`.
+  `404 imsi not found (attach UE first)`; `412 not in asterisk registry`;
+  `500 subscriber update failed`. The three TMSI/Asterisk writes use one
+  transaction and roll back on SQL or affected-row-count failure.
+  三处 TMSI/Asterisk 写入使用同一事务，SQL 错误或受影响行数异常时回滚。
 
 Legacy `POST /setphonenumber` frozen (message_id 3/4 kept).
 
 ## 5. Config 配置
 
-- `GET /api/v1/config` → `200 {config:[{key,value}]}`; `404 db not found`.
+- `GET /api/v1/config` → `200 {config:[{key,value}]}`; `404 db not found`;
+  other query failures `500`（其他查询错误返回 `500`）。
 - `PATCH /api/v1/config {"name":"GSM.Identity.ShortName","value":"test"}` →
-  `200 config updated`; cell must be stopped else `409`; bad name/value `422`.
+  `200 config updated`; cell must be stopped else `409`; missing DB `404`;
+  bad name/value `422`.
 - `POST /api/v1/network {"iface":"eth0"}` → MASQUERADE for `192.168.99.0/24`.
 
 ## 6. Profile & health 存档与健康
@@ -104,6 +119,7 @@ Legacy `POST /setphonenumber` frozen (message_id 3/4 kept).
 | 40501 | 405 | method not allowed |
 | 40901 | 409 | conflict (cell running / config while running) |
 | 41201 | 412 | precondition (cell not running / not in registry) |
+| 41301 | 413 | JSON request body too large / JSON 请求体超限 |
 | 42201 | 422 | validation failed (`data.errors`) |
 | 50001 | 500 | internal (message carries reason) |
 | 50301 | 503 | no hardware (no SDR) |

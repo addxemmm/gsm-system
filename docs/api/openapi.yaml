@@ -11,6 +11,8 @@ servers:
     description: SDR host (replace with yours)
 # NOTE: the server runs OPEN by default (no token). Only when GSM_API_TOKEN
 # is set must callers send `Authorization: Bearer <token>` on every call.
+# JSON request bodies contain exactly one object. Cell start is limited to 1 MiB;
+# the other JSON endpoints are limited to 64 KiB, including trailing data.
 components:
   securitySchemes:
     bearerAuth:
@@ -57,6 +59,7 @@ paths:
       responses:
         '200': { description: started }
         '400': { description: malformed body (incl. unknown fields) }
+        '413': { description: request body exceeds 1 MiB }
         '409': { description: cell already running }
         '422': { description: validation failed }
         '500': { description: start failed, see message }
@@ -69,6 +72,7 @@ paths:
       summary: Stop the cell (idempotent)
       responses:
         '200': { description: '{stopped:true|false}' }
+        '500': { description: one or more cell service processes remain running }
   /api/v1/ue:
     get:
       summary: Attached UE list
@@ -97,6 +101,7 @@ paths:
       responses:
         '200': { description: submitted }
         '400': { description: malformed body }
+        '413': { description: request body exceeds 64 KiB }
         '412': { description: cell not running }
         '422': { description: validation failed (incl. non-GSM7) }
         '500': { description: send failed }
@@ -105,6 +110,8 @@ paths:
       summary: Explicit subscriber registry (no implicit behavior)
       responses:
         '200': { description: '{subscribers[]}' }
+        '404': { description: Asterisk registry database not found }
+        '500': { description: subscriber registry query failed }
     post:
       summary: Set subscriber number (explicit upsert)
       requestBody:
@@ -121,12 +128,16 @@ paths:
         '400': { description: malformed body }
         '404': { description: imsi not found }
         '412': { description: not in asterisk registry }
+        '413': { description: request body exceeds 64 KiB }
         '422': { description: validation failed }
+        '500': { description: transactional subscriber update failed and was rolled back }
   /api/v1/config:
     get:
       summary: Full OpenBTS config
       responses:
         '200': { description: '{config[]}' }
+        '404': { description: OpenBTS database not found }
+        '500': { description: config query failed }
     patch:
       summary: Update single config key (cell must be stopped)
       requestBody:
@@ -141,8 +152,11 @@ paths:
       responses:
         '200': { description: updated }
         '400': { description: malformed body }
+        '404': { description: OpenBTS database not found }
         '409': { description: cell running }
+        '413': { description: request body exceeds 64 KiB }
         '422': { description: invalid name/value }
+        '500': { description: config update failed }
   /api/v1/network:
     post:
       summary: Set uplink iface MASQUERADE
@@ -157,6 +171,7 @@ paths:
       responses:
         '200': { description: configured }
         '400': { description: malformed body }
+        '413': { description: request body exceeds 64 KiB }
         '422': { description: bad iface }
         '500': { description: iptables failed }
   /api/v1/profile:

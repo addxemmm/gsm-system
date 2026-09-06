@@ -8,10 +8,15 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -85,43 +90,97 @@ func writeV1(w http.ResponseWriter, r *http.Request, code int, message string, d
 	})
 }
 
+// decodeV1JSON decodes exactly one JSON object and consumes the entire body so
+// MaxBytesReader also enforces the limit against otherwise-ignored tail data.
+// It returns CodeOK, CodeMalformed, or CodeTooLarge.
+func decodeV1JSON(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64, strict bool) int {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes))
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		return jsonDecodeCode(err)
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return jsonDecodeCode(err)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return CodeMalformed
+	}
+	objectDecoder := json.NewDecoder(bytes.NewReader(raw))
+	if strict {
+		objectDecoder.DisallowUnknownFields()
+	}
+	if err := objectDecoder.Decode(dst); err != nil {
+		return CodeMalformed
+	}
+	return CodeOK
+}
+
+func jsonDecodeCode(err error) int {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return CodeTooLarge
+	}
+	return CodeMalformed
+}
+
+func writeV1DecodeError(w http.ResponseWriter, r *http.Request, code int) {
+	if code == CodeTooLarge {
+		writeV1(w, r, code, "request body too large", nil)
+		return
+	}
+	writeV1(w, r, CodeMalformed, "malformed JSON body", nil)
+}
+
 // chain applies middlewares: recover -> request id + audit log -> auth.
 func chain(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				log.Printf("panic recovered: %v", rec)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				_ = json.NewEncoder(w).Encode(Envelope{Code: CodeInternal, Message: "internal error"})
-			}
-		}()
 		id := newRequestID()
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey, id))
-		if !authorized(r) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("X-Request-ID", id)
-			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(Envelope{
-				Code: CodeUnauthorized, Message: "unauthorized: bad or missing bearer token", RequestID: id,
-			})
-			return
-		}
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		start := time.Now()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Printf("rid=%s panic recovered: %v", id, recovered)
+				// Once a handler has started a response, net/http cannot replace
+				// it. Before that point, preserve the v1 envelope contract.
+				if !rec.wroteHeader {
+					writeV1(rec, r, CodeInternal, "internal error", nil)
+				}
+			}
+			log.Printf("rid=%s %s %s -> %d (%s)", id, r.Method, r.URL.Path,
+				rec.status, time.Since(start).Round(time.Millisecond))
+		}()
+		if !authorized(r) {
+			writeV1(rec, r, CodeUnauthorized,
+				"unauthorized: bad or missing bearer token", nil)
+			return
+		}
 		next.ServeHTTP(rec, r)
-		log.Printf("rid=%s %s %s -> %d (%s)", id, r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
 	})
 }
 
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
+	if s.wroteHeader {
+		return
+	}
+	s.wroteHeader = true
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(p []byte) (int, error) {
+	if !s.wroteHeader {
+		s.WriteHeader(http.StatusOK)
+	}
+	return s.ResponseWriter.Write(p)
 }
 
 // authorized checks the optional bearer token. Empty GSM_API_TOKEN = open
@@ -135,7 +194,10 @@ func authorized(r *http.Request) bool {
 	if !strings.HasPrefix(got, "Bearer ") {
 		return false
 	}
-	return strings.TrimSpace(strings.TrimPrefix(got, "Bearer ")) == want
+	gotToken := strings.TrimSpace(strings.TrimPrefix(got, "Bearer "))
+	wantHash := sha256.Sum256([]byte(want))
+	gotHash := sha256.Sum256([]byte(gotToken))
+	return subtle.ConstantTimeCompare(gotHash[:], wantHash[:]) == 1
 }
 
 // methodOnly wraps a handler, enforcing one HTTP method with a 405 envelope.

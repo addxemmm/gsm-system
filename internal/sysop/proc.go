@@ -64,9 +64,9 @@ func KillAll(name string, timeout time.Duration) int {
 }
 
 func killPID(pid int, timeout time.Duration) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	_ = exec.CommandContext(ctx, "kill", strconv.Itoa(pid)).Run()
+	termCtx, termCancel := context.WithTimeout(context.Background(), timeout)
+	_ = exec.CommandContext(termCtx, "kill", strconv.Itoa(pid)).Run()
+	termCancel()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if !pidAlive(pid) {
@@ -74,7 +74,15 @@ func killPID(pid int, timeout time.Duration) bool {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	_ = exec.CommandContext(ctx, "kill", "-9", strconv.Itoa(pid)).Run()
+	// TERM's context has expired by this point. KILL must use a fresh context;
+	// reusing termCtx makes CommandContext reject the command before it starts.
+	killTimeout := timeout
+	if killTimeout < time.Second {
+		killTimeout = time.Second
+	}
+	killCtx, killCancel := context.WithTimeout(context.Background(), killTimeout)
+	_ = exec.CommandContext(killCtx, "kill", "-9", strconv.Itoa(pid)).Run()
+	killCancel()
 	time.Sleep(300 * time.Millisecond)
 	return !pidAlive(pid)
 }
@@ -82,5 +90,10 @@ func killPID(pid int, timeout time.Duration) bool {
 func pidAlive(pid int) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, "kill", "-0", strconv.Itoa(pid)).Run() == nil
+	out, err := exec.CommandContext(ctx, "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return false
+	}
+	stat := strings.TrimSpace(string(out))
+	return stat != "" && !strings.HasPrefix(stat, "Z")
 }

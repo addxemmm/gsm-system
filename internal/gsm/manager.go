@@ -5,7 +5,9 @@ package gsm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,15 +23,43 @@ import (
 // CellProcs in start-check order (legacy run.py checks 4, stop checks 5).
 var CellProcs = []string{"OpenBTS", "sipauthserve", "smqueue", "asterisk", "transceiver"}
 
+var (
+	// ErrCellRunning is returned when a config/start operation races a live cell.
+	ErrCellRunning = errors.New("cell is running")
+	// ErrStopFailed is returned when a preset cannot safely update the DB.
+	ErrStopFailed = errors.New("cell failed to stop")
+	// ErrDatabaseNotFound classifies a missing configured sqlite database.
+	ErrDatabaseNotFound = errors.New("database file not found")
+)
+
+type managedProcess struct {
+	name string
+	cmd  *exec.Cmd
+	done chan struct{}
+}
+
+func (p *managedProcess) alive() bool {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return false
+	}
+	select {
+	case <-p.done:
+		return false
+	default:
+		return true
+	}
+}
+
 // Manager owns child handles + saved profile.
 type Manager struct {
 	cfg config.Config
 	mu  sync.Mutex
 
-	openbtsCmd *exec.Cmd
-	startedAt  time.Time
-	lastStart  StartParams
-	lastNet    string
+	openbts       *managedProcess
+	ownedChildren []*managedProcess
+	startedAt     time.Time
+	lastStart     StartParams
+	lastNet       string
 }
 
 // New creates a Manager.
@@ -59,8 +89,8 @@ func (m *Manager) IsRunning() Status {
 		Smqueue:  sysop.Running("smqueue"),
 		Asterisk: sysop.Running("asterisk"),
 	}
-	if m.openbtsCmd != nil && m.openbtsCmd.Process != nil {
-		st.OpenBTS = st.OpenBTS || true
+	if m.openbts.alive() {
+		st.OpenBTS = true
 	}
 	st.Running = st.OpenBTS || st.Transc
 	if st.Running && !m.startedAt.IsZero() {
@@ -74,20 +104,26 @@ func (m *Manager) IsRunning() Status {
 
 // CheckUSRP reports B210 presence.
 func (m *Manager) CheckUSRP() bool {
-	return sdr.Detect().UHD_B210
+	return m.DetectUSRP().UHD_B210
 }
+
+// DetectUSRP returns the configured detector result for health endpoints.
+func (m *Manager) DetectUSRP() sdr.Detection { return sdr.DetectWith(m.cfg.UHDFindBin) }
 
 // Start validates, refuses when running, checks USRP, applies DB config,
 // launches sipauthserve -> smqueue -> asterisk -> OpenBTS (direct exec,
 // no systemctl: containers have no systemd), clears tmsis.
-func (m *Manager) Start(ctx context.Context, p StartParams) error {
+func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	if err := p.Validate(); err != nil {
 		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if sysop.Running("OpenBTS") {
-		return fmt.Errorf("is running")
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.cellRunningLocked() {
+		return ErrCellRunning
 	}
 	if err := checkIface(p.Network); err != nil {
 		return err
@@ -95,7 +131,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) error {
 	if err := m.cfg.EnsureDirs(); err != nil {
 		return err
 	}
-	if !sdr.Detect().UHD_B210 {
+	if !m.DetectUSRP().UHD_B210 {
 		return fmt.Errorf("device is not connected, please connect usrp device.")
 	}
 	// Best-effort stale pid cleanup (legacy `rm /var/run/OpenBTS.pid`).
@@ -105,26 +141,58 @@ func (m *Manager) Start(ctx context.Context, p StartParams) error {
 	if err := m.applyConfigLocked(p); err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Only children launched by this start attempt are rolled back. Pre-existing
+	// system services are deliberately left alone.
+	var owned []*managedProcess
+	committed := false
+	defer func() {
+		if !committed {
+			stopManagedReverse(owned, 2*time.Second)
+		}
+	}()
+
 	// Launch order mirrors v1.3/run.sh (direct binaries, not systemctl).
 	if !sysop.Running("sipauthserve") {
-		_ = startDetached(m.cfg.SipAuthServeBin)
+		child, startErr := startDetached("sipauthserve", m.cfg.SipAuthServeBin)
+		if startErr != nil {
+			return fmt.Errorf("start sipauthserve: %w", startErr)
+		}
+		owned = append(owned, child)
 	}
 	if !sysop.Running("smqueue") {
-		_ = startDetached(m.cfg.SmqueueBin)
+		child, startErr := startDetached("smqueue", m.cfg.SmqueueBin)
+		if startErr != nil {
+			return fmt.Errorf("start smqueue: %w", startErr)
+		}
+		owned = append(owned, child)
 	}
 	if !sysop.Running("asterisk") {
-		_ = startDetached(m.cfg.AsteriskBin, "-f", "-g")
+		child, startErr := startDetached("asterisk", m.cfg.AsteriskBin, "-f", "-g")
+		if startErr != nil {
+			return fmt.Errorf("start asterisk: %w", startErr)
+		}
+		owned = append(owned, child)
 	}
-	time.Sleep(2 * time.Second)
-
-	// Reset smqueue seed (stateless: clean queue every start, documented).
-	_ = m.resetSmqueueLocked()
+	if err := waitContext(ctx, 2*time.Second); err != nil {
+		return err
+	}
+	for _, child := range owned {
+		if !child.alive() {
+			return fmt.Errorf("%s exited during startup", child.name)
+		}
+	}
 
 	// Start OpenBTS (foreground binary, detached).
 	// CWD must be /OpenBTS: OpenBTS execs ./transceiver by relative path
 	// (legacy Flask ran with supervisord directory=/OpenBTS for the same reason).
-	cmd := exec.CommandContext(context.Background(), m.cfg.OpenBTSBin)
-	cmd.Dir = "/OpenBTS"
+	cmd := exec.Command(m.cfg.OpenBTSBin)
+	configureProcessGroup(cmd)
+	if filepath.IsAbs(m.cfg.OpenBTSBin) {
+		cmd.Dir = filepath.Dir(m.cfg.OpenBTSBin)
+	}
 	logF, err := os.Create(m.cfg.LogPath(m.cfg.OpenBTSLogName))
 	if err != nil {
 		return err
@@ -135,23 +203,30 @@ func (m *Manager) Start(ctx context.Context, p StartParams) error {
 		_ = logF.Close()
 		return fmt.Errorf("start OpenBTS: %w", err)
 	}
-	m.openbtsCmd = cmd
+	openbts := watchProcess("OpenBTS", cmd, logF)
+	owned = append(owned, openbts)
 	// Wait for "system ready" (max ~20s), like run.sh timer-loopback wait.
-	if !waitForReady(m.cfg.LogPath(m.cfg.OpenBTSLogName), 20*time.Second) {
-		_ = cmd.Process.Kill()
-		reap(cmd)
-		m.openbtsCmd = nil
-		_ = logF.Close()
-		return fmt.Errorf("OpenBTS did not become ready, see %s", m.cfg.LogPath(m.cfg.OpenBTSLogName))
+	if err := waitForReady(ctx, m.cfg.LogPath(m.cfg.OpenBTSLogName), openbts.done, 20*time.Second); err != nil {
+		return fmt.Errorf("OpenBTS did not become ready, see %s: %w", m.cfg.LogPath(m.cfg.OpenBTSLogName), err)
 	}
-	// Legacy run.py: clear tmsis after successful start.
-	_ = exec.Command(m.cfg.OpenBTSCLIBin, "-c", "tmsis", "clear").Run()
+	// Legacy run.py: clear tmsis after successful start. It is best effort,
+	// but bounded and request cancellation still rolls back this start attempt.
+	cliCtx, cliCancel := context.WithTimeout(ctx, 2*time.Second)
+	runBoundedBestEffort(cliCtx, m.cfg.OpenBTSCLIBin, "-c", "tmsis", "clear")
+	cliCancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := m.SaveProfile(p); err != nil {
+		return fmt.Errorf("save start profile: %w", err)
+	}
 
 	m.startedAt = time.Now()
 	m.lastStart = p
 	m.lastNet = p.Network
-	_ = ctx
-	_ = m.SaveProfile(p)
+	m.openbts = openbts
+	m.ownedChildren = append(m.ownedChildren[:0], owned[:len(owned)-1]...)
+	committed = true
 	return nil
 }
 
@@ -160,29 +235,39 @@ func (m *Manager) Start(ctx context.Context, p StartParams) error {
 func (m *Manager) Stop() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	was := sysop.Running("OpenBTS") || sysop.Running("transceiver") ||
-		sysop.Running("sipauthserve") || sysop.Running("smqueue") || sysop.Running("asterisk")
-	if m.openbtsCmd != nil && m.openbtsCmd.Process != nil {
-		_ = m.openbtsCmd.Process.Kill()
-		reap(m.openbtsCmd)
-		m.openbtsCmd = nil
+	was, stopped := m.stopLocked()
+	return was && stopped
+}
+
+// stopLocked must be called with m.mu held. All waits and CLI calls are bounded.
+func (m *Manager) stopLocked() (was, stopped bool) {
+	mainWasRunning := m.cellRunningLocked()
+	was = m.anyServiceRunningLocked()
+	// The CLI needs OpenBTS alive, so clear state before terminating the main
+	// process. A wedged CLI must not wedge shutdown.
+	if mainWasRunning {
+		cliCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		runBoundedBestEffort(cliCtx, m.cfg.OpenBTSCLIBin, "-c", "tmsis", "clear")
+		cancel()
 	}
-	// Best-effort tmsis clear before kill (legacy stop order).
-	_ = exec.Command(m.cfg.OpenBTSCLIBin, "-c", "tmsis", "clear").Run()
+
+	stopManaged(m.openbts, 2*time.Second)
+	m.openbts = nil
+	stopManagedReverse(m.ownedChildren, 2*time.Second)
+	m.ownedChildren = nil
+
 	sysop.KillAll("smqueue", 2*time.Second)
 	sysop.KillAll("asterisk", 2*time.Second)
 	sysop.KillAll("sipauthserve", 2*time.Second)
 	_ = os.Remove("/var/run/OpenBTS.pid")
 	sysop.KillAll("OpenBTS", 3*time.Second)
 	sysop.KillAll("transceiver", 3*time.Second)
-	time.Sleep(time.Second)
-	still := sysop.Running("OpenBTS") || sysop.Running("transceiver") ||
-		sysop.Running("sipauthserve") || sysop.Running("smqueue") || sysop.Running("asterisk")
-	if was && !still {
+	stopped = !m.anyServiceRunningLocked()
+	if stopped {
 		m.lastNet = ""
 		m.startedAt = time.Time{}
 	}
-	return was && !still
+	return was, stopped
 }
 
 // ProfilePath is /data/last_start.json (survives recreates via volume).
@@ -269,36 +354,137 @@ func checkIface(name string) error {
 	return fmt.Errorf("unknown network interface %q", name)
 }
 
-func startDetached(bin string, args ...string) error {
+func startDetached(name, bin string, args ...string) (*managedProcess, error) {
 	cmd := exec.Command(bin, args...)
+	configureProcessGroup(cmd)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
-		return err
+		return nil, err
 	}
-	// Reap on exit: otherwise every start leaves <defunct> zombies
-	// parented to PID 1 (observed live on vm-sdr 2026-09-06).
-	go func() { _ = cmd.Wait() }()
-	return nil
+	return watchProcess(name, cmd, nil), nil
 }
 
-func waitForReady(logPath string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+func watchProcess(name string, cmd *exec.Cmd, closer io.Closer) *managedProcess {
+	p := &managedProcess{name: name, cmd: cmd, done: make(chan struct{})}
+	// This is the unique Wait owner. Closing the log here also covers a normal
+	// post-start process exit without leaking the parent file descriptor.
+	go func() {
+		_ = cmd.Wait()
+		if closer != nil {
+			_ = closer.Close()
+		}
+		close(p.done)
+	}()
+	return p
+}
+
+func waitForReady(ctx context.Context, logPath string, done <-chan struct{}, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+			return fmt.Errorf("process exited")
+		default:
+		}
 		b, err := os.ReadFile(logPath)
 		if err == nil && strings.Contains(string(b), "system ready") {
-			return true
+			select {
+			case <-done:
+				return fmt.Errorf("process exited")
+			default:
+				return nil
+			}
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+			return fmt.Errorf("process exited")
+		case <-timer.C:
+			return fmt.Errorf("readiness timeout")
+		case <-ticker.C:
+		}
 	}
-	return false
 }
 
-func reap(cmd *exec.Cmd) {
-	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
+func waitContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
 	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
+}
+
+func stopManaged(p *managedProcess, timeout time.Duration) {
+	if p == nil {
+		return
+	}
+	// Kill the whole owned process group. OpenBTS may have spawned its
+	// transceiver by the time the parent exits or readiness is cancelled.
+	groupErr := killProcessGroup(p.cmd)
+	if groupErr != nil && p.alive() {
+		// Compatibility fallback for a caller-supplied Cmd that was not started
+		// through startDetached/configureProcessGroup.
+		_ = p.cmd.Process.Kill()
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-p.done:
+	case <-timer.C:
+	}
+}
+
+func runBoundedBestEffort(ctx context.Context, bin string, args ...string) {
+	if ctx.Err() != nil {
+		return
+	}
+	cmd := exec.Command(bin, args...)
+	configureProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		return
+	}
+	p := watchProcess(filepath.Base(bin), cmd, nil)
+	select {
+	case <-p.done:
+		return
+	case <-ctx.Done():
+		_ = killProcessGroup(cmd)
+		select {
+		case <-p.done:
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func stopManagedReverse(children []*managedProcess, timeout time.Duration) {
+	for i := len(children) - 1; i >= 0; i-- {
+		stopManaged(children[i], timeout)
+	}
+}
+
+func (m *Manager) cellRunningLocked() bool {
+	return m.openbts.alive() || sysop.Running("OpenBTS") || sysop.Running("transceiver")
+}
+
+func (m *Manager) anyServiceRunningLocked() bool {
+	if m.openbts.alive() {
+		return true
+	}
+	for _, child := range m.ownedChildren {
+		if child.alive() {
+			return true
+		}
+	}
+	_, running := sysop.AnyRunning(CellProcs...)
+	return running
 }

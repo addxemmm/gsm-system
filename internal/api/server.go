@@ -5,7 +5,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -14,7 +16,6 @@ import (
 	"github.com/addxemmm/gsm-system/internal/config"
 	"github.com/addxemmm/gsm-system/internal/gsm"
 	"github.com/addxemmm/gsm-system/internal/parser"
-	"github.com/addxemmm/gsm-system/internal/sdr"
 	"github.com/addxemmm/gsm-system/internal/sysop"
 )
 
@@ -113,7 +114,7 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, resp(false, 0, "Start Failed: "+err.Error()))
 		return
 	}
-	if !sdr.Detect().UHD_B210 {
+	if !s.mgr.DetectUSRP().UHD_B210 {
 		// Allow unit-test env without SDR only when explicitly loopback?
 		// Keep frozen: report not connected.
 		writeJSON(w, resp(false, 3, "device is not connected, please connect usrp device."))
@@ -176,30 +177,19 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, resp(false, 4, "The config id is not existed."))
 		return
 	}
-	if _, err := os.Stat(s.cfg.OpenBTSDbPath); err != nil {
-		writeJSON(w, resp(false, 3, "Can not find database file."))
-		return
-	}
-	// Legacy stops the cell first; stop failure (id 0) => message_id 2.
-	if sysop.Running("OpenBTS") && !s.mgr.Stop() && sysop.Running("OpenBTS") {
-		writeJSON(w, resp(false, 2, "Stop failed, please stop manually."))
-		return
-	}
-	p, _ := gsm.PresetParams(*body.ID, "")
-	// Preserve network from profile (config presets carry no iface).
-	if saved, ok := s.mgr.LoadProfile(); ok {
-		p.Network = saved.Network
-	}
-	// Apply via manager helper (validates + sqlite argv, no concat).
-	if err := applyPresetDB(s.cfg.OpenBTSDbPath, *body.ID); err != nil {
-		if strings.Contains(err.Error(), "database") {
+	// Manager serializes stop + the preset transaction to avoid a start/config
+	// race and partial eight-key updates.
+	if err := s.mgr.ApplyPreset(*body.ID); err != nil {
+		switch {
+		case errors.Is(err, gsm.ErrStopFailed):
+			writeJSON(w, resp(false, 2, "Stop failed, please stop manually."))
+		case errors.Is(err, gsm.ErrDatabaseNotFound):
 			writeJSON(w, resp(false, 3, "Can not find database file."))
-			return
+		default:
+			writeJSON(w, resp(false, 0, "Failed."))
 		}
-		writeJSON(w, resp(false, 0, "Failed."))
 		return
 	}
-	_ = p
 	writeJSON(w, resp(true, 1, "Success, please start system manually."))
 }
 
@@ -366,7 +356,12 @@ func (s *Server) handleSetPhone(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, resp(false, 0, "False"))
 		return
 	}
-	code, msg := setSubscriberNumber(s.cfg, body.IMSI, body.Number)
+	code, _, err := setSubscriberNumber(s.cfg, body.IMSI, body.Number)
+	if err != nil {
+		log.Printf("rid=%s subscriber update failed: %v", RequestID(r), err)
+		writeJSON(w, resp(false, 0, "False"))
+		return
+	}
 	switch code {
 	case 1:
 		writeJSON(w, resp(true, 1, "Success"))
@@ -377,7 +372,6 @@ func (s *Server) handleSetPhone(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, resp(false, 0, "False"))
 	}
-	_ = msg
 }
 
 // ---- POST /sendsms {imsi,sender,smsmessage} ----
@@ -424,7 +418,7 @@ func (s *Server) handleSendSms(w http.ResponseWriter, r *http.Request) {
 // ---- GET /healthz + /status + /profile ----
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	det := sdr.Detect()
+	det := s.mgr.DetectUSRP()
 	st := s.mgr.IsRunning()
 	writeJSON(w, map[string]any{
 		"ok": true, "running": st.Running, "sdr": det,
