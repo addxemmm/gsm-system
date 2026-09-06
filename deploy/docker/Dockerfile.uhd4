@@ -60,6 +60,7 @@ RUN cd libcoredumper \
  && (test -f coredumper-1.2.1.tar.gz || wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/google-coredumper/coredumper-1.2.1.tar.gz) \
  && rm -rf coredumper-1.2.1 && tar zxf coredumper-1.2.1.tar.gz && cd coredumper-1.2.1 \
  && mv packages/deb debian && chmod 644 debian/control \
+ && sed -i '/#include <sys\/sysctl.h>/d' src/elfcore.c \
  && patch -p0 < ../fix_from_scratch_build.patch && echo 10 > debian/compat \
  && dpkg-buildpackage -us -uc && cd .. && dpkg -i *.deb
 COPY third_party/openbts ./openbts
