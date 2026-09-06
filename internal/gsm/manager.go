@@ -121,7 +121,10 @@ func (m *Manager) Start(ctx context.Context, p StartParams) error {
 	_ = m.resetSmqueueLocked()
 
 	// Start OpenBTS (foreground binary, detached).
+	// CWD must be /OpenBTS: OpenBTS execs ./transceiver by relative path
+	// (legacy Flask ran with supervisord directory=/OpenBTS for the same reason).
 	cmd := exec.CommandContext(context.Background(), m.cfg.OpenBTSBin)
+	cmd.Dir = "/OpenBTS"
 	logF, err := os.Create(m.cfg.LogPath(m.cfg.OpenBTSLogName))
 	if err != nil {
 		return err

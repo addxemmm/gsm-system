@@ -100,7 +100,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-date-time1.58.0 libboost-filesystem1.58.0 libboost-regex1.58.0 \
     libboost-system1.58.0 libboost-thread1.58.0 libboost-serialization1.58.0 \
     libboost-program-options1.58.0 \
-    asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates \
+    asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates psmisc \
  && rm -rf /var/lib/apt/lists/*
 # Fresh-built stack (/usr/local carries UHD + zmq + a53 + coredumper + daemons).
 COPY --from=openbts-builder /usr/local /usr/local
