@@ -1,0 +1,21 @@
+From: gsm-system folk/uhd4
+Subject: [PATCH] SIP: adapt ortp log hook to bctbx (ortp>=4) signature
+Date: Sat, 6 Sep 2026
+
+ortp>=4 routes ortp_set_log_handler through bctbx, whose handler
+takes a domain first arg:
+  old: void (*)(OrtpLogLevel, const char *, va_list)
+  new: void (*)(const char *domain, BctbxLogLevel, const char *, va_list)
+Adapt the one hook (domain ignored, as before with lev).
+
+--- a/SIP/SIP2Interface.cpp
++++ b/SIP/SIP2Interface.cpp
+@@ -715,7 +715,8 @@
+ // Pat added to hook messages from the ORTP library.  See ortp_set_log_handler in ortp.c.
++// (folk/uhd4: ortp>=4 routes logging through bctbx; handler gains domain.)
+ extern "C" {
+-	static void ortpLogFunc(OrtpLogLevel /*lev unused*/, const char *fmt, va_list args)
++	static void ortpLogFunc(const char * /*domain unused*/, BctbxLogLevel /*lev unused*/, const char *fmt, va_list args)
+ 	{
+ 		// This floods the system with error messages, so regulate output to the console.
+ 		static time_t lasttime = 0;	// No more than one message per minute.

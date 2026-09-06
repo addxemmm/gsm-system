@@ -49,8 +49,10 @@ RUN ldconfig
 # msg shim for uhd::msg (removed in UHD 4.0); -I order puts it first.
 # -std=gnu++14: era-correct standard (2019 code + gcc-11 defaults to C++17,
 # where dynamic exception specs and `register` are hard errors, not warnings).
+# -fpermissive: era int<->pointer conversions (e.g. dialog IDs as void*).
+# -k on make: surface ALL translation-unit errors per run, not just the first.
 COPY compat /app/compat
-ENV CXXFLAGS="-g -O2 -w -std=gnu++14 -I/app/compat"
+ENV CXXFLAGS="-g -O2 -w -std=gnu++14 -fpermissive -I/app/compat"
 WORKDIR /src
 COPY third_party/liba53 ./liba53
 COPY third_party/libcoredumper ./libcoredumper
@@ -70,11 +72,13 @@ RUN cd libcoredumper \
  && ls /usr/local/lib/libcoredumper*
 COPY third_party/openbts ./openbts
 # Upstream compat patches for new toolchains (see compat/patches/).
-RUN cd openbts && patch -p1 < /app/compat/patches/0001-commonlibs-gettid-glibc230.patch
+RUN cd openbts \
+ && patch -p1 < /app/compat/patches/0001-commonlibs-gettid-glibc230.patch \
+ && patch -p1 < /app/compat/patches/0002-sip-ortp-bctbx-loghook.patch
 WORKDIR /src/openbts
 RUN ./autogen.sh \
  && ./configure --with-uhd \
- && make -j$(nproc) \
+ && make -jk$(nproc) \
  && make install \
  && ldconfig
 COPY third_party/smqueue ./smqueue
