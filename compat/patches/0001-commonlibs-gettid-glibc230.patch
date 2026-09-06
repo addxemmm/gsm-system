@@ -1,0 +1,31 @@
+From: gsm-system folk/uhd4
+Subject: [PATCH] CommonLibs: don't redefine gettid() on glibc >= 2.30
+Date: Sat, 6 Sep 2026
+
+glibc 2.30 added gettid() to <unistd.h>. The old
+"#if !defined(gettid)" guard only detects macros, so on new glibc
+it defines a colliding gettid() macro and the build dies with:
+  error: macro "gettid" passed 1 arguments, but takes just 0
+Skip the fallback where the C library already provides gettid();
+call sites keep working (same thread-ID semantics).
+
+--- a/CommonLibs/Logger.h
++++ b/CommonLibs/Logger.h
+@@ -49,7 +49,7 @@
+ // If timestr decl is changed G++ will whine when Utils.h is included.
+ namespace Utils { const std::string timestr(); };
+
+-#if !defined(gettid)
++#if !defined(gettid) && !__GLIBC_PREREQ(2,30)
+ # define gettid() syscall(SYS_gettid)
+ #endif // !defined(gettid)
+
+--- a/CommonLibs/Threads.cpp
++++ b/CommonLibs/Threads.cpp
+@@ -39,7 +39,7 @@
+ int gMutexLogLevel = LOG_INFO;	// The mutexes cannot call gConfig or gGetLoggingLevel so we have to get the log level indirectly.
+
+-#if !defined(gettid)
++#if !defined(gettid) && !__GLIBC_PREREQ(2,30)
+ # define gettid() syscall(SYS_gettid)
+ #endif // !defined(gettid)
