@@ -11,13 +11,13 @@
 # HERMETIC SOURCE: xenial's TLS stack can no longer handshake github.com,
 # so builders do ZERO git/network. Sources are prefetched on the HOST
 # (whose git works) before building:
-#   ./scripts/prefetch_vendor.sh   (runs ON the server, fills vendor/)
-# vendor/ is server-side only: untracked by git, never synced from Windows.
+#   ./scripts/prefetch_vendor.sh   (runs ON the server, fills third_party/)
+# third_party/ is server-side only: untracked by git, never synced from Windows.
 # Only FPGA images are reused from the legacy image (versionless data files).
 #
 # Stages:
 #   legacy         -> FPGA images only (gsmsystem-dep:1.3, local, no pull)
-#   uhd-builder    -> UHD release_003_009_000 from vendor/
+#   uhd-builder    -> UHD release_003_009_000 from third_party/
 #   openbts-builder -> libzmq (source) + liba53 + libcoredumper + openbts + smqueue
 #   go-builder     -> Go single binary (replaces Python/Flask/gunicorn)
 #   runtime        -> binaries + runtime libs + asterisk + seeds. NO python.
@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-all-dev libusb-1.0-0-dev ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 # Vendor source must match UHD_REV (see prefetch_vendor.sh).
-COPY vendor/uhd /src/uhd
+COPY third_party/uhd /src/uhd
 WORKDIR /src/uhd/host/build
 RUN cmake ../ -DCMAKE_BUILD_TYPE=Release \
  && make -j$(nproc) \
@@ -54,16 +54,16 @@ COPY --from=uhd-builder /usr/local /usr/local
 RUN ldconfig
 WORKDIR /src
 # libzmq from source (replaces the dead chris-lea PPA path in install_libzmq.sh).
-COPY vendor/libzmq ./libzmq
+COPY third_party/libzmq ./libzmq
 RUN cd libzmq && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
 # liba53 (A5/3) + libcoredumper, per upstream .travis.yml build recipe.
-COPY vendor/liba53 ./liba53
-COPY vendor/libcoredumper ./libcoredumper
+COPY third_party/liba53 ./liba53
+COPY third_party/libcoredumper ./libcoredumper
 RUN cd liba53 && dpkg-buildpackage -us -uc && cd .. && dpkg -i liba53*.deb \
  && cd libcoredumper && ./build.sh && dpkg -i *.deb
 # openbts: submodules already present via host-side --recursive clone,
 # so clone.sh/switchto.sh (network) are intentionally skipped.
-COPY vendor/openbts ./openbts
+COPY third_party/openbts ./openbts
 WORKDIR /src/openbts
 RUN ./autogen.sh \
  && ./configure \

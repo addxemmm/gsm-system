@@ -12,3 +12,5 @@ gsmsystem/smqueue_5.0_amd64.deb
 *.pdf
 *.pcap
 *.log
+# Stale prefetch dir from the first attempt (renamed to third_party/).
+vendor/
