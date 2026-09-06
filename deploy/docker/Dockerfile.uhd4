@@ -56,13 +56,16 @@ COPY third_party/libcoredumper ./libcoredumper
 # NOTE: its Makefile installs to /usr/lib (hardcoded DESTDIR prefix).
 RUN cd liba53 && make -j$(nproc) && make install && ldconfig && ls /usr/lib/liba53*
 # libcoredumper: same steps as its build.sh, plus compat bump for new debhelper.
+# libcoredumper: plain configure+make+install to /usr/local (its 2007
+# debian/ dir is uninstallable on modern debhelper: compat level rejected,
+# multiarch paths mismatch). Same installed result the .deb used to provide.
 RUN cd libcoredumper \
  && (test -f coredumper-1.2.1.tar.gz || wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/google-coredumper/coredumper-1.2.1.tar.gz) \
  && rm -rf coredumper-1.2.1 && tar zxf coredumper-1.2.1.tar.gz && cd coredumper-1.2.1 \
- && mv packages/deb debian && chmod 644 debian/control \
  && sed -i '/#include <sys\/sysctl.h>/d' src/elfcore.c \
- && patch -p0 < ../fix_from_scratch_build.patch && echo 10 > debian/compat \
- && dpkg-buildpackage -us -uc && cd .. && dpkg -i *.deb
+ && patch -p0 < ../fix_from_scratch_build.patch \
+ && ./configure && make -j$(nproc) && make install && ldconfig \
+ && ls /usr/local/lib/libcoredumper*
 COPY third_party/openbts ./openbts
 WORKDIR /src/openbts
 RUN ./autogen.sh \
