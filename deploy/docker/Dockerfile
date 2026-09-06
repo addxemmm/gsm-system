@@ -70,8 +70,10 @@ RUN ./autogen.sh \
  && ldconfig
 # smqueue: standalone sister repo, same autotools flow as openbts
 # (installs to /usr/local/sbin like sipauthserve).
+# libosip2-dev is installed here (not top apt) to keep iteration cached.
 COPY third_party/smqueue ./smqueue
-RUN cd smqueue && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
+RUN apt-get update && apt-get install -y --no-install-recommends libosip2-dev && rm -rf /var/lib/apt/lists/* \
+ && cd smqueue && ./autogen.sh && ./configure && make -j$(nproc) && make install && ldconfig
 RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
 
 # ---------- stage 3: Go API server (replaces Python/Flask) ----------
