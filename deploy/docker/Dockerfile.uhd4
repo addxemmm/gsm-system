@@ -52,8 +52,16 @@ ENV CXXFLAGS="-g -O2 -w -I/app/compat"
 WORKDIR /src
 COPY third_party/liba53 ./liba53
 COPY third_party/libcoredumper ./libcoredumper
-RUN cd liba53 && dpkg-buildpackage -us -uc && cd .. && dpkg -i liba53*.deb \
- && cd libcoredumper && (test -f coredumper-1.2.1.tar.gz || wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/google-coredumper/coredumper-1.2.1.tar.gz) && ./build.sh && dpkg -i *.deb
+# liba53 via plain make (its debian/compat predates 22.04 debhelper).
+RUN cd liba53 && make -j$(nproc) && make install && ldconfig \
+ && ls /usr/local/lib/liba53* /usr/lib/liba53*
+# libcoredumper: same steps as its build.sh, plus compat bump for new debhelper.
+RUN cd libcoredumper \
+ && (test -f coredumper-1.2.1.tar.gz || wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/google-coredumper/coredumper-1.2.1.tar.gz) \
+ && rm -rf coredumper-1.2.1 && tar zxf coredumper-1.2.1.tar.gz && cd coredumper-1.2.1 \
+ && mv packages/deb debian && chmod 644 debian/control \
+ && patch -p0 < ../fix_from_scratch_build.patch && echo 10 > debian/compat \
+ && dpkg-buildpackage -us -uc && cd .. && dpkg -i *.deb
 COPY third_party/openbts ./openbts
 WORKDIR /src/openbts
 RUN ./autogen.sh \
