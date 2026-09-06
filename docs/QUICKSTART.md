@@ -70,6 +70,8 @@ curl -X DELETE http://127.0.0.1:8082/api/v1/cell
 | `503 no SDR` | `docker exec gsmsystem-uhd4 uhd_find_devices` (B210 present?) |
 | `fx3 is in state 5` | wrong FPGA for the board: Artix-7 clone needs the clone image (this stack bundles it); see `SDR.md` |
 | USB device gone | physical re-plug (no software reset while FPGA loaded); see `SDR.md` §USB recovery |
+| sees net but attach fails搜到网连不上 | LU rejected 0x04 = open registration off. Fix: stop cell → `PATCH /api/v1/config {"name":"Control.LUR.OpenRegistration","value":"^001"}` → start (`^001` = test-MCC IMSIs) |
+| can't see net at all搜不到网 | band match? (default cell is 1800/C0 540; 900-only handsets need the 900 preset); stay close to antenna; manual search needs minutes |
 | `404 no UE` | band/SIM MCC-MNC match? manual search 3–5 min; prefer Android/CPE |
 | `no SMS` | `docker exec gsmsystem-uhd4 tail /data/log/smqueue.log`; Chinese unsupported |
 | `422 validation` | read `data.errors` per-field |
