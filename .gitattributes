@@ -1,0 +1,10 @@
+* text=auto
+*.go text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sql text eol=lf
+*.db binary
+*.bin binary
+*.pdf binary
