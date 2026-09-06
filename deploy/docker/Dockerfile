@@ -66,7 +66,7 @@ RUN cd liba53 && dpkg-buildpackage -us -uc && cd .. && dpkg -i liba53*.deb \
 COPY third_party/openbts ./openbts
 WORKDIR /src/openbts
 RUN ./autogen.sh \
- && ./configure \
+ && ./configure --with-uhd \
  && make -j$(nproc) \
  && make install \
  && ldconfig
