@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "gsm-system-2-1-contract",
     "name": "gsm-system 2.1 / 2.1 API",
-    "description": "The /api/v1-only contract. A new preset store contains editable defaults \"0\" through \"4\". Read requests run by default. Preset CRUD persists data but never starts a cell. The CRUD fixture uses the separate lab-900 ID and never edits/deletes a default. Every mutation is guarded by enable_mutations; cell starts additionally require enable_rf_start=true and have no automatic RF tests. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts. network names the container interface (default bridge: eth0), not a host NIC.\n\n仅包含 /api/v1。新预设库包含 ID \"0\" 至 \"4\" 的五套可编辑默认配置；CRUD 夹具使用独立 lab-900，不会修改或删除默认项。所有写操作需 enable_mutations；启动小区还需 enable_rf_start=true，且不自动执行 RF 测试。\nExact factory-value assertions are opt-in with verify_factory_defaults=true; normal reads validate only resource structure and the selected default_preset_id. / 精确工厂值断言仅在 verify_factory_defaults=true 时执行；常规读取只校验结构和所选 ID。",
+    "description": "The /api/v1-only contract. A new preset store contains editable defaults \"0\" through \"4\". Read requests run by default. Preset CRUD persists data but never starts a cell. The CRUD fixture uses the separate lab-900 ID and never edits/deletes a default. Every mutation is guarded by enable_mutations; cell starts additionally require enable_rf_start=true and have no automatic RF tests. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts. network names the container interface (default bridge: eth0), not a host NIC.\n\n仅包含 /api/v1。新预设库包含 ID \"0\" 至 \"4\" 的五套可编辑默认配置；CRUD 夹具使用独立 lab-900，不会修改或删除默认项。所有写操作需 enable_mutations；启动小区还需 enable_rf_start=true，且不自动执行 RF 测试。\nExact factory-value assertions are opt-in with verify_factory_defaults=true; normal reads validate only resource structure and the selected default_preset_id. / 精确工厂值断言仅在 verify_factory_defaults=true 时执行；常规读取只校验结构和所选 ID。\n\nCell start has separate Preset and Custom requests. start_preset_id selects any stored preset; default_preset_id is for read-only queries, preset_id remains the CRUD fixture. Custom fields are all variables (including band and short_name). Missing switches or malformed/unresolved start inputs are explained in Postman Console before skipping. Variables follow Postman scope precedence; empty/false environment values do not fall back to collection values. Select one request manually, not Run collection/folder. / 小区启动分为预设和自定义两项；start_preset_id 用于启动，default_preset_id 用于只读查询，preset_id 仍是 CRUD 测试项。自定义全部字段可配置；开关或参数问题会在 Console 说明后跳过，空或 false 环境值不会回退至集合。请选择一项 Send，不要全量运行。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -90,6 +90,26 @@
       "key": "verify_factory_defaults",
       "value": "false",
       "type": "string"
+    },
+    {
+      "key": "arfcns",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "band",
+      "value": "1800",
+      "type": "string"
+    },
+    {
+      "key": "short_name",
+      "value": "addx",
+      "type": "string"
+    },
+    {
+      "key": "start_preset_id",
+      "value": "0",
+      "type": "string"
     }
   ],
   "event": [
@@ -98,7 +118,7 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const token = String(pm.environment.get('token') || pm.collectionVariables.get('token') || '').trim();",
+          "const token = String(pm.variables.get('token') ?? '').trim();",
           "pm.request.headers.remove('Authorization');",
           "if (token) pm.request.headers.add({key: 'Authorization', value: 'Bearer ' + token});"
         ]
@@ -340,7 +360,7 @@
                 "exec": [
                   "pm.test('HTTP 200 preset collection', () => pm.response.to.have.status(200));",
                   "pm.test('preset list structure', function () { const items=pm.response.json().data.items; pm.expect(items).to.be.an('array'); items.forEach(function (p) { pm.expect(p).to.have.all.keys('id','name','description','params'); pm.expect(p.id).to.be.a('string'); pm.expect(p.params).to.have.all.keys('arfcns','c0','band','mcc','mnc','lac','ci','short_name','network'); }); });",
-                  "if (String(pm.environment.get('verify_factory_defaults') || pm.collectionVariables.get('verify_factory_defaults')).toLowerCase() === 'true') {",
+                  "if (String(pm.variables.get('verify_factory_defaults') ?? '').trim().toLowerCase() === 'true') {",
                   "  pm.test('fresh store has exact factory defaults', function () { const expected=[{\"id\":\"0\",\"name\":\"addx\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"540\",\"band\":\"1800\",\"mcc\":\"001\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"addx\",\"network\":\"eth0\"}},{\"id\":\"1\",\"name\":\"ChinaMobile\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"55\",\"band\":\"900\",\"mcc\":\"460\",\"mnc\":\"00\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaMobile\",\"network\":\"eth0\"}},{\"id\":\"2\",\"name\":\"ChinaMobile\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"540\",\"band\":\"1800\",\"mcc\":\"460\",\"mnc\":\"00\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaMobile\",\"network\":\"eth0\"}},{\"id\":\"3\",\"name\":\"ChinaUnicom\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"70\",\"band\":\"900\",\"mcc\":\"460\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaUnicom\",\"network\":\"eth0\"}},{\"id\":\"4\",\"name\":\"ChinaUnicom\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"668\",\"band\":\"1800\",\"mcc\":\"460\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaUnicom\",\"network\":\"eth0\"}}]; pm.expect(pm.response.json().data.items).to.eql(expected); });",
                   "}"
                 ]
@@ -362,7 +382,7 @@
                 "exec": [
                   "pm.test('HTTP 200 selected default preset', () => pm.response.to.have.status(200));",
                   "pm.test('selected preset ID and structure', function () { const p=pm.response.json().data; pm.expect(p.id).to.eql(pm.variables.replaceIn('{{default_preset_id}}')); pm.expect(p).to.have.all.keys('id','name','description','params'); });",
-                  "if (String(pm.environment.get('verify_factory_defaults') || pm.collectionVariables.get('verify_factory_defaults')).toLowerCase() === 'true') {",
+                  "if (String(pm.variables.get('verify_factory_defaults') ?? '').trim().toLowerCase() === 'true') {",
                   "  pm.test('factory default 0 exact fixture', function () { pm.expect(pm.variables.replaceIn('{{default_preset_id}}')).to.eql('0'); const p=pm.response.json().data; pm.expect(p).to.eql({\"id\":\"0\",\"name\":\"addx\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"540\",\"band\":\"1800\",\"mcc\":\"001\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"addx\",\"network\":\"eth0\"}}); });",
                   "}"
                 ]
@@ -392,18 +412,42 @@
       ]
     },
     {
-      "name": "Mutations (guarded) / 写操作（默认跳过）",
-      "description": "Every request in this folder skips unless enable_mutations is exactly true. / 每个请求均有独立保护。",
+      "name": "Cell start / 小区启动（二选一，需开启双开关）",
+      "description": "Choose ONE request, not Run folder. Preset and Custom call the same API with mutually exclusive bodies. Both may start RF. / 二选一手动 Send，不要运行整个分组；两者使用同一接口，参数互斥且都会启动射频。",
       "item": [
         {
-          "name": "POST /api/v1/cell",
+          "name": "POST /cell — Preset / 按预设启动",
           "event": [
             {
               "listen": "prerequest",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();",
-                  "if (String(pm.environment.get('enable_rf_start') || pm.collectionVariables.get('enable_rf_start')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "(() => {",
+                  "const requiredSwitches = [\"enable_mutations\",\"enable_rf_start\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}",
+                  "const startMode = 'preset';",
+                  "function stop(reason) { console.error('[GSM NOT SENT / 未发送] ' + reason); pm.execution.skipRequest(); }",
+                  "const url = pm.variables.replaceIn(String(pm.request.url));",
+                  "if (/\\{\\{[^}]+\\}\\}/.test(url) || !/^https?:\\/\\/[^/\\s]+\\/api\\/v1\\/cell$/.test(url) || /^https?:\\/\\/HOST(?=[:/]|$)/i.test(url)) { stop('Configure baseUrl as http(s)://your-server:8082 without /api/v1. / 请填写服务器 baseUrl，不附加 /api/v1。'); return; }",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw || '');",
+                  "if (/\\{\\{[^}]+\\}\\}/.test(raw)) { stop('Unresolved body variables; fill the selected environment. / 请求体变量未解析，请补齐当前环境变量。'); return; }",
+                  "let body; try { body = JSON.parse(raw); } catch (_) { stop('Body must be valid JSON. / 请求体必须为有效 JSON。'); return; }",
+                  "if (!body || typeof body !== 'object' || Array.isArray(body)) { stop('Body must be a JSON object. / 请求体必须为 JSON 对象。'); return; }",
+                  "const explicitFields = [\"arfcns\",\"c0\",\"band\",\"mcc\",\"mnc\",\"lac\",\"ci\",\"short_name\",\"network\"];",
+                  "if (startMode === 'preset') {",
+                  "  if (Object.keys(body).length !== 1 || typeof body.preset_id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(body.preset_id)) { stop('Preset start accepts only a string preset_id; set start_preset_id or use Custom start for full parameters. / 预设启动只填字符串 preset_id；请设置 start_preset_id，自定义参数请用另一启动请求。'); return; }",
+                  "} else {",
+                  "  const missing = explicitFields.filter(key => typeof body[key] !== 'string' || !body[key].trim());",
+                  "  const extra = Object.keys(body).filter(key => !explicitFields.includes(key));",
+                  "  if (missing.length || extra.length) { stop('Custom start requires all nine string fields and no preset_id. / 自定义启动须完整九个字符串字段且不含 preset_id。 Missing / 缺少: ' + missing.join(', ') + '; unexpected / 多余: ' + extra.join(', ')); return; }",
+                  "}",
+                  "console.info('[GSM SENDING / 正在发送] ' + startMode + ' start; this may enable RF. Wait up to 90 seconds, then GET /api/v1/cell for state. / 将实际启动小区与射频，最长等待 90 秒，随后查询小区状态。');",
+                  "})();"
                 ]
               }
             }
@@ -418,7 +462,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"arfcns\": \"1\",\n  \"c0\": \"{{c0}}\",\n  \"band\": \"1800\",\n  \"mcc\": \"{{mcc}}\",\n  \"mnc\": \"{{mnc}}\",\n  \"lac\": \"{{lac}}\",\n  \"ci\": \"{{ci}}\",\n  \"short_name\": \"LAB\",\n  \"network\": \"{{iface}}\"\n}",
+              "raw": "{\n  \"preset_id\": \"{{start_preset_id}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -426,9 +470,73 @@
               }
             },
             "url": "{{baseUrl}}/api/v1/cell",
-            "description": "WARNING: starts the radio/cell stack. Run manually only after setting both enable_mutations=true and enable_rf_start=true; the collection performs no automatic RF assertion. network is the container interface (default bridge: eth0), not a host NIC. / 警告：会启动射频；需双重显式开关，集合不自动执行 RF 验收。network 是容器内网卡。"
+            "description": "Set start_preset_id to any stored preset ID (0 by default); send only preset_id. This never edits that preset. Requires both enable_mutations=true and enable_rf_start=true. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / start_preset_id 可填任意已有预设 ID，默认 0；只传 preset_id，不修改预设。需双开关；发送会启动射频，未发送原因见 Postman Console。"
           }
         },
+        {
+          "name": "POST /cell — Custom / 自定义参数启动",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(() => {",
+                  "const requiredSwitches = [\"enable_mutations\",\"enable_rf_start\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}",
+                  "const startMode = 'custom';",
+                  "function stop(reason) { console.error('[GSM NOT SENT / 未发送] ' + reason); pm.execution.skipRequest(); }",
+                  "const url = pm.variables.replaceIn(String(pm.request.url));",
+                  "if (/\\{\\{[^}]+\\}\\}/.test(url) || !/^https?:\\/\\/[^/\\s]+\\/api\\/v1\\/cell$/.test(url) || /^https?:\\/\\/HOST(?=[:/]|$)/i.test(url)) { stop('Configure baseUrl as http(s)://your-server:8082 without /api/v1. / 请填写服务器 baseUrl，不附加 /api/v1。'); return; }",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw || '');",
+                  "if (/\\{\\{[^}]+\\}\\}/.test(raw)) { stop('Unresolved body variables; fill the selected environment. / 请求体变量未解析，请补齐当前环境变量。'); return; }",
+                  "let body; try { body = JSON.parse(raw); } catch (_) { stop('Body must be valid JSON. / 请求体必须为有效 JSON。'); return; }",
+                  "if (!body || typeof body !== 'object' || Array.isArray(body)) { stop('Body must be a JSON object. / 请求体必须为 JSON 对象。'); return; }",
+                  "const explicitFields = [\"arfcns\",\"c0\",\"band\",\"mcc\",\"mnc\",\"lac\",\"ci\",\"short_name\",\"network\"];",
+                  "if (startMode === 'preset') {",
+                  "  if (Object.keys(body).length !== 1 || typeof body.preset_id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(body.preset_id)) { stop('Preset start accepts only a string preset_id; set start_preset_id or use Custom start for full parameters. / 预设启动只填字符串 preset_id；请设置 start_preset_id，自定义参数请用另一启动请求。'); return; }",
+                  "} else {",
+                  "  const missing = explicitFields.filter(key => typeof body[key] !== 'string' || !body[key].trim());",
+                  "  const extra = Object.keys(body).filter(key => !explicitFields.includes(key));",
+                  "  if (missing.length || extra.length) { stop('Custom start requires all nine string fields and no preset_id. / 自定义启动须完整九个字符串字段且不含 preset_id。 Missing / 缺少: ' + missing.join(', ') + '; unexpected / 多余: ' + extra.join(', ')); return; }",
+                  "}",
+                  "console.info('[GSM SENDING / 正在发送] ' + startMode + ' start; this may enable RF. Wait up to 90 seconds, then GET /api/v1/cell for state. / 将实际启动小区与射频，最长等待 90 秒，随后查询小区状态。');",
+                  "})();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"arfcns\": \"{{arfcns}}\",\n  \"c0\": \"{{c0}}\",\n  \"band\": \"{{band}}\",\n  \"mcc\": \"{{mcc}}\",\n  \"mnc\": \"{{mnc}}\",\n  \"lac\": \"{{lac}}\",\n  \"ci\": \"{{ci}}\",\n  \"short_name\": \"{{short_name}}\",\n  \"network\": \"{{iface}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/cell",
+            "description": "Fill all nine custom variables; no preset_id and no fallback/merge with saved or preset values. band and short_name are editable variables, not hardcoded. Requires both enable_mutations=true and enable_rf_start=true. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / 完整填写九项自定义变量，不传 preset_id、不混合或回退至存档。频段和名称均可配置；需双开关，发送会启动射频，未发送原因见 Console。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mutations (guarded) / 写操作（默认跳过）",
+      "description": "Every request in this folder skips unless enable_mutations is exactly true. / 每个请求均有独立保护。",
+      "item": [
         {
           "name": "POST /api/v1/presets",
           "event": [
@@ -436,7 +544,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -478,7 +591,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -514,47 +632,18 @@
           }
         },
         {
-          "name": "POST /api/v1/cell from default preset (manual RF side effect)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();",
-                  "if (String(pm.environment.get('enable_rf_start') || pm.collectionVariables.get('enable_rf_start')).toLowerCase() !== 'true') pm.execution.skipRequest();"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"preset_id\": \"{{default_preset_id}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{baseUrl}}/api/v1/cell",
-            "description": "WARNING: explicitly starts RF from default preset 0. This request never edits/deletes the default. Run manually only after validating band/channel and setting enable_mutations=true plus enable_rf_start=true. There are no automatic RF tests. / 警告：按默认预设 0 显式启动射频，不修改/删除默认项；需确认频段并开启双重开关，不含自动 RF 测试。"
-          }
-        },
-        {
           "name": "DELETE /api/v1/presets/{id}",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -581,7 +670,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -608,7 +702,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -649,7 +748,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -691,7 +795,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -717,7 +826,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -758,7 +872,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -822,7 +941,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -862,7 +986,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -902,7 +1031,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },
@@ -942,7 +1076,12 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                  "const requiredSwitches = [\"enable_mutations\"];",
+                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
+                  "if (missingSwitches.length) {",
+                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
+                  "  pm.execution.skipRequest();",
+                  "}"
                 ]
               }
             },

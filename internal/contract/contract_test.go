@@ -112,7 +112,8 @@ func TestPostmanExampleIsReadOnlyAndPlaceholderOnly(t *testing.T) {
 		t.Fatalf("example environment must not assume an unmodified preset store, got verify_factory_defaults=%q", values["verify_factory_defaults"])
 	}
 	for key, want := range map[string]string{
-		"imsi": "001010000000000", "number": "10000", "iface": "eth0", "preset_id": "lab-900", "default_preset_id": "0", "token": "",
+		"imsi": "001010000000000", "number": "10000", "iface": "eth0", "preset_id": "lab-900", "default_preset_id": "0", "start_preset_id": "0", "token": "",
+		"arfcns": "1", "band": "1800", "short_name": "addx", "enable_rf_start": "false",
 	} {
 		if values[key] != want {
 			t.Errorf("example %s=%q, want placeholder %q", key, values[key], want)
@@ -171,7 +172,7 @@ func TestPresetContractArtifacts(t *testing.T) {
 		`"method": "POST"`,
 		`{{baseUrl}}/api/v1/presets`,
 		`{{baseUrl}}/api/v1/presets/{{preset_id}}`,
-		`\"preset_id\": \"{{default_preset_id}}\"`,
+		`\"preset_id\": \"{{start_preset_id}}\"`,
 		`"default_preset_id"`,
 		`"verify_factory_defaults"`,
 		`preset list structure`,
@@ -318,6 +319,75 @@ func assertCellStartsRequireExplicitRFAck(t *testing.T, items []postmanItem) {
 		}
 		if !strings.Contains(strings.Join(pre, "\n"), "enable_rf_start") {
 			t.Errorf("Postman cell start %q requires an explicit enable_rf_start guard", item.Name)
+		}
+		for _, marker := range []string{"console.error", "GSM NOT SENT", "pm.variables.get", "pm.variables.replaceIn", "JSON.parse", "GSM SENDING"} {
+			if !strings.Contains(strings.Join(pre, "\n"), marker) {
+				t.Errorf("Postman cell start %q is missing %s diagnostics/validation", item.Name, marker)
+			}
+		}
+	}
+}
+
+func TestPostmanContainsIndependentPresetAndCustomStarts(t *testing.T) {
+	collection, _ := readPostman(t)
+	counts := map[string]int{}
+	var visit func([]postmanItem)
+	visit = func(items []postmanItem) {
+		for _, item := range items {
+			visit(item.Item)
+			if item.Request == nil || item.Request.Method != http.MethodPost {
+				continue
+			}
+			var url string
+			_ = json.Unmarshal(item.Request.URL, &url)
+			if url != "{{baseUrl}}/api/v1/cell" {
+				continue
+			}
+			if item.Request.Body == nil {
+				t.Fatalf("cell start %s requires an explicit body", item.Name)
+			}
+			var body map[string]string
+			if err := json.Unmarshal([]byte(item.Request.Body.Raw), &body); err != nil {
+				t.Fatal(err)
+			}
+			if id, ok := body["preset_id"]; ok {
+				counts["preset"]++
+				if id != "{{start_preset_id}}" || len(body) != 1 || !strings.Contains(item.Name, "按预设启动") {
+					t.Errorf("preset start must use its own selector and no overrides: %v", body)
+				}
+				continue
+			}
+			counts["custom"]++
+			fields := []string{"arfcns", "c0", "band", "mcc", "mnc", "lac", "ci", "short_name", "network"}
+			if len(body) != len(fields) || !strings.Contains(item.Name, "自定义参数启动") {
+				t.Errorf("custom start must contain all nine fields: %v", body)
+			}
+			resolved := map[string]string{}
+			for _, key := range fields {
+				variable := key
+				if key == "network" {
+					variable = "iface"
+				}
+				if body[key] != "{{"+variable+"}}" {
+					t.Errorf("custom field %s must be configurable, got %q", key, body[key])
+				}
+				resolved[key] = collectionVariable(collection, variable)
+			}
+			encoded, _ := json.Marshal(resolved)
+			var params gsm.StartParams
+			_ = json.Unmarshal(encoded, &params)
+			if err := params.Validate(); err != nil {
+				t.Errorf("custom default variables are invalid: %v", err)
+			}
+		}
+	}
+	visit(collection.Item)
+	if !reflect.DeepEqual(counts, map[string]int{"preset": 1, "custom": 1}) {
+		t.Fatalf("want exactly one preset and one custom start, got %v", counts)
+	}
+	for key, want := range map[string]string{"start_preset_id": "0", "enable_mutations": "false", "enable_rf_start": "false"} {
+		if got := collectionVariable(collection, key); got != want {
+			t.Errorf("collection %s=%q, want %q", key, got, want)
 		}
 	}
 }

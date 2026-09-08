@@ -42,6 +42,16 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CellStart' }
+            examples:
+              preset:
+                summary: Start from one stored preset / 使用已存储预设启动
+                value: { preset_id: '0' }
+              custom:
+                summary: Start from one complete custom profile / 使用完整自定义配置启动
+                value: { arfcns: '1', c0: '540', band: '1800', mcc: '001', mnc: '01', lac: '1', ci: '1', short_name: addx, network: eth0 }
+              reuseSavedProfile:
+                summary: Reuse the existing valid last profile / 复用已有有效的上次存档
+                value: {}
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { $ref: '#/components/responses/Error' }

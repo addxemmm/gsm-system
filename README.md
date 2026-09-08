@@ -77,6 +77,14 @@ persists in `/data/presets.json`. `POST /cell` accepts complete explicit fields,
 changes a running cell and never autostarts one. 预设库初始包含 `"0"` 至 `"4"`
 五套可编辑默认配置；预设 CRUD 不影响运行中小区，也不会自启动。
 
+For a deliberate RF start in Postman, select the environment that supplies
+`baseUrl`, set both `enable_mutations=true` and `enable_rf_start=true`, then
+open **Cell start / 小区启动** and press **Send** on exactly one of its
+clearly named preset or custom requests. Both switches default to `false`; do
+not run the whole collection with them enabled. Postman 启动小区时，先选择提供
+`baseUrl` 的环境，同时开启两个开关，再在“Cell start / 小区启动”
+中二选一单独发送；不要在开关开启时运行整个集合。
+
 Full contract / 完整契约：
 
 - [API guide / API 指南](docs/API.md)

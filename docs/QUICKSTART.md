@@ -87,11 +87,48 @@ curl -fsS -X POST "$BASE/presets" ${AUTH:+-H "$AUTH"} \
 ```
 
   Preset CRUD alone never starts/reconfigures the cell. 预设 CRUD 本身不启动或重配小区。
-- A later `POST /cell` with `{}` reuses the saved last profile.
-  后续 `{}` 仅复用已有有效的上次存档。
+- A later `POST /cell` with `{}` reuses the saved last profile. It neither fills
+  a partial body nor falls back to a default preset. / 后续 `{}` 仅复用已有
+  完整有效的上次存档，不补齐部分 body，也不回退到默认预设。
+
+```bash
+curl -fsS -X POST "$BASE/cell" ${AUTH:+-H "$AUTH"} \
+  -H 'Content-Type: application/json' -d '{}'
+```
 
 Poll `GET /cell`; expect `state=running`, `ready=true`, and inspect
 `sms_ready`/`voice_ready` separately.
+
+### Postman: choose one start mode / Postman：二选一启动
+
+Select the environment whose `baseUrl` targets this host. Both safety switches
+default to `false`; set `enable_mutations=true` and `enable_rf_start=true`, open
+**Cell start / 小区启动（二选一，需开启双开关）**, and press **Send** on
+exactly one request:
+
+- **POST /cell — Preset / 按预设启动**: `start_preset_id=0` by default;
+  replace it with any stored preset
+  ID. `default_preset_id` is only for read-only default lookup, and `preset_id`
+  remains the preset-CRUD fixture. / preset 启动仅使用 `start_preset_id`。
+- **POST /cell — Custom / 自定义参数启动**: provide every variable:
+  `arfcns=1`, `band=1800`, `c0=540`,
+  `mcc=001`, `mnc=01`, `lac=1`, `ci=1`, `short_name=addx`, `iface=eth0`.
+  / custom 启动必须提供全部九个变量。
+
+Postman uses normal variable precedence: environment `false` or empty values
+override collection `true`. Missing switches are named in the Console rather
+than silently skipped. Unresolved variables, an empty/mixed body, or an
+incomplete custom body are explained and skipped before RF is requested.
+RF transmission is a real side effect: never run the full collection or the
+whole folder with both switches enabled. / 环境值按正常优先级覆盖集合值；
+未解析变量、空/混合/不完整 body 会在 Console 说明并于发射前跳过。
+不要开着两个开关运行全集或整个文件夹。
+
+A sent start can take up to 90 seconds. Then send `GET /cell` and inspect
+`state`, `ready`, `sms_ready`, and `voice_ready`. The API also supports `{}` to
+reuse a valid saved profile, but it is distinct from preset/custom and is not a
+preset override. / 启动请求最长可等待 90 秒，之后用 `GET /cell`
+查询；`{}` 是独立的存档复用模式，不是预设覆盖。
 
 ## 3. Connections versus subscribers / 连接与签约
 
@@ -171,11 +208,11 @@ DELETE 停止，再执行网络 GET/PUT；否则 PUT 返回 `409`。
 | SMS not received | `202` is submission only; inspect `/data/log/smqueue.log` and handset state |
 | no CDR | verify `/data/log/asterisk/cdr-csv/Master.csv`, CDR modules, and a completed call |
 
-Use the Postman example environment with `enable_mutations=false` for default
-read-only inspection. Preset CRUD requires `enable_mutations=true`; cell-start
-requests additionally require the explicit `enable_rf_start=true` switch and
-have no automated RF assertions. 预设 CRUD 需开启 `enable_mutations`；启动小区
-还需显式开启 `enable_rf_start`，且不包含自动 RF 验收。
+Use the Postman example environment with both `enable_mutations=false` and
+`enable_rf_start=false` for default read-only inspection. Preset CRUD requires
+only the first switch; cell start requires both and has no automated RF
+acceptance. / 默认只读环境中两个开关均为 `false`；预设 CRUD 仅需
+第一个，小区启动需要两个，且不包含自动 RF 验收。
 
 For a management-plane-only preset CRUD/error smoke test (no valid cell start
 and no RF), run from the development checkout. The script reads the optional

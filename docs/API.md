@@ -124,6 +124,12 @@ It does not modify the preset. `preset_id` 与所有显式小区字段互斥；�
 返回 `404`，混合或无效输入返回 `422`。通过预设启动只解析其 `params`，
 不改写预设。
 
+The nine explicit fields form one complete custom profile: partial objects are
+not patches. There is no preset-plus-override mode. `{}` is a third, distinct
+mode and succeeds only when a complete valid last profile has already been
+saved. 九个显式字段必须整体提交，不是局部补丁；不支持“预设 +
+字段覆盖”。`{}` 是独立的复用模式，仅在已保存完整有效存档时成功。
+
 Validation / 校验：
 
 - `arfcns` must equal `"1"`;
@@ -140,6 +146,38 @@ Success: HTTP `200`, message `cell started`,
 `data:{"band":"...","mcc":"...","mnc":"...","short_name":"..."}`.
 Important failures: `409` running/transitioning, `422` invalid profile,
 `404` missing preset, `503` SDR unavailable, `500` process startup failure.
+
+#### Postman manual start / Postman 手动启动
+
+1. Select the intended Postman environment so `baseUrl` points at the chosen
+   host; configure `token` there only when Bearer auth is enabled. / 选择正确
+   环境，确认 `baseUrl` 指向目标主机；仅开启 Bearer 鉴权时配置 `token`。
+2. Set `enable_mutations=true` **and** `enable_rf_start=true`. They both default
+   to `false`; a missing switch is reported in the Postman Console and the
+   request is skipped. Variable lookup uses normal `pm.variables.get`
+   precedence, so an environment value of `false` or an empty value overrides
+   a collection value of `true`. / 两个开关默认均为 `false`；缺少时
+   Console 会说明具体开关并跳过请求。环境中的 `false` 或空值会覆盖
+   collection 中的 `true`。
+3. Open **Cell start / 小区启动（二选一，需开启双开关）** and press
+   **Send** on exactly one clearly named request: **POST /cell — Preset /
+   按预设启动** uses `start_preset_id` (default `0`, any stored ID is
+   allowed); **POST /cell — Custom / 自定义参数启动** uses all of
+   `arfcns`, `band`, `c0`, `mcc`,
+   `mnc`, `lac`, `ci`, `short_name`, and `iface`. `default_preset_id` remains a
+   read-only default-query variable, while `preset_id` remains a preset-CRUD
+   fixture. / 在该分组中仅发送 preset 或 custom 其中
+   一个；三个 preset 相关变量用途不同，不要混用。
+4. RF transmission is a real side effect. Never run the full collection or
+   folder with both switches enabled. Unresolved variables, an empty/mixed
+   body, or an incomplete custom body are explained and skipped before any RF
+   request is sent. This uses Postman's documented
+   [`pm.execution.skipRequest()` behavior](https://learning.postman.com/docs/tests-and-scripts/write-scripts/postman-sandbox-reference/pm-execution/).
+   / RF 发射是真实副作用；两个开关开启时不要运行全集或整个文件夹。
+5. A sent start may take up to 90 seconds. When it returns, send `GET /cell` and
+   inspect `state`, `ready`, `sms_ready`, and `voice_ready`; HTTP success alone
+   is not RF or handset acceptance. / 已发出的启动最长可等待 90 秒；返回后
+   发送 `GET /cell` 查询状态，HTTP 成功不等于 RF/真机验收。
 
 ### `DELETE /cell`
 

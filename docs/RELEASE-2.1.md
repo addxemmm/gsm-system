@@ -259,3 +259,27 @@ Windows-to-Ubuntu deployment script and deployed as
 
 Later documentation-only commits do not change the deployed runtime revision.
 后续仅文档提交不改变服务器记录的运行源码版本。
+
+## Start-mode usability / 双启动模式易用性
+
+The existing management API already accepts a stored `preset_id` or a complete
+custom profile, with `{}` retained as a distinct saved-profile reuse mode.
+This update keeps that runtime behavior and clarifies the client workflow; no
+image rebuild or service restart is required. 管理 API 已支持预设和完整自定义
+配置，并保留独立的 `{}` 存档复用模式；本次完善客户端和回归验证，不改变
+运行逻辑，因此无需重建镜像或重启服务。
+
+- Postman exposes separate, clearly named preset/custom requests in a dedicated
+  cell-start folder. `start_preset_id=0` is independent of read-only default
+  lookup and CRUD fixture IDs. 所有预设均可按 ID 启动，启动变量与查询/测试变量隔离。
+- Custom `arfcns`, `band`, `short_name` and the remaining parameters are all
+  variables; the default short name is `addx`. 自定义九项均可配置，名称默认 `addx`。
+- Both explicit start switches still default to false. Missing switches and
+  unresolved/mixed/incomplete input produce a bilingual Console diagnostic
+  before skipping. Empty/false environment values override collection values,
+  including an empty optional Token. 双开关保持默认关闭；前置检查不再静默跳过，
+  并按变量优先级正确处理空值和 false。
+- Offline Node sandbox tests execute the exported scripts without HTTP/RF and
+  are included in Windows CI. API regressions exercise start-mode isolation
+  against an absent hardware detector, not an actual cell launch. 新增脚本离线
+  执行验证和无硬件 API 模式隔离回归，不执行真实射频启动。
