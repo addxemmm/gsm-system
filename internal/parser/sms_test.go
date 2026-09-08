@@ -143,6 +143,29 @@ func TestParseSmqueueStructuredRetryDeduplicatesAndSupportsNumberSender(t *testi
 	}
 }
 
+func TestParseSmqueueStructuredUTF8IsLossless(t *testing.T) {
+	for _, body := range []string{"中文短信", "AéΩ€中文", " 第一行\n第二行\r\n ", "中\x00文"} {
+		t.Run(hex.EncodeToString([]byte(body)), func(t *testing.T) {
+			line := structuredLine("2026-09-08T06:09:00.1", "26--unicode", "101", "10002", body)
+			messages := parser.ParseSmqueueLog(line + line)
+			if len(messages) != 1 || messages[0].Text != body || messages[0].ReceiverNumber != "10002" {
+				t.Fatalf("UTF-8 structured payload was changed or duplicated: %+v", messages)
+			}
+		})
+	}
+}
+
+func TestParseSmqueueDoesNotGuessUCS2FromUnlabelledHex(t *testing.T) {
+	// text_hex is decoded UTF-8, never raw UCS-2 or an invitation to sniff DCS.
+	// text_hex 只承载已解码 UTF-8；无编码证据时不猜测原始 UCS-2。
+	log := noticeGot("2026-09-08T06:09:00.1", "27--unknown", "IMSI001010000000001") +
+		structuredLine("2026-09-08T06:09:00.2", "27--unknown", "", "10002", string([]byte{0x4e, 0x2d, 0x65, 0x87}))
+	messages := parser.ParseSmqueueLog(log)
+	if len(messages) != 1 || messages[0].Text != "" || messages[0].SenderIMSI != "001010000000001" {
+		t.Fatalf("unlabelled bytes guessed or metadata lost: %+v", messages)
+	}
+}
+
 func TestParseSmqueueStructuredEmptyValuesRemainAuthoritative(t *testing.T) {
 	log := structuredLine("2026-09-08T06:09:10.1", "25--tag", "", "", "") +
 		noticeDecoded("2026-09-08T06:09:10.2", "must not attach")

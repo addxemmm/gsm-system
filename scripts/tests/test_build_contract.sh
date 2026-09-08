@@ -27,6 +27,8 @@ grep -Fx 'contactpermit=127.0.0.1/255.255.255.255' deploy/docker/sip-contact-acl
 [ "$(grep -c '^contactpermit=' deploy/docker/sip-contact-acl.conf)" -eq 1 ] || fail 'unexpected contact allow expansion'
 grep -F '0003-smqueue-keyed-sms-observation.patch' deploy/docker/Dockerfile >/dev/null || fail 'keyed native SMS observation patch is not applied'
 grep -F 'GSM_SMS_V1' compat/patches/0003-smqueue-keyed-sms-observation.patch >/dev/null || fail 'keyed native SMS observation format missing'
+grep -F '0006-smqueue-ucs2-decode.patch' deploy/docker/Dockerfile >/dev/null || fail 'native UCS-2 decode patch is not applied'
+grep -F 'test-sms-ucs2.sh SMS/SMSMessages.cpp' deploy/docker/Dockerfile >/dev/null || fail 'native UCS-2 regression test is not run'
 grep -F 'patch -p1 < /app/compat/patches/0005-uhd-rx-timeout-retry.patch' deploy/docker/Dockerfile >/dev/null || fail 'UHD RX timeout retry patch is not applied'
 grep -F 'sh /app/compat/tests/test-uhd-rx-timeout.sh Transceiver52M/UHDDevice.cpp' deploy/docker/Dockerfile >/dev/null || fail 'patched UHD RX timeout harness is not run'
 [ -f compat/patches/0005-uhd-rx-timeout-retry.patch ] || fail 'UHD RX timeout retry patch missing'

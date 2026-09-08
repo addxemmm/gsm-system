@@ -1,0 +1,61 @@
+--- a/SMS/SMSMessages.cpp
++++ b/SMS/SMSMessages.cpp
+@@ -607,6 +607,58 @@
+ 			for (unsigned i=0; i<text_length; i++) {
+ 				char gsm = mRawData.readFieldReversed(crp,7);
+ 				text[i] = decodeGSMChar(gsm);
++			}
++			break;
++		}
++
++		case 0x08: // Uncompressed UCS-2, no message class.
++		case 0x18: // Uncompressed UCS-2 with message class 0..3.
++		case 0x19:
++		case 0x1a:
++		case 0x1b:
++		{
++			// TP-UDL counts octets for UCS-2, including any UDH (23.040).
++			// parse() reverses bits within each octet; read octets reversed,
++			// then combine the UCS-2 high byte first (23.038 / ISO 10646).
++			if (mLength > 140 || mLength > mRawData.size()/8) {
++				LOG(NOTICE) << "badly formatted UCS-2 TL-UD length";
++				SMS_READ_ERROR;
++			}
++			size_t crp = 0;
++			unsigned octets = mLength;
++			if (mUDHI) {
++				if (octets == 0) SMS_READ_ERROR;
++				unsigned header = mRawData.readFieldReversed(crp,8) + 1;
++				if (header > octets) {
++					LOG(NOTICE) << "badly formatted UCS-2 TL-UD header";
++					SMS_READ_ERROR;
++				}
++				crp = header * 8;
++				octets -= header;
++			}
++			if (octets % 2) {
++				LOG(NOTICE) << "odd UCS-2 TL-UD text length";
++				SMS_READ_ERROR;
++			}
++			for (unsigned i=0; i<octets; i+=2) {
++				unsigned code = mRawData.readFieldReversed(crp,8) << 8;
++				code |= mRawData.readFieldReversed(crp,8);
++				// UCS-2 is BMP-only. Never manufacture replacement text for
++				// surrogate code units (including UTF-16 emoji pairs).
++				if (code >= 0xd800 && code <= 0xdfff) {
++					LOG(NOTICE) << "unsupported surrogate in UCS-2 TL-UD";
++					SMS_READ_ERROR;
++				}
++				if (code < 0x80) {
++					text += static_cast<char>(code);
++				} else if (code < 0x800) {
++					text += static_cast<char>(0xc0 | (code >> 6));
++					text += static_cast<char>(0x80 | (code & 0x3f));
++				} else {
++					text += static_cast<char>(0xe0 | (code >> 12));
++					text += static_cast<char>(0x80 | ((code >> 6) & 0x3f));
++					text += static_cast<char>(0x80 | (code & 0x3f));
++				}
+ 			}
+ 			break;
+ 		}

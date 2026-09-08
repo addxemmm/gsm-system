@@ -180,6 +180,7 @@ is recorded by its OCI revision label rather than a revision-suffixed tag.
 - [SDR notes / SDR 说明](docs/SDR.md)
 - [Bounded UHD timeout recovery / UHD 有限超时恢复](docs/UHD-RX-RECOVERY.md)
 - [2600/2602 voice diagnostics / 语音诊断](docs/VOICE-DIAGNOSTICS.md)
+- [Chinese SMS decoding / 中文短信解码](docs/SMS-UNICODE.md)
 - [2.1 migration / 2.1 迁移](docs/MIGRATION.md)
 - [2.1 release notes / 2.1 发布说明](docs/RELEASE-2.1.md)
 - [Historical audit / 历史审计](docs/AUDIT-2026-09.md)

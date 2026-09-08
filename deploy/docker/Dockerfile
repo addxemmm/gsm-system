@@ -120,6 +120,8 @@ COPY third_party/smqueue ./smqueue
 RUN apt-get update && apt-get install -y --no-install-recommends libosip2-dev && rm -rf /var/lib/apt/lists/* \
  && cd smqueue \
  && patch -p1 < /app/compat/patches/0003-smqueue-keyed-sms-observation.patch \
+ && patch -p1 < /app/compat/patches/0006-smqueue-ucs2-decode.patch \
+ && sh /app/compat/tests/test-sms-ucs2.sh SMS/SMSMessages.cpp \
  && grep -rl '!defined(gettid)' CommonLibs SR/CommonLibs 2>/dev/null | xargs -r sed -i 's/#if !defined(gettid)/#if !defined(gettid) \&\& !__GLIBC_PREREQ(2,30)/' \
  && ./autogen.sh && ./configure && make -j$(nproc) -k && make install && ldconfig
 COPY third_party/subscriberRegistry ./subscriberRegistry

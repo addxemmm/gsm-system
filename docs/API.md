@@ -613,6 +613,20 @@ NOTICE 合并。旧 `Got SMS rqst qtag ...` 事件仅保留有证据的时间与
 的历史绑定。签约库不可读时仍返回本轮日志观察，缺失身份保持 `null`/`unknown`。这些是
 日志观察，不是送达回执。日志读取受 `max_history_bytes` 限制。
 
+`GET /sms` observations from patched native smqueue can contain UTF-8 Chinese
+decoded from uncompressed UCS-2 `DCS 0x08` / `0x18..0x1b`. The decoder checks
+octet lengths and skips bounded UDH bytes; concatenated SMS remain separate
+segment observations, not reassembled messages. Malformed payloads, unsupported
+DCS and surrogate code units (including UTF-16 emoji pairs) leave text unknown
+(`null`), never guessed from raw hex. Native TPDU forwarding preserves original
+DCS/UDHI/user-data bytes. This receive-side support does not expand `POST /sms`.
+
+带补丁的原生 smqueue 可将未压缩 UCS-2 `DCS 0x08` / `0x18..0x1b` 中文解码为
+UTF-8 日志正文；检查字节长度并跳过有界 UDH，长短信仍按片段记录，不做重组。
+畸形数据、不支持的 DCS 和代理码元（含 UTF-16 emoji 对）保持正文未知 `null`，
+不从原始 hex 猜测文字；原生 TPDU 转发保留 DCS、UDHI 与原始数据字节。
+该接收端能力不扩大下述 `POST /sms` 的字符集。
+
 ### `POST /sms`
 
 ```json

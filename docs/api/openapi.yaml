@@ -340,6 +340,15 @@ paths:
         身份缺项仅由唯一且一致的当前签约绑定补全；identity_resolution 逐字段区分
         日志观察、查询时当前绑定和未知。日志值绝不覆盖，101/411 服务短码不补 IMSI；
         当前绑定不是历史事实，观察记录也不是送达回执。
+        Patched native receive decoding supports BMP UCS-2 DCS 0x08 and
+        0x18..0x1b as UTF-8 text, with bounded UDH skipping and length checks.
+        Concatenated segments remain separate observations. Malformed payloads,
+        unsupported DCS and surrogate code units remain unknown (null), not
+        guessed from raw hex. Native forwarding preserves DCS/UDHI/raw data;
+        POST /sms remains restricted to safe ASCII.
+        原生接收支持 BMP UCS-2 DCS 0x08、0x18..0x1b 转 UTF-8，检查长度并跳过有界
+        UDH；长短信片段不重组。畸形数据、未知 DCS 和代理码元保持 null，不猜测正文。
+        原生转发保留 DCS/UDHI/原始数据，POST /sms 仍限安全 ASCII。
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
