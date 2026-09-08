@@ -222,3 +222,40 @@ root routes are still retired. Initialization never starts RF or rewrites the
 active radio/subscriber databases or last-start profile. 保留新预设 API、显式启动
 与上次存档复用，不恢复旧根路径接口；初始化不启动射频、不改现有小区及签约数据库
 或上次启动存档。
+
+### Deployed defaults acceptance / 内置预设部署验收
+
+On 2026-09-08, runtime source `fbdaa5be2209` was built through the official
+Windows-to-Ubuntu deployment script and deployed as
+`gsm-system:2.1.0-fbdaa5be2209` (alias `gsm-system:2.1.0`), image ID
+`sha256:9b14b87dd4022d7f67674030c5d0c3c43703dc05adeae6f5ee246496684d07a5`.
+2026-09-08 已通过正式脚本构建并部署上述源码与镜像；版本别名指向同一镜像。
+
+- The existing empty version-1 store automatically became version 2 with the
+  exact five defaults above, mode `0600`; list and individual GET requests
+  matched every field. 现有空预设库自动升级，五项全部字段及逐项查询验收通过。
+- The isolated image test passed initial defaults, CRUD, restart persistence,
+  non-respawn after deletion and both start paths with hardware detection
+  deliberately disabled. The live API CRUD smoke test removed only its own
+  unique fixture. 独立镜像测试和在线 CRUD 冒烟通过；模拟启动未访问射频，测试
+  数据已清理，线上五套默认项完整保留。
+- The management container is healthy on the dedicated bridge, publishing
+  only LAN-bound TCP `8082`, with Token left blank. RF/native services remain
+  stopped. Container-local `eth0` NAT was reapplied and the second request
+  returned `changed=false`. bridge、局域网免 Token、射频关闭均保持；容器内
+  NAT 已恢复且重复调用验证幂等。
+- Radio/subscriber SQL dump hashes, last-start profile hash and the LTE
+  container identity/image/stopped timestamps were unchanged. 小区、签约数据库、
+  上次启动配置及 LTE 容器状态均未改变。
+- Superseded GSM and temporary native-builder images were removed after the
+  new image became healthy. Build-cache cleanup reported `3.519GB` reclaimed;
+  final build cache is `0B`. Only the current GSM image and its two aliases
+  remain; LTE, data volumes and necessary base images are retained. 已清理旧
+  GSM 镜像、临时构建镜像及缓存，不保留回滚；LTE 和业务数据卷保持不变。
+- Windows unit/vet and deployment tests, Linux race/vet and build contracts,
+  and GitHub CI for Go 1.22/1.26.8 plus Windows passed
+  ([runtime CI](https://github.com/addxemmm/gsm-system/actions/runs/34186908980)).
+  本地及 CI 验证通过；此次仍未执行真实手机入网、短信送达或实时通话测试。
+
+Later documentation-only commits do not change the deployed runtime revision.
+后续仅文档提交不改变服务器记录的运行源码版本。
