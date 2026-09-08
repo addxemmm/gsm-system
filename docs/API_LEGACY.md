@@ -15,7 +15,7 @@ The pre-2.1 API used action-style root routes, HTTP-200-only signaling, and a
 |---|---|
 | `POST /start` | `POST /api/v1/cell` |
 | `POST /stop` | `DELETE /api/v1/cell` |
-| `POST /config` preset action | create via `POST /api/v1/presets`, then `POST /api/v1/cell {"preset_id":"ID"}` / 先创建用户预设，再按 ID 启动 |
+| `POST /config` preset action | inspect defaults `"0"`..`"4"` or create a slug via `/api/v1/presets`, then `POST /api/v1/cell {"preset_id":"ID"}` / 检查默认项或创建用户预设，再按 ID 启动 |
 | `POST /getconfig` | `GET /api/v1/config` |
 | `POST /allconfig` | `PATCH /api/v1/config` with `{"values":{"KEY":"VALUE"}}` |
 | `POST /iptables` | `GET /api/v1/network?iface=eth0`, `PUT /api/v1/network {"iface":"eth0"}` |
@@ -46,10 +46,10 @@ supported methods. Do not retry them against the old root routes. 过渡期 v1 P
   `persisted:false`.
 - Root-path response wording and legacy numeric `message_id` values are not
   preserved.
-- Legacy numeric/operator preset IDs are not restored or seeded. A fresh store
-  is empty; clients explicitly create slug IDs matching
-  `^[a-z0-9][a-z0-9_-]{0,63}$` under `/api/v1/presets`. 旧数字/运营商预设 ID
-  不恢复也不预置，客户端需显式创建新 slug ID。
+- The old root preset action is not restored. The v2 preset store initializes
+  IDs `"0"`..`"4"` under `/api/v1/presets`; clients may also create slug IDs
+  matching `^[a-z0-9][a-z0-9_-]{0,63}$`. 旧根路径预设动作不恢复；
+  v2 预设库在新路径初始化 `"0"` 至 `"4"`，客户端也可创建其他 slug ID。
 
 完整 2.1 契约见 [`API.md`](API.md)、[`api/openapi.yaml`](api/openapi.yaml) 与
 [`MIGRATION.md`](MIGRATION.md)。A snapshot of older prose remains under

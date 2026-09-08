@@ -51,7 +51,16 @@ request() {
 ready
 params='{"arfcns":"1","c0":"55","band":"900","mcc":"001","mnc":"01","lac":"1","ci":"1","short_name":"LAB","network":"eth0"}'
 request GET /api/v1/presets 200
-printf '%s' "$response" | grep -q '"items":\[\]'
+[ "$(printf '%s' "$response" | grep -o '"id":' | wc -l | tr -d '[:space:]')" = 5 ]
+for default_id in 0 1 2 3 4; do
+  request GET "/api/v1/presets/$default_id" 200
+  for field in '"arfcns":"1"' '"lac":"1"' '"ci":"1"' '"network":"eth0"'; do
+    printf '%s' "$response" | grep -Fq "$field"
+  done
+done
+request GET /api/v1/presets/0 200
+printf '%s' "$response" | grep -Fq '"name":"addx"'
+printf '%s' "$response" | grep -Fq '"short_name":"addx"'
 # No description is required. / description 可省略。
 request POST /api/v1/presets 201 "{\"id\":\"lab-900\",\"name\":\"Lab\",\"params\":$params}"
 request PUT /api/v1/presets/lab-900 200 "{\"name\":\"Updated\",\"params\":$params}"
@@ -63,6 +72,7 @@ printf '%s' "$response" | grep -q '"name":"Updated"'
 # Resolve both start modes with a deliberately disabled hardware detector.
 # 验证两种启动路径，检测器固定失败，绝不访问真实射频硬件。
 request POST /api/v1/cell 503 '{"preset_id":"lab-900"}'
+request POST /api/v1/cell 503 '{"preset_id":"0"}'
 request POST /api/v1/cell 503 "$params"
 request POST /api/v1/cell 422 '{"preset_id":"lab-900","network":null}'
 request GET /api/v1/cell 200
@@ -70,4 +80,11 @@ printf '%s' "$response" | grep -q '"state":"stopped"'
 request GET /config 404
 request DELETE /api/v1/presets/lab-900 200
 request GET /api/v1/presets/lab-900 404
-echo 'PASS image preset persistence, CRUD and both start modes; no RF / 镜像预设持久化及双启动路径通过，未启动射频'
+# Deliberate fixture-only deletion survives restart; defaults are seeded once.
+# 仅删除独立测试卷中的默认项，验证重启不覆盖用户删除决定。
+request DELETE /api/v1/presets/4 200
+docker restart "$name" >/dev/null
+ready
+request GET /api/v1/presets/4 404
+request GET /api/v1/presets/0 200
+echo 'PASS five built-in defaults, persistence, CRUD and both start modes; no RF / 五套内置预设及持久化、双启动路径通过，未启动射频'

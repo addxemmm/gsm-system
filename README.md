@@ -71,11 +71,11 @@ Root paths such as `/start`, `/stop`, `/ueinfo`, `/sendsms`, and `/iptables`
 are retired and return `404`. Removed methods such as `POST /api/v1/subscribers`
 and `POST /api/v1/network` return `405`. 旧根路径已下线；已替换的方法不再兼容。
 
-Preset storage starts empty and contains no legacy operator/carrier seeds.
-Presets persist in `/data/presets.json`; `POST /cell` accepts either complete
-explicit fields, `{"preset_id":"lab-900"}`, or `{}` to reuse the last profile.
-Preset CRUD never changes a running cell and never autostarts one. 预设库初始为空，
-不恢复旧 ID 或运营商种子；预设 CRUD 不影响运行中小区，也不会自启动。
+Preset storage starts with five editable defaults (`"0"` through `"4"`) and
+persists in `/data/presets.json`. `POST /cell` accepts complete explicit fields,
+`{"preset_id":"0"}`, or `{}` to reuse the last profile. Preset CRUD never
+changes a running cell and never autostarts one. 预设库初始包含 `"0"` 至 `"4"`
+五套可编辑默认配置；预设 CRUD 不影响运行中小区，也不会自启动。
 
 Full contract / 完整契约：
 

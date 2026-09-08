@@ -193,3 +193,32 @@ Both feature and runtime-source GitHub CI runs passed. RF attach, handset SMS
 delivery and live voice testing were not performed in this management-only
 release. 两次功能/运行源码 CI 均通过；此次仅验收管理面，未执行射频入网、手机
 短信送达或实时通话测试。
+
+## Built-in defaults correction / 内置默认预设更正
+
+The operator clarified that the five configurations must ship inside the system,
+not require manual creation. This decision supersedes the earlier empty-initial-
+list/no-defaults behavior recorded above. 用户明确要求系统内置下列五套配置，
+无需逐条手动添加；此要求取代上文记录的“初始为空、不内置预设”行为。
+
+| ID (string / 字符串) | Name and short_name / 名称 | Band / 频段 | C0 | MCC/MNC | LAC/CI |
+|---|---|---|---|---|---|
+| `0` | addx | 1800 | 540 | 001/01 | 1/1 |
+| `1` | ChinaMobile | 900 | 55 | 460/00 | 1/1 |
+| `2` | ChinaMobile | 1800 | 540 | 460/00 | 1/1 |
+| `3` | ChinaUnicom | 900 | 70 | 460/01 | 1/1 |
+| `4` | ChinaUnicom | 1800 | 668 | 460/01 | 1/1 |
+
+All use `arfcns="1"` and `network="eth0"`. New stores initialize these defaults.
+Existing version-1 stores merge only missing default IDs and migrate atomically
+to version 2 without replacing user-owned collisions. Version-2 files remain
+authoritative: subsequent edits/deletions survive restarts. Corrupt or oversized
+migrations fail without replacing the source. 全部使用单载波及 `eth0`；旧存储
+一次性补齐缺失默认项，保留用户同 ID 配置；后续修改和删除不会在重启时被撤销。
+损坏或超限迁移不会覆盖原文件。
+
+The versioned preset API, explicit starts and last-profile reuse remain; legacy
+root routes are still retired. Initialization never starts RF or rewrites the
+active radio/subscriber databases or last-start profile. 保留新预设 API、显式启动
+与上次存档复用，不恢复旧根路径接口；初始化不启动射频、不改现有小区及签约数据库
+或上次启动存档。

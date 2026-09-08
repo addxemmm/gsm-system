@@ -11,7 +11,7 @@ Go，不维护账号数据库或任务队列；OpenBTS/Asterisk 继续使用各�
 | State / 状态 | Location / 位置 | Persistence / 持久性 |
 |---|---|---|
 | last cell profile / 上次小区参数 | `/data/last_start.json` | persistent, mode `0600` |
-| user presets / 用户预设 | `/data/presets.json` | persistent, initially empty, mode `0600` / 持久、初始为空 |
+| user/default presets / 用户/默认预设 | `/data/presets.json` | persistent v2, five defaults on first initialization, mode `0600` / 持久 v2，首次初始化五套默认项 |
 | OpenBTS databases | `/data/state/OpenBTS/` | persistent external volume |
 | Asterisk registry | `/data/state/asterisk/sqlite3.db` | persistent external volume |
 | current TMSI table / 当前连接表 | `/var/run/TMSITable.db` | volatile / 易失 |
@@ -50,10 +50,10 @@ allowed 64 KiB..64 MiB). YAML 配置严格拒绝未知项和多个文档；迁�
 - GSM 900: `c0=0..124` or `975..1023`; DCS 1800: `512..885`.
 - `lac=1..65279` is the software-compatible range; `ci=0..65535`.
 - First start may submit all required parameters or reference a user-created
-  preset with `{"preset_id":"lab-900"}`. Empty `{}` may reuse a valid saved
-  profile. A new volume has no preset seeds. `preset_id` and explicit fields
-  are mutually exclusive. / 首次启动可显式提交完整参数，或引用用户已创建预设；
-  新数据卷无种子预设，`preset_id` 与显式字段互斥。
+  or default preset with `{"preset_id":"0"}`. Empty `{}` may reuse a valid
+  saved profile. A new volume initializes IDs `"0"`..`"4"`. `preset_id` and
+  explicit fields are mutually exclusive. / 首次启动可显式提交完整参数，或引用
+  `"0"` 至 `"4"` 默认预设；`preset_id` 与显式字段互斥。
 - `DELETE /api/v1/cell` is idempotent. Shutdown sends TERM before KILL so
   Asterisk can flush CDR data.
 - `ready` means the five managed services are alive; it does **not** prove RF,
@@ -73,6 +73,23 @@ or restarts the current cell, and deleting a used preset leaves the running
 cell and last profile intact. 创建时 `id`、`name` 和完整 `params` 必填，
 `description` 可选且省略时存为空串；更新不改变路径 ID。预设 CRUD 仅修改
 预设文件，没有自动启动或运行态副作用。
+
+Default preset matrix / 默认预设矩阵（全部还包含
+`arfcns/lac/ci="1"`, `network="eth0"`）：
+
+| ID | name / short_name | band | c0 | mcc | mnc |
+|---|---|---:|---:|---:|---:|
+| `"0"` | `addx` | `1800` | `540` | `001` | `01` |
+| `"1"` | `ChinaMobile` | `900` | `55` | `460` | `00` |
+| `"2"` | `ChinaMobile` | `1800` | `540` | `460` | `00` |
+| `"3"` | `ChinaUnicom` | `900` | `70` | `460` | `01` |
+| `"4"` | `ChinaUnicom` | `1800` | `668` | `460` | `01` |
+
+The one-time v1→v2 migration fills only missing default IDs; it never
+overwrites existing user records with those IDs. Once v2 is written, editing or
+deleting any default is authoritative and does not regenerate it. Corrupt or
+unsupported stores fail closed. / v1→v2 仅在一次性升级中补齐缺失默认 ID，
+不覆盖同 ID 用户数据；v2 后修改/删除不重生，损坏或不支持版本会封闭失败。
 
 ## 4. Connections, subscribers, and numbers / 连接、签约与号码
 

@@ -1,10 +1,12 @@
 package gsm
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -30,7 +32,7 @@ func TestPresetStoreCRUDPersistenceAndMode(t *testing.T) {
 		t.Fatalf("duplicate error=%v", err)
 	}
 	items, err := store.List()
-	if err != nil || len(items) != 2 || items[0].ID != "a-first" || items[1].ID != "z-last" {
+	if err != nil || len(items) != 7 || items[5].ID != "a-first" || items[6].ID != "z-last" {
 		t.Fatalf("list=%+v err=%v", items, err)
 	}
 	updated := testPreset("ignored")
@@ -64,6 +66,148 @@ func TestPresetStoreCRUDPersistenceAndMode(t *testing.T) {
 	}
 }
 
+func TestDefaultPresetsExactAndFreshStoreIsVersion2(t *testing.T) {
+	expectedIdentity := []struct{ id, name, band, c0, mcc, mnc string }{
+		{"0", "addx", "1800", "540", "001", "01"},
+		{"1", "ChinaMobile", "900", "55", "460", "00"},
+		{"2", "ChinaMobile", "1800", "540", "460", "00"},
+		{"3", "ChinaUnicom", "900", "70", "460", "01"},
+		{"4", "ChinaUnicom", "1800", "668", "460", "01"},
+	}
+	expected := make([]Preset, 0, len(expectedIdentity))
+	for _, want := range expectedIdentity {
+		expected = append(expected, Preset{
+			ID: want.id, Name: want.name,
+			Params: StartParams{
+				ARFCNs: "1", C0: want.c0, Band: want.band, MCC: want.mcc, MNC: want.mnc,
+				LAC: "1", CI: "1", ShortName: want.name, Network: "eth0",
+			},
+		})
+	}
+	gotDefaults := DefaultPresets()
+	if !reflect.DeepEqual(gotDefaults, expected) {
+		t.Fatalf("defaults mismatch\n got=%+v\nwant=%+v", gotDefaults, expected)
+	}
+	dir := t.TempDir()
+	store := NewPresetStore(dir)
+	items, err := store.List()
+	if err != nil || !reflect.DeepEqual(items, expected) {
+		t.Fatalf("fresh items=%+v err=%v", items, err)
+	}
+	disk := readPresetFile(t, filepath.Join(dir, "presets.json"))
+	if disk.Version != 2 || !reflect.DeepEqual(disk.Items, expected) {
+		t.Fatalf("fresh disk=%+v", disk)
+	}
+}
+
+func TestPresetStoreMigratesVersion1AndPreservesConflictingUserID(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "presets.json")
+		writePresetFile(t, path, presetFile{Version: 1, Items: []Preset{}})
+		store := NewPresetStore(dir)
+		items, err := store.List()
+		if err != nil || !reflect.DeepEqual(items, DefaultPresets()) {
+			t.Fatalf("items=%+v err=%v", items, err)
+		}
+		if got := readPresetFile(t, path).Version; got != 2 {
+			t.Fatalf("version=%d", got)
+		}
+	})
+
+	t.Run("custom and conflict", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "presets.json")
+		userZero := testPreset("0")
+		userZero.Name, userZero.Params.ShortName = "User Zero", "UserZero"
+		custom := testPreset("custom")
+		writePresetFile(t, path, presetFile{Version: 1, Items: []Preset{custom, userZero}})
+		store := NewPresetStore(dir)
+		got, err := store.Get("0")
+		if err != nil || got.Name != "User Zero" || got.Params.ShortName != "UserZero" {
+			t.Fatalf("conflicting ID overwritten: %+v err=%v", got, err)
+		}
+		items, err := store.List()
+		if err != nil || len(items) != 6 {
+			t.Fatalf("migration items=%d err=%v", len(items), err)
+		}
+		// Reopening version 2 must neither duplicate nor restore anything.
+		again := NewPresetStore(dir)
+		againItems, err := again.List()
+		if err != nil || !reflect.DeepEqual(againItems, items) {
+			t.Fatalf("second restart changed items: %+v err=%v", againItems, err)
+		}
+	})
+}
+
+func TestPresetStoreVersion2DeletionDoesNotRespawnDefault(t *testing.T) {
+	dir := t.TempDir()
+	store := NewPresetStore(dir)
+	edited, err := store.Get("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited.Name, edited.Params.ShortName = "Edited Mobile", "EditedMobile"
+	if err := store.Update("1", edited); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete("2"); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := NewPresetStore(dir)
+	if _, err := reloaded.Get("2"); !errors.Is(err, ErrPresetNotFound) {
+		t.Fatalf("deleted default respawned: %v", err)
+	}
+	gotEdited, err := reloaded.Get("1")
+	if err != nil || gotEdited.Name != "Edited Mobile" || gotEdited.Params.ShortName != "EditedMobile" {
+		t.Fatalf("edited default reset: %+v err=%v", gotEdited, err)
+	}
+	items, err := reloaded.List()
+	if err != nil || len(items) != 4 {
+		t.Fatalf("items=%d err=%v", len(items), err)
+	}
+}
+
+func TestPresetStoreVersion1MigrationCapacityFailurePreservesSource(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "presets.json")
+	items := make([]Preset, 0, maxPresets)
+	for i := 0; i < maxPresets; i++ {
+		items = append(items, testPreset(fmt.Sprintf("u%03d", i)))
+	}
+	writePresetFile(t, path, presetFile{Version: 1, Items: items})
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewPresetStore(dir)
+	if _, err := store.List(); !errors.Is(err, ErrPresetStore) {
+		t.Fatalf("capacity error=%v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != string(original) {
+		t.Fatalf("capacity failure overwrote source: err=%v", err)
+	}
+}
+
+func TestPresetStoreVersion1MigrationAtExactCapacity(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "presets.json")
+	items := make([]Preset, 0, maxPresets-len(DefaultPresets()))
+	for i := 0; i < cap(items); i++ {
+		items = append(items, testPreset(fmt.Sprintf("u%03d", i)))
+	}
+	writePresetFile(t, path, presetFile{Version: 1, Items: items})
+	store := NewPresetStore(dir)
+	got, err := store.List()
+	if err != nil || len(got) != maxPresets {
+		t.Fatalf("exact-capacity migration items=%d err=%v", len(got), err)
+	}
+	if version := readPresetFile(t, path).Version; version != 2 {
+		t.Fatalf("version=%d", version)
+	}
+}
+
 func TestPresetStoreCorruptionFailsClosedWithoutOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "presets.json")
@@ -84,6 +228,37 @@ func TestPresetStoreCorruptionFailsClosedWithoutOverwrite(t *testing.T) {
 	}
 	if string(after) != string(original) {
 		t.Fatalf("corrupt file overwritten: %q", after)
+	}
+}
+
+func TestPresetStoreRejectsAmbiguousOrMissingItemsWithoutOverwrite(t *testing.T) {
+	valid, err := json.Marshal(testPreset("user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string][]byte{
+		"duplicate items":      []byte(`{"version":1,"items":[` + string(valid) + `],"items":[]}`),
+		"case duplicate items": []byte(`{"version":1,"items":[` + string(valid) + `],"Items":[]}`),
+		"missing items":        []byte(`{"version":1}`),
+		"null items":           []byte(`{"version":1,"items":null}`),
+		"nested duplicate":     []byte(`{"version":1,"items":[{"id":"user","id":"lost","name":"x","description":"","params":{}}]}`),
+	}
+	for name, original := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "presets.json")
+			if err := os.WriteFile(path, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			store := NewPresetStore(dir)
+			if _, err := store.List(); !errors.Is(err, ErrPresetStore) {
+				t.Fatalf("load error=%v", err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(after) != string(original) {
+				t.Fatalf("corrupt source changed: err=%v", err)
+			}
+		})
 	}
 }
 
@@ -178,12 +353,36 @@ func TestPresetStoreConcurrentOperationsRemainConsistent(t *testing.T) {
 
 	reloaded := NewPresetStore(dir)
 	items, err := reloaded.List()
-	if err != nil || len(items) != count/2 {
+	if err != nil || len(items) != count/2+len(DefaultPresets()) {
 		t.Fatalf("reload count=%d err=%v", len(items), err)
 	}
 	for _, preset := range items {
-		if preset.Name != "updated "+preset.ID {
+		if len(preset.ID) > 1 && preset.ID[:2] == "p-" && preset.Name != "updated "+preset.ID {
 			t.Fatalf("partial or stale item: %+v", preset)
 		}
 	}
+}
+
+func writePresetFile(t *testing.T, path string, disk presetFile) {
+	t.Helper()
+	b, err := json.MarshalIndent(disk, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readPresetFile(t *testing.T, path string) presetFile {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var disk presetFile
+	if err := json.Unmarshal(b, &disk); err != nil {
+		t.Fatal(err)
+	}
+	return disk
 }

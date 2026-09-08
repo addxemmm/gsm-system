@@ -114,7 +114,7 @@ managed processes are alive, not RF/handset acceptance. `started_at` is optional
 Exactly one of the following forms is accepted / 仅接受以下三种形式之一：
 
 1. the complete explicit object above / 上述完整显式参数；
-2. `{"preset_id":"lab-900"}` to resolve a stored preset / 按 ID 使用存储预设；
+2. `{"preset_id":"0"}` to resolve a stored preset / 按 ID 使用存储预设；
 3. `{}` to reuse the existing valid last profile / 复用已有有效的上次存档。
 
 `preset_id` is mutually exclusive with every explicit cell field. A missing
@@ -149,11 +149,24 @@ already stopped. TERM precedes KILL to allow CDR flush. 若已停止仍返回成
 
 ## 3. Presets / 预设
 
-Presets are operator-created, non-secret named cell profiles. The collection is
-empty on a new data volume: there are no built-in, legacy, carrier, or operator
-seeds. They persist at `/data/presets.json` using the same private, atomic-file
-discipline as the last profile. 预设由操作员显式创建；新数据卷初始为空，
-不包含内置、历史、运营商或操作员种子。数据持久化于 `/data/presets.json`。
+Presets are non-secret named cell profiles. A new data volume is initialized
+with the five editable defaults below. They persist at `/data/presets.json`
+using the same private, atomic-file discipline as the last profile. 预设是不含
+密钥的命名小区参数；新数据卷初始化五套可编辑默认预设，并持久化于
+`/data/presets.json`。
+
+| ID | `name` / `short_name` | `band` | `c0` | `mcc` | `mnc` |
+|---|---|---:|---:|---:|---:|
+| `"0"` | `addx` | `1800` | `540` | `001` | `01` |
+| `"1"` | `ChinaMobile` | `900` | `55` | `460` | `00` |
+| `"2"` | `ChinaMobile` | `1800` | `540` | `460` | `00` |
+| `"3"` | `ChinaUnicom` | `900` | `70` | `460` | `01` |
+| `"4"` | `ChinaUnicom` | `1800` | `668` | `460` | `01` |
+
+Every default also has `arfcns="1"`, `lac="1"`, `ci="1"`, and
+`network="eth0"`. Operators must still verify that the selected band/channel is
+legal and suitable before explicitly starting RF. 每套默认配置均使用单载频、
+`lac/ci="1"` 及容器网卡 `eth0`；显式启动射频前仍须确认合法频段和信道。
 
 Preset IDs are stable slugs matching `^[a-z0-9][a-z0-9_-]{0,63}$`.
 预设 ID 是稳定 slug，仅允许小写字母、数字、下划线和连字符，最长 64 字符。
@@ -163,11 +176,15 @@ Preset IDs are stable slugs matching `^[a-z0-9][a-z0-9_-]{0,63}$`.
 HTTP `200`; no pagination or query parameters / 不分页，不接受查询参数：
 
 ```json
-{"items":[]}
+{"items":[{"id":"0","name":"addx","description":"","params":{"arfcns":"1","c0":"540","band":"1800","mcc":"001","mnc":"01","lac":"1","ci":"1","short_name":"addx","network":"eth0"}}]}
 ```
 
-Each item is a full preset object. A fresh installation returns an empty array.
-每项都是完整预设对象；新安装返回空数组。
+The example abbreviates the array to one item; a fresh store returns all five
+defaults. 示例仅展示一项结构，新预设库实际返回五项。
+
+Each item is a full preset object. A fresh installation returns the five
+defaults above, sorted by ID. 每项都是完整预设对象；新安装按 ID 排序返回
+上述五套默认配置。
 
 ### `POST /presets`
 
@@ -231,9 +248,14 @@ running cell or `/data/last_start.json`. There is no autostart. 预设 CRUD 不�
 上次启动存档，且不存在自动启动。
 
 The store accepts at most 256 presets. Its versioned on-disk document is capped
-at 1 MiB and kept sorted; corruption or I/O failure returns `50001` rather than
-silently resetting data. 预设最多 256 条，版本化磁盘文件上限 1 MiB 并按 ID 排序；
-文件损坏或 I/O 错误返回 `50001`，不会静默重置。
+at 1 MiB and kept sorted. The one-time v1→v2 upgrade adds only missing default
+IDs and never overwrites a user value already stored under `"0"`..`"4"`.
+After the file is v2, user edits and deletions are authoritative and defaults
+are not regenerated. Corruption, unsupported versions, or I/O failure return
+`50001` rather than silently resetting data. 预设最多 256 条，磁盘文件上限
+1 MiB 并按 ID 排序；v1 仅在一次性升级为 v2 时补齐缺失默认 ID，不覆盖
+同 ID 用户内容；v2 后用户修改或删除均不会重生。损坏、不支持版本或 I/O
+错误返回 `50001`，不会静默重置。
 
 Management-plane smoke test (CRUD plus duplicate/missing/invalid cases, no
 valid cell start and no RF) / 管理面预设冒烟测试（不启动 RF）：
@@ -245,7 +267,7 @@ $env:GSM_API_TOKEN = "TOKEN" # omit when authentication is disabled / 未开鉴�
 
 The script always removes its unique fixture in `finally`. 脚本会在 `finally` 中清理唯一测试预设。
 
-An isolated image-level persistence/start-routing check is available on the
+An isolated image-level defaults/persistence/start-routing check is available on the
 Ubuntu SDR server only: `./scripts/tests/test_presets_image.sh IMAGE`. It uses a
 temporary volume, no published port/USB/privilege, and a failing mock UHD probe,
 so both start modes stop at `503` before RF. / 镜像级测试仅在 Ubuntu SDR

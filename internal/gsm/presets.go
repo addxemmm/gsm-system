@@ -185,6 +185,14 @@ func clonePresets(items map[string]Preset) map[string]Preset {
 func (s *PresetStore) load() error {
 	f, err := os.Open(s.path)
 	if errors.Is(err, os.ErrNotExist) {
+		items := make(map[string]Preset, len(DefaultPresets()))
+		for _, preset := range DefaultPresets() {
+			items[preset.ID] = preset
+		}
+		if err := s.persist(items); err != nil {
+			return fmt.Errorf("%w: initialize defaults: %v", ErrPresetStore, err)
+		}
+		s.items = items
 		return nil
 	}
 	if err != nil {
@@ -208,6 +216,29 @@ func (s *PresetStore) load() error {
 	if len(b) > maxPresetsFileBytes {
 		return fmt.Errorf("%w: presets.json exceeds %d bytes", ErrPresetStore, maxPresetsFileBytes)
 	}
+	// Close the version-1 source before an atomic migration rename. In
+	// particular, Windows may reject replacement while this handle is open.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("%w: close after read: %v", ErrPresetStore, err)
+	}
+	if err := rejectDuplicatePresetJSONNames(b); err != nil {
+		return fmt.Errorf("%w: corrupt presets.json: %v", ErrPresetStore, err)
+	}
+	var required map[string]json.RawMessage
+	if err := json.Unmarshal(b, &required); err != nil {
+		return fmt.Errorf("%w: corrupt presets.json: %v", ErrPresetStore, err)
+	}
+	var itemsJSON json.RawMessage
+	var hasItems bool
+	for name, value := range required {
+		if strings.EqualFold(name, "items") {
+			itemsJSON, hasItems = value, true
+			break
+		}
+	}
+	if !hasItems || bytes.Equal(bytes.TrimSpace(itemsJSON), []byte("null")) {
+		return fmt.Errorf("%w: corrupt presets.json: items array is required", ErrPresetStore)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(b))
 	decoder.DisallowUnknownFields()
 	var disk presetFile
@@ -218,19 +249,86 @@ func (s *PresetStore) load() error {
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return fmt.Errorf("%w: corrupt presets.json: trailing data", ErrPresetStore)
 	}
-	if disk.Version != 1 || len(disk.Items) > maxPresets {
+	if (disk.Version != 1 && disk.Version != 2) || len(disk.Items) > maxPresets {
 		return fmt.Errorf("%w: unsupported version or item count", ErrPresetStore)
 	}
+	loaded := make(map[string]Preset, len(disk.Items))
 	for _, preset := range disk.Items {
 		if err := ValidatePreset(preset); err != nil {
 			return fmt.Errorf("%w: corrupt presets.json: %v", ErrPresetStore, err)
 		}
-		if _, duplicate := s.items[preset.ID]; duplicate {
+		if _, duplicate := loaded[preset.ID]; duplicate {
 			return fmt.Errorf("%w: corrupt presets.json: duplicate id %q", ErrPresetStore, preset.ID)
 		}
-		s.items[preset.ID] = preset
+		loaded[preset.ID] = preset
 	}
+	if disk.Version == 1 {
+		next := clonePresets(loaded)
+		for _, preset := range DefaultPresets() {
+			if _, exists := next[preset.ID]; !exists {
+				next[preset.ID] = preset
+			}
+		}
+		if len(next) > maxPresets {
+			return fmt.Errorf("%w: version-1 migration needs %d items, maximum is %d", ErrPresetStore, len(next), maxPresets)
+		}
+		if err := s.persist(next); err != nil {
+			return fmt.Errorf("%w: migrate version 1: %v", ErrPresetStore, err)
+		}
+		loaded = next
+	}
+	s.items = loaded
 	return nil
+}
+
+func rejectDuplicatePresetJSONNames(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	var walk func() error
+	walk = func() error {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, isDelim := token.(json.Delim)
+		if !isDelim {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := make(map[string]struct{})
+			for decoder.More() {
+				nameToken, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				name, ok := nameToken.(string)
+				if !ok {
+					return errors.New("JSON object name is not a string")
+				}
+				canonicalName := strings.ToLower(name)
+				if _, duplicate := seen[canonicalName]; duplicate {
+					return fmt.Errorf("duplicate JSON name %q", name)
+				}
+				seen[canonicalName] = struct{}{}
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = decoder.Token()
+			return err
+		case '[':
+			for decoder.More() {
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = decoder.Token()
+			return err
+		default:
+			return errors.New("unexpected JSON delimiter")
+		}
+	}
+	return walk()
 }
 
 func (s *PresetStore) persist(items map[string]Preset) error {
@@ -239,7 +337,7 @@ func (s *PresetStore) persist(items map[string]Preset) error {
 		ordered = append(ordered, preset)
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
-	b, err := json.MarshalIndent(presetFile{Version: 1, Items: ordered}, "", "  ")
+	b, err := json.MarshalIndent(presetFile{Version: 2, Items: ordered}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("%w: encode: %v", ErrPresetStore, err)
 	}

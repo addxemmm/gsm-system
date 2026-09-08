@@ -64,19 +64,29 @@ curl -fsS -X POST "$BASE/cell" ${AUTH:+-H "$AUTH"} \
 - `arfcns` is exactly `"1"`.
 - GSM 900 `c0`: `0..124` or `975..1023`; DCS 1800: `512..885`.
 - `lac`: `1..65279`; `ci`: `0..65535`.
-- Or create a user preset while stopped, then start it explicitly:
+- Or inspect the five defaults and explicitly start default `"0"` (`addx`)
+  after validating its band/channel for the lab:
+
+```bash
+curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/presets"; echo
+curl -fsS -X POST "$BASE/cell" ${AUTH:+-H "$AUTH"} \
+  -H 'Content-Type: application/json' -d '{"preset_id":"0"}'
+```
+
+  IDs `"0"`..`"4"` are respectively `addx`, two `ChinaMobile`, and two
+  `ChinaUnicom` presets (distinguished by ID/band); all use
+  `arfcns/lac/ci="1"` and container `network="eth0"`. See [API.md](API.md) for
+  the exact band/C0/MCC/MNC matrix. / 默认 ID `"0"` 至 `"4"` 对应五套系统
+  预置，确认频段/信道合法后才显式启动。
+- To add an independent user fixture without modifying or deleting a default:
 
 ```bash
 curl -fsS -X POST "$BASE/presets" ${AUTH:+-H "$AUTH"} \
   -H 'Content-Type: application/json' \
   -d '{"id":"lab-900","name":"Lab 900","description":"Indoor fixture","params":{"arfcns":"1","c0":"55","band":"900","mcc":"001","mnc":"01","lac":"1","ci":"1","short_name":"LAB","network":"eth0"}}'
-curl -fsS -X POST "$BASE/cell" ${AUTH:+-H "$AUTH"} \
-  -H 'Content-Type: application/json' -d '{"preset_id":"lab-900"}'
 ```
 
-  Preset CRUD alone never starts/reconfigures the cell; only the second command
-  above starts it. A new data volume has no built-in/operator presets. / 预设 CRUD
-  本身不启动小区，仅第二条命令启动；新数据卷无内置预设。
+  Preset CRUD alone never starts/reconfigures the cell. 预设 CRUD 本身不启动或重配小区。
 - A later `POST /cell` with `{}` reuses the saved last profile.
   后续 `{}` 仅复用已有有效的上次存档。
 
@@ -187,7 +197,8 @@ RF hardware or host exposure:
 
 The script uses an isolated temporary volume, publishes no port, grants no USB
 or privileged access, and mocks the UHD detector with `/bin/false`. It covers
-optional-description CRUD, restart persistence, and both preset/explicit start
-paths ending at expected `503 no hardware`, then cleans up. 此 Docker 脚本仅在
+the five exact defaults, optional-description CRUD, restart persistence,
+non-respawn after deletion in v2, and both preset/explicit start paths ending
+at expected `503 no hardware`, then cleans up. 此 Docker 脚本仅在
 Ubuntu SDR 服务器执行；使用独立临时卷、不映射端口、不授予 USB/特权，
 两种启动路径都在无硬件阶段停止，不发射。

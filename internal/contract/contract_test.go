@@ -39,7 +39,9 @@ var routes = map[string][]string{
 
 func TestRouterExposesOnlyRelease21Routes(t *testing.T) {
 	t.Setenv("GSM_API_TOKEN", "")
-	h := api.New(config.Default(), gsm.New(config.Default())).Handler()
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	h := api.New(cfg, gsm.New(cfg)).Handler()
 	for path, methods := range routes {
 		probe := strings.ReplaceAll(path, "{imsi}", "001010000000000")
 		probe = strings.ReplaceAll(probe, "{id}", "lab-900")
@@ -82,6 +84,10 @@ func TestOpenAPIAndPostmanMatchRouter(t *testing.T) {
 	}
 	assertMutationGuards(t, collection.Item)
 	assertCellStartsRequireExplicitRFAck(t, collection.Item)
+	assertPostmanDoesNotMutateDefaults(t, collection.Item)
+	if got := collectionVariable(collection, "verify_factory_defaults"); got != "false" {
+		t.Errorf("Postman collection verify_factory_defaults=%q, want false", got)
+	}
 }
 
 func TestPostmanExampleIsReadOnlyAndPlaceholderOnly(t *testing.T) {
@@ -102,12 +108,43 @@ func TestPostmanExampleIsReadOnlyAndPlaceholderOnly(t *testing.T) {
 	if values["enable_mutations"] != "false" {
 		t.Fatalf("example environment must default to read-only, got %q", values["enable_mutations"])
 	}
+	if values["verify_factory_defaults"] != "false" {
+		t.Fatalf("example environment must not assume an unmodified preset store, got verify_factory_defaults=%q", values["verify_factory_defaults"])
+	}
 	for key, want := range map[string]string{
-		"imsi": "001010000000000", "number": "10000", "iface": "eth0", "preset_id": "lab-900", "token": "",
+		"imsi": "001010000000000", "number": "10000", "iface": "eth0", "preset_id": "lab-900", "default_preset_id": "0", "token": "",
 	} {
 		if values[key] != want {
 			t.Errorf("example %s=%q, want placeholder %q", key, values[key], want)
 		}
+	}
+}
+
+func TestFreshPresetListExposesFiveDefaults(t *testing.T) {
+	t.Setenv("GSM_API_TOKEN", "")
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	h := api.New(cfg, gsm.New(cfg)).Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/presets", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET presets status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Code int `json:"code"`
+		Data struct {
+			Items []gsm.Preset `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != 0 {
+		t.Fatalf("code=%d, want 0", envelope.Code)
+	}
+	if want := gsm.DefaultPresets(); !reflect.DeepEqual(envelope.Data.Items, want) {
+		t.Fatalf("fresh defaults drift\n got: %#v\nwant: %#v", envelope.Data.Items, want)
 	}
 }
 
@@ -134,7 +171,11 @@ func TestPresetContractArtifacts(t *testing.T) {
 		`"method": "POST"`,
 		`{{baseUrl}}/api/v1/presets`,
 		`{{baseUrl}}/api/v1/presets/{{preset_id}}`,
-		`\"preset_id\": \"{{preset_id}}\"`,
+		`\"preset_id\": \"{{default_preset_id}}\"`,
+		`"default_preset_id"`,
+		`"verify_factory_defaults"`,
+		`preset list structure`,
+		`=== 'true'`,
 		`enable_rf_start`,
 	} {
 		if !strings.Contains(collection, marker) {
@@ -168,7 +209,20 @@ func readOpenAPIRoutes(t *testing.T) map[string][]string {
 }
 
 type postmanCollection struct {
-	Item []postmanItem `json:"item"`
+	Item     []postmanItem `json:"item"`
+	Variable []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	} `json:"variable"`
+}
+
+func collectionVariable(collection postmanCollection, key string) string {
+	for _, variable := range collection.Variable {
+		if variable.Key == key {
+			return variable.Value
+		}
+	}
+	return ""
 }
 
 type postmanItem struct {
@@ -188,6 +242,9 @@ type postmanEvent struct {
 type postmanRequest struct {
 	Method string          `json:"method"`
 	URL    json.RawMessage `json:"url"`
+	Body   *struct {
+		Raw string `json:"raw"`
+	} `json:"body"`
 }
 
 func readPostman(t *testing.T) (postmanCollection, map[string][]string) {
@@ -211,6 +268,7 @@ func readPostman(t *testing.T) (postmanCollection, map[string][]string) {
 			path := strings.TrimPrefix(strings.SplitN(raw, "?", 2)[0], "{{baseUrl}}")
 			path = strings.ReplaceAll(path, "{{imsi}}", "{imsi}")
 			path = strings.ReplaceAll(path, "{{preset_id}}", "{id}")
+			path = strings.ReplaceAll(path, "{{default_preset_id}}", "{id}")
 			out[path] = append(out[path], strings.ToUpper(item.Request.Method))
 		}
 	}
@@ -260,6 +318,26 @@ func assertCellStartsRequireExplicitRFAck(t *testing.T, items []postmanItem) {
 		}
 		if !strings.Contains(strings.Join(pre, "\n"), "enable_rf_start") {
 			t.Errorf("Postman cell start %q requires an explicit enable_rf_start guard", item.Name)
+		}
+	}
+}
+
+func assertPostmanDoesNotMutateDefaults(t *testing.T, items []postmanItem) {
+	t.Helper()
+	for _, item := range items {
+		assertPostmanDoesNotMutateDefaults(t, item.Item)
+		if item.Request == nil {
+			continue
+		}
+		var rawURL string
+		_ = json.Unmarshal(item.Request.URL, &rawURL)
+		usesDefaultInBody := item.Request.Body != nil && strings.Contains(item.Request.Body.Raw, "{{default_preset_id}}")
+		usesDefaultInURL := strings.Contains(rawURL, "{{default_preset_id}}")
+		if usesDefaultInURL && !strings.EqualFold(item.Request.Method, http.MethodGet) {
+			t.Errorf("Postman request %q must not mutate a default preset resource", item.Name)
+		}
+		if usesDefaultInBody && (!strings.EqualFold(item.Request.Method, http.MethodPost) || rawURL != "{{baseUrl}}/api/v1/cell") {
+			t.Errorf("Postman request %q must use the default preset only as a cell-start selector", item.Name)
 		}
 	}
 }

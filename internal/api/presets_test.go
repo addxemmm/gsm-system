@@ -33,7 +33,7 @@ func TestPresetAPICompleteCRUDAndPersistence(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Data.Items) != 1 || list.Data.Items[0].ID != "lab-900" {
+	if len(list.Data.Items) != len(gsm.DefaultPresets())+1 || list.Data.Items[len(list.Data.Items)-1].ID != "lab-900" {
 		t.Fatalf("list=%+v", list.Data.Items)
 	}
 
@@ -128,6 +128,9 @@ func TestCellStartPresetSelectionAndPresenceBasedExclusivity(t *testing.T) {
 	cfg, server := testServer(t)
 	cfg.UHDFindBin = filepath.Join(t.TempDir(), "no-rf-probe")
 	server = New(cfg, gsm.New(cfg))
+	// Built-in ID 0 is immediately selectable; the absent detector proves the
+	// regular Start path is reached without requiring or starting RF hardware.
+	assertCode(t, serve(t, server, http.MethodPost, "/api/v1/cell", "application/json", `{"preset_id":"0"}`), http.StatusServiceUnavailable, CodeNoHardware)
 	assertCode(t, serve(t, server, http.MethodPost, "/api/v1/presets", "application/json", validPresetJSON), http.StatusCreated, CodeOK)
 
 	for _, body := range []string{

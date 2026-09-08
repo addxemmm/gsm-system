@@ -6,6 +6,7 @@ info:
   description: |
     Bilingual-contract companion for the Go management plane / Go 管理面机器契约。
     All public routes are under /api/v1. Root legacy routes are retired.
+    A new preset store contains editable defaults with IDs "0" through "4".
     A successful SMS response means submitted, never delivered.
 servers:
   - url: http://HOST:8082
@@ -64,7 +65,11 @@ paths:
     get:
       tags: [presets]
       operationId: listPresets
-      summary: List every user-created preset; initially empty / 列出用户创建的预设，初始为空
+      summary: List presets; a new store has defaults "0" through "4" / 列出预设，新库初始有五套默认项
+      description: |
+        Defaults are editable: 0 addx/1800/C0 540; 1 ChinaMobile/900/C0 55;
+        2 ChinaMobile/1800/C0 540; 3 ChinaUnicom/900/C0 70; and
+        4 ChinaUnicom/1800/C0 668. All use arfcns/lac/ci "1" and network eth0.
       responses:
         '200': { $ref: '#/components/responses/PresetListOK' }
         '401': { $ref: '#/components/responses/Error' }
@@ -361,7 +366,7 @@ components:
       in: path
       required: true
       description: Stable lowercase preset slug / 稳定的小写预设 slug
-      schema: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: lab-900 }
+      schema: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: '0' }
     IMSI:
       name: imsi
       in: path
@@ -425,7 +430,7 @@ components:
       required: [preset_id]
       additionalProperties: false
       properties:
-        preset_id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: lab-900 }
+        preset_id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: '0' }
     EmptyCellStart:
       type: object
       maxProperties: 0
@@ -611,7 +616,7 @@ components:
         short_name: { type: string }
   responses:
     PresetListOK:
-      description: Complete preset collection; empty on a new data volume / 完整预设列表，新数据卷为空
+      description: Complete sorted collection; a new store has five defaults / 完整有序预设列表，新库初始有五项
       headers:
         X-Request-ID: { schema: { type: string } }
       content:
@@ -622,7 +627,17 @@ components:
               - type: object
                 properties:
                   data: { $ref: '#/components/schemas/PresetList' }
-          example: { code: 0, message: ok, data: { items: [] }, request_id: REQUEST_ID }
+          example:
+            code: 0
+            message: ok
+            data:
+              items:
+                - { id: '0', name: addx, description: '', params: { arfcns: '1', c0: '540', band: '1800', mcc: '001', mnc: '01', lac: '1', ci: '1', short_name: addx, network: eth0 } }
+                - { id: '1', name: ChinaMobile, description: '', params: { arfcns: '1', c0: '55', band: '900', mcc: '460', mnc: '00', lac: '1', ci: '1', short_name: ChinaMobile, network: eth0 } }
+                - { id: '2', name: ChinaMobile, description: '', params: { arfcns: '1', c0: '540', band: '1800', mcc: '460', mnc: '00', lac: '1', ci: '1', short_name: ChinaMobile, network: eth0 } }
+                - { id: '3', name: ChinaUnicom, description: '', params: { arfcns: '1', c0: '70', band: '900', mcc: '460', mnc: '01', lac: '1', ci: '1', short_name: ChinaUnicom, network: eth0 } }
+                - { id: '4', name: ChinaUnicom, description: '', params: { arfcns: '1', c0: '668', band: '1800', mcc: '460', mnc: '01', lac: '1', ci: '1', short_name: ChinaUnicom, network: eth0 } }
+            request_id: REQUEST_ID
     PresetOK:
       description: Preset object / 预设对象
       headers:

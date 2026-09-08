@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "gsm-system-2-1-contract",
     "name": "gsm-system 2.1 / 2.1 API",
-    "description": "The /api/v1-only contract. Read requests run by default. Preset CRUD persists data but never starts a cell. Every mutation is guarded by enable_mutations; cell starts additionally require enable_rf_start=true and have no automatic RF tests. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts. network names the container interface (default bridge: eth0), not a host NIC.\n\n仅包含 /api/v1。默认执行只读请求；预设 CRUD 不启动小区。所有写操作需 enable_mutations；启动小区还需 enable_rf_start=true，且不自动执行 RF 测试。network 是容器内网卡（默认 eth0）。",
+    "description": "The /api/v1-only contract. A new preset store contains editable defaults \"0\" through \"4\". Read requests run by default. Preset CRUD persists data but never starts a cell. The CRUD fixture uses the separate lab-900 ID and never edits/deletes a default. Every mutation is guarded by enable_mutations; cell starts additionally require enable_rf_start=true and have no automatic RF tests. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts. network names the container interface (default bridge: eth0), not a host NIC.\n\n仅包含 /api/v1。新预设库包含 ID \"0\" 至 \"4\" 的五套可编辑默认配置；CRUD 夹具使用独立 lab-900，不会修改或删除默认项。所有写操作需 enable_mutations；启动小区还需 enable_rf_start=true，且不自动执行 RF 测试。\nExact factory-value assertions are opt-in with verify_factory_defaults=true; normal reads validate only resource structure and the selected default_preset_id. / 精确工厂值断言仅在 verify_factory_defaults=true 时执行；常规读取只校验结构和所选 ID。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -78,6 +78,16 @@
     },
     {
       "key": "enable_rf_start",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "default_preset_id",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "verify_factory_defaults",
       "value": "false",
       "type": "string"
     }
@@ -321,7 +331,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/presets",
-            "description": "A new data volume has no built-in/operator presets. / 新数据卷没有内置或运营商预设。"
+            "description": "Returns the sorted current collection. Normal tests validate structure only; set verify_factory_defaults=true only against a fresh/unmodified store. / 返回当前有序列表；常规仅校验结构，仅对全新未修改预设库开启精确工厂断言。"
           },
           "event": [
             {
@@ -329,7 +339,32 @@
               "script": {
                 "exec": [
                   "pm.test('HTTP 200 preset collection', () => pm.response.to.have.status(200));",
-                  "pm.test('fresh fixture is empty', () => pm.expect(pm.response.json().data.items).to.eql([]));"
+                  "pm.test('preset list structure', function () { const items=pm.response.json().data.items; pm.expect(items).to.be.an('array'); items.forEach(function (p) { pm.expect(p).to.have.all.keys('id','name','description','params'); pm.expect(p.id).to.be.a('string'); pm.expect(p.params).to.have.all.keys('arfcns','c0','band','mcc','mnc','lac','ci','short_name','network'); }); });",
+                  "if (String(pm.environment.get('verify_factory_defaults') || pm.collectionVariables.get('verify_factory_defaults')).toLowerCase() === 'true') {",
+                  "  pm.test('fresh store has exact factory defaults', function () { const expected=[{\"id\":\"0\",\"name\":\"addx\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"540\",\"band\":\"1800\",\"mcc\":\"001\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"addx\",\"network\":\"eth0\"}},{\"id\":\"1\",\"name\":\"ChinaMobile\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"55\",\"band\":\"900\",\"mcc\":\"460\",\"mnc\":\"00\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaMobile\",\"network\":\"eth0\"}},{\"id\":\"2\",\"name\":\"ChinaMobile\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"540\",\"band\":\"1800\",\"mcc\":\"460\",\"mnc\":\"00\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaMobile\",\"network\":\"eth0\"}},{\"id\":\"3\",\"name\":\"ChinaUnicom\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"70\",\"band\":\"900\",\"mcc\":\"460\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaUnicom\",\"network\":\"eth0\"}},{\"id\":\"4\",\"name\":\"ChinaUnicom\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"668\",\"band\":\"1800\",\"mcc\":\"460\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"ChinaUnicom\",\"network\":\"eth0\"}}]; pm.expect(pm.response.json().data.items).to.eql(expected); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/presets/{default_preset_id}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/presets/{{default_preset_id}}",
+            "description": "Reads the preset selected by default_preset_id without modifying it. Exact ID 0 factory fields are checked only when verify_factory_defaults=true. / 按变量只读预设；精确 ID0 工厂值仅在显式开关开启时校验。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 selected default preset', () => pm.response.to.have.status(200));",
+                  "pm.test('selected preset ID and structure', function () { const p=pm.response.json().data; pm.expect(p.id).to.eql(pm.variables.replaceIn('{{default_preset_id}}')); pm.expect(p).to.have.all.keys('id','name','description','params'); });",
+                  "if (String(pm.environment.get('verify_factory_defaults') || pm.collectionVariables.get('verify_factory_defaults')).toLowerCase() === 'true') {",
+                  "  pm.test('factory default 0 exact fixture', function () { pm.expect(pm.variables.replaceIn('{{default_preset_id}}')).to.eql('0'); const p=pm.response.json().data; pm.expect(p).to.eql({\"id\":\"0\",\"name\":\"addx\",\"description\":\"\",\"params\":{\"arfcns\":\"1\",\"c0\":\"540\",\"band\":\"1800\",\"mcc\":\"001\",\"mnc\":\"01\",\"lac\":\"1\",\"ci\":\"1\",\"short_name\":\"addx\",\"network\":\"eth0\"}}); });",
+                  "}"
                 ]
               }
             }
@@ -340,7 +375,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/presets/{{preset_id}}",
-            "description": "Before the guarded create fixture, the placeholder preset is absent. / 运行创建夹具前预设不存在。"
+            "description": "The independent lab-900 CRUD fixture is absent before guarded creation. Defaults are not targeted. / 独立 lab-900 夹具创建前不存在，不操作默认项。"
           },
           "event": [
             {
@@ -479,7 +514,7 @@
           }
         },
         {
-          "name": "POST /api/v1/cell from preset (manual RF side effect)",
+          "name": "POST /api/v1/cell from default preset (manual RF side effect)",
           "event": [
             {
               "listen": "prerequest",
@@ -501,7 +536,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"preset_id\": \"{{preset_id}}\"\n}",
+              "raw": "{\n  \"preset_id\": \"{{default_preset_id}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -509,7 +544,7 @@
               }
             },
             "url": "{{baseUrl}}/api/v1/cell",
-            "description": "WARNING: starts the radio/cell stack from the preset. Run manually only after setting enable_mutations=true and enable_rf_start=true. There are deliberately no automatic RF tests. / 警告：会按预设启动射频，必须手动开启双重开关；不包含自动 RF 测试。"
+            "description": "WARNING: explicitly starts RF from default preset 0. This request never edits/deletes the default. Run manually only after validating band/channel and setting enable_mutations=true plus enable_rf_start=true. There are no automatic RF tests. / 警告：按默认预设 0 显式启动射频，不修改/删除默认项；需确认频段并开启双重开关，不含自动 RF 测试。"
           }
         },
         {

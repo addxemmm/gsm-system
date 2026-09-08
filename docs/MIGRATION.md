@@ -11,7 +11,7 @@
 | SMS success looked final | HTTP `202`, `sms submitted` | track delivery outside this acknowledgement / 不将提交当送达 |
 | appended iptables rules | `GET/PUT /network`, idempotent | use PUT and reapply after host reset / 改用 PUT |
 | multiple Docker definitions/tags | one Dockerfile/Compose; versioned tags | use release script / 使用发布脚本 |
-| numeric carrier presets/default fields | user-managed `/api/v1/presets` / 用户管理预设 | remove deprecated YAML keys; explicitly create required presets / 删除弃用配置并显式创建预设 |
+| numeric carrier presets/default fields | persistent `/api/v1/presets` with defaults `"0"`..`"4"` / 持久预设及五套默认项 | remove deprecated YAML keys; verify/edit the v2 presets / 删除弃用配置并检查 v2 预设 |
 
 UHD still uses Python/Mako as an upstream **build-time** dependency. OpenBTS,
 Asterisk, and UHD are not rewritten in Go. Only the project-owned control plane
@@ -56,11 +56,11 @@ deployment, remove these retired fields from copied/custom configuration:
 
 Use `max_history_bytes` for bounded SMS/CDR log reads. Its default is `8388608`
 (8 MiB) and accepted range is `65536..67108864`. The removed `default_*` fields
-were tied to pre-2.1 preset/fallback behavior. They do not recreate old IDs.
-Create every needed preset explicitly through `/api/v1/presets`, or submit a
-complete valid profile on the first `POST /api/v1/cell`. A new data volume has
-no operator/carrier preset seeds. 2.1 严格拒绝未知配置项与多文档 YAML；旧字段不会
-恢复旧 ID，新数据卷不包含操作员/运营商种子；请显式创建新预设或完整提交首启参数。
+were tied to pre-2.1 YAML fallback behavior and remain invalid. The independent
+v2 preset store initializes IDs `"0"`..`"4"`; first start may reference one of
+them, another user preset, or submit a complete valid profile. 2.1 严格拒绝未知
+配置项与多文档 YAML；旧 YAML 默认字段仍需删除，独立 v2 预设库初始化
+`"0"` 至 `"4"`，首次启动可引用预设或提交完整参数。
 
 User presets are stored in `/data/presets.json`; the independent last-start
 profile remains `/data/last_start.json`. Existing saved profiles or manually
@@ -68,6 +68,19 @@ migrated presets must set required `network` to the **container** interface
 `eth0`, not a host NIC such as `ens33`. Stop RF first and update the persisted
 JSON atomically. 预设与上次启动存档分别持久化；迁移时将 `network` 改为容器内
 `eth0`，而非宿主机网卡，并在停止 RF 后原子更新。
+
+### Preset store v1→v2 / 预设库 v1→v2
+
+On the first read of a valid version-1 `/data/presets.json`, the service adds
+only missing default IDs and atomically writes version 2. An existing user item
+under `"0"`..`"4"` wins and is never overwritten. Version 2 is authoritative:
+later user edits or deletions, including deletion of a default, survive restart
+and are not reseeded. Invalid/corrupt versions, I/O failures, or a migration
+that would exceed 256 entries fail closed without overwriting the source.
+
+首次读取有效 v1 `/data/presets.json` 时，服务仅补齐缺失的默认 ID 并原子写为
+v2；已有同 ID 用户项优先且不覆盖。v2 是权威状态，后续修改/删除在重启后保留；
+损坏、I/O 失败、不支持版本或升级后超过 256 条均封闭失败，不覆写源文件。
 
 ## 4. Back up native state / 备份原生状态
 
