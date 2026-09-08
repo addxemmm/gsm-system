@@ -139,6 +139,40 @@ that radio failure. 若出现 UHD 接收超时退出，停止小区并检查 USB
 
 ## Bind a number / 绑定号码
 
+### From the handset / 通过手机短信绑定
+
+Reply to shortcode **101** with a **7–10 digit** number, for example `10000001`.
+This native smqueue onboarding path creates the persistent subscriber/routing
+rows. Repeat the same number to request its confirmation again; a different
+number on an already-bound SIM does not silently replace the binding. Send a
+short ASCII message such as `info` to **411** to query system/number information.
+回复 **101**，正文只写希望绑定的 **7–10 位数字**，例如 `10000001`。原生 smqueue
+会创建持久签约及号码路由。可重发相同号码获取确认；已绑定后回复另一号码不会自动
+覆盖旧号码。向 **411** 发送 `info` 可查询系统及号码信息。改号使用下方 API。
+
+The native shortcode's length policy differs from the API's 2–15 digit update
+policy. Number-taken and invalid-input responses are native SMS replies, not HTTP
+responses. Wait for handset receipt, and inspect `/api/v1/subscribers` to verify
+the authoritative binding. `connections.number_source` identifies whether a
+displayed number came from that registry or the volatile TMSI fallback.
+短信首次注册与 API 改号的长度策略不同；无效号码或号码占用由短信回执提示。可在
+`/api/v1/subscribers` 查权威绑定，连接列表的 `number_source` 表明号码来源。
+
+For the single-container deployment, Asterisk must accept OpenBTS contacts at
+`127.0.0.1`. The image ships a deny-by-default contact ACL with only this IPv4
+loopback address allowed; external contacts and guest calling remain restricted.
+An Asterisk `603`/contact-ACL failure after `101` may occur **after** number rows
+were inserted; do not delete or recreate them just because confirmation was
+missing. 同容器部署仅放行 OpenBTS 的本机联系人；101 后的联系人 ACL 失败可能发生
+在号码入库之后，不能因为没收到确认就认定绑定未执行或删除重建签约。
+
+Welcome SMS content is limited to a short ASCII instruction in this native
+build. The configured message is followed by the native IMSI suffix; avoid
+duplicating “Your IMSI is IMSI”. Historical welcome messages do not change when
+the configuration changes, and `WELCOME_SENT` is not a delivery receipt.
+本原生版本欢迎文字使用短 ASCII 操作提示，原生会追加 IMSI 标记，避免重复措辞；
+修改配置不会改写手机历史短信，也不会把调度标记变成投递确认。
+
 ```http
 PUT /api/v1/subscribers/IMSI/number
 Content-Type: application/json

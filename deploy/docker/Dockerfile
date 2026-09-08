@@ -115,6 +115,7 @@ RUN ./autogen.sh \
 COPY third_party/smqueue ./smqueue
 RUN apt-get update && apt-get install -y --no-install-recommends libosip2-dev && rm -rf /var/lib/apt/lists/* \
  && cd smqueue \
+ && patch -p1 < /app/compat/patches/0003-smqueue-keyed-sms-observation.patch \
  && grep -rl '!defined(gettid)' CommonLibs SR/CommonLibs 2>/dev/null | xargs -r sed -i 's/#if !defined(gettid)/#if !defined(gettid) \&\& !__GLIBC_PREREQ(2,30)/' \
  && ./autogen.sh && ./configure && make -j$(nproc) -k && make install && ldconfig
 COPY third_party/subscriberRegistry ./subscriberRegistry
@@ -163,6 +164,12 @@ RUN ldconfig \
  && ldd /OpenBTS/transceiver | grep -q libuhd \
  && ldd /OpenBTS/OpenBTS | grep -c "not found" | grep -q "^0$"
 COPY gsmsystem/asterisk/ /etc/asterisk/
+COPY deploy/docker/sip-contact-acl.conf /etc/asterisk/sip-contact-acl.conf
+# Asterisk's default contact ACL rejects loopback. smqueue registers the local
+# OpenBTS contact after assigning a number; permit only that address, not all LANs.
+# 默认联系人 ACL 拒绝回环；只放行同容器 OpenBTS，保留外部地址拒绝规则。
+RUN sed -i '/^\[general\][[:space:]]*$/a #include sip-contact-acl.conf' /etc/asterisk/sip.conf \
+ && grep -Fxq '#include sip-contact-acl.conf' /etc/asterisk/sip.conf
 # The archived v1 modules.conf disables ODBC realtime; enable it in the image
 # without editing the read-only legacy archive. SIP users require this module.
 # 归档配置禁用了 ODBC realtime；在镜像层启用，保留旧档案和本地未提交改动。

@@ -282,6 +282,17 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	connections := parser.ParseTMSIs(tmsiOutput, parser.ParseSGSN(sgsnOutput))
 	items := connectionItems(connections)
+	// Native SMS registration writes the authoritative registry before the TMSI
+	// identity cache is refreshed. Do not hide an already-bound number.
+	// 原生短信注册先写权威号码库，TMSI 缓存可能尚未刷新。
+	registryCtx, registryCancel := context.WithTimeout(r.Context(), 2*time.Second)
+	registered, registryErr := s.subscriberStore().List(registryCtx)
+	registryCancel()
+	if registryErr == nil {
+		applySubscriberNumbers(items, registered)
+	} else {
+		log.Printf("rid=%s connection number registry unavailable; using TMSI observations", RequestID(r))
+	}
 	paged := pageSlice(items, page)
 	writeV1(w, r, CodeOK, "ok", map[string]any{
 		"connections": paged, "count": len(paged), "total": len(items),
@@ -296,13 +307,41 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 func connectionItems(connections []parser.UE) []map[string]any {
 	items := make([]map[string]any, 0, len(connections))
 	for _, connection := range connections {
+		var numberSource any
+		if connection.Number != "" {
+			numberSource = "openbts_tmsi"
+		}
 		items = append(items, map[string]any{
 			"imsi": connection.IMSI, "imei": nilStr(connection.IMEI),
 			"number": nilStr(connection.Number), "ip": nilStr(connection.IP),
 			"auth": connection.Auth, "reject_code": connection.RejectCode,
+			"number_source": numberSource,
 		})
 	}
 	return items
+}
+
+func applySubscriberNumbers(items []map[string]any, registered []subscriber.Subscriber) {
+	byIMSI := make(map[string]subscriber.Subscriber, len(registered))
+	for _, entry := range registered {
+		byIMSI[entry.IMSI] = entry
+	}
+	for _, item := range items {
+		imsi, _ := item["imsi"].(string)
+		entry, found := byIMSI[imsi]
+		if !found {
+			continue
+		}
+		item["number"] = nil
+		item["number_source"] = "subscriber_registry"
+		if !entry.Consistent {
+			item["number_source"] = "inconsistent_registry"
+			continue
+		}
+		if entry.Number != nil {
+			item["number"] = nilStr(*entry.Number)
+		}
+	}
 }
 
 func (s *Server) subscriberStore() subscriber.Store {

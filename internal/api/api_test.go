@@ -247,7 +247,9 @@ func TestSubscriberBindingRejectsReservedServiceNumbers(t *testing.T) {
 
 func TestSMSHistoryPaginationAndTailMetadata(t *testing.T) {
 	cfg, _ := testServer(t)
-	logText := smsEvent("001010123456780", "first") + smsEvent("001010123456781", "second")
+	logText := smsEvent("10--tag-a", "001010123456780", "same text") +
+		smsEvent("10--tag-a", "001010123456780", "same text") +
+		smsEvent("11--tag-b", "001010123456781", "same text")
 	if err := os.WriteFile(cfg.LogPath(cfg.SmqueueLogName), []byte(logText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +258,8 @@ func TestSMSHistoryPaginationAndTailMetadata(t *testing.T) {
 	var envelope struct {
 		Data struct {
 			SMS []struct {
-				Text string `json:"text"`
+				Text         string `json:"text"`
+				ReceiverIMSI string `json:"receiver_imsi"`
 			} `json:"sms"`
 			Count     int        `json:"count"`
 			Total     int        `json:"total"`
@@ -269,7 +272,8 @@ func TestSMSHistoryPaginationAndTailMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	if envelope.Data.Count != 1 || envelope.Data.Total != 2 || len(envelope.Data.SMS) != 1 ||
-		envelope.Data.SMS[0].Text != "second" || envelope.Data.Source != cfg.SmqueueLogName || envelope.Data.Truncated {
+		envelope.Data.SMS[0].Text != "same text" || envelope.Data.SMS[0].ReceiverIMSI != "001010123456781" ||
+		envelope.Data.Source != cfg.SmqueueLogName || envelope.Data.Truncated {
 		t.Fatalf("unexpected SMS page: %+v", envelope.Data)
 	}
 }
@@ -494,9 +498,9 @@ func sqliteValue(t *testing.T, binary, database, sql string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func smsEvent(imsi, text string) string {
-	return "2026-09-08T01:02:03.4 Request Message Delivery for test\n" +
-		"2026-09-08T01:02:03.4 get_text: Decoded text: " + text + "\n" +
+func smsEvent(qtag, imsi, text string) string {
+	return "INFO 10:12 2026-09-08T01:02:03.4 smqueue.cpp:2400:process_timeout: Request Message Delivery for " + qtag + "\n" +
+		"NOTICE 10:12 2026-09-08T01:02:03.4 smqueue.h:500:get_text: Decoded text: " + text + "\n" +
 		"Deliver message:\nMESSAGE sip:IMSI" + imsi + "@127.0.0.1\n" +
 		"From: 10001\nTo: 10002\nContact: <sip:IMSI" + imsi + "@127.0.0.1>\n"
 }

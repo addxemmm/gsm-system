@@ -378,3 +378,35 @@ hardware/runtime issue is not declared fixed. See SIM.md for the reattach/APN,
 welcome/manual SMS and data acceptance steps. 部署前另有 UHD 超时退出证据，USB
 枚举仍有设备；本次不将管理面验收当作射频、手机短信实收或 PDP 成功，需用户重接
 设备后验证，超时复发时再检查 USB 直通及射频运行日志。
+
+## SMS onboarding and history correction / 短信注册与历史查询修正
+
+The operator confirmed welcome delivery and open-registration observations.
+Read-only diagnostics then found three consistent persistent number bindings
+despite missing confirmations: Asterisk rejected the local OpenBTS contact and
+smqueue received `603` during the subsequent registration stage. 用户已确认欢迎
+短信实收；三个自选号码已在两个权威表中一致入库，后续注册阶段却被 Asterisk
+联系人 ACL 拒绝，并非用户回复没有到达服务器。
+
+- Ship a dedicated Asterisk contact ACL that denies IPv4/IPv6 by default and
+  permits only `127.0.0.1/32`, included under the legacy `[general]` section with
+  CRLF-compatible insertion. The live SIP-only reload preserved the running
+  cell. 镜像固化最小本机联系人许可，不开放全部局域网联系人，不修改用户未提交
+  的 `modules.conf`。已对运行实例做 SIP 热重载，小区未因此重启。
+- Prefer consistent persistent number bindings in `/connections`, with an
+  explicit `number_source`; authoritative unbinds override stale TMSI values.
+  连接列表优先显示已入库号码，明确来源，异常绑定不伪装成有效号码。
+- Restore production NOTICE history parsing. Identity-based deduplication merges
+  retries without deleting legitimate repeated text; ambiguous unkeyed text
+  stays unknown. Add a pinned native `GSM_SMS_V1` receive-observation record with
+  hex-encoded qtag/from/to/text, so future concurrent events carry their own
+  addressing and text. 修复 NOTICE 日志漏解析与去重；新原生日志逐事件携带明确
+  身份及字段，hex 防止正文注入伪日志行；Go 负责查询及归一化，未引入 Python。
+- Welcome/onboarding guidance describes native `101` registration (7–10 digits),
+  `411` lookup and API number changes. 欢迎提示与短信注册的实际长度和回执行为一致。
+
+The GPRS inspection found a present TUN route, forwarding and NAT, successful
+container DNS/HTTP, and one packet-attached handset. It did not establish
+handset web access; no speculative firewall disabling or route replacement was
+performed. 网络检查已有 TUN、转发/NAT、容器 DNS/HTTP 可达及一个数据附着终端，
+尚未证明手机网页成功；保留已有规则，等待主动手机流量与上下行计数对照。

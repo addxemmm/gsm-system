@@ -19,6 +19,14 @@ grep -F 'COPY cmd/ ./cmd/' deploy/docker/Dockerfile >/dev/null || fail 'minimal 
 grep -F 'COPY internal/ ./internal/' deploy/docker/Dockerfile >/dev/null || fail 'minimal internal COPY missing'
 if grep -Eq '^COPY[[:space:]]+\.[[:space:]]+\.' deploy/docker/Dockerfile; then fail 'broad Go-stage COPY remains'; fi
 if grep -F 'run.so' deploy/docker/Dockerfile >/dev/null; then fail 'legacy run.so is copied'; fi
+grep -F 'COPY deploy/docker/sip-contact-acl.conf /etc/asterisk/sip-contact-acl.conf' deploy/docker/Dockerfile >/dev/null || fail 'local SIP contact ACL is not shipped'
+grep -F '#include sip-contact-acl.conf' deploy/docker/Dockerfile >/dev/null || fail 'local SIP contact ACL is not included'
+grep -Fx 'contactdeny=0.0.0.0/0.0.0.0' deploy/docker/sip-contact-acl.conf >/dev/null || fail 'IPv4 contact deny missing'
+grep -Fx 'contactdeny=::/0' deploy/docker/sip-contact-acl.conf >/dev/null || fail 'IPv6 contact deny missing'
+grep -Fx 'contactpermit=127.0.0.1/255.255.255.255' deploy/docker/sip-contact-acl.conf >/dev/null || fail 'OpenBTS loopback contact permit missing'
+[ "$(grep -c '^contactpermit=' deploy/docker/sip-contact-acl.conf)" -eq 1 ] || fail 'unexpected contact allow expansion'
+grep -F '0003-smqueue-keyed-sms-observation.patch' deploy/docker/Dockerfile >/dev/null || fail 'keyed native SMS observation patch is not applied'
+grep -F 'GSM_SMS_V1' compat/patches/0003-smqueue-keyed-sms-observation.patch >/dev/null || fail 'keyed native SMS observation format missing'
 
 grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1.0}"' deploy/docker/docker-compose.yml >/dev/null || fail 'release image default missing'
 grep -F 'container_name: gsmsystem-uhd4' deploy/docker/docker-compose.yml >/dev/null || fail 'collision-free container name missing'

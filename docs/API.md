@@ -355,6 +355,7 @@ HTTP `200` even when empty:
       "imsi":"IMSI",
       "imei":null,
       "number":null,
+      "number_source":"subscriber_registry",
       "ip":null,
       "auth":0,
       "reject_code":4
@@ -371,7 +372,19 @@ HTTP `200` even when empty:
 ```
 
 `imei`, `number`, and `ip` are nullable and use JSON `null`, not an empty
-string. `auth` and `reject_code` are additive, optional response fields during
+string. `number_source` is an optional nullable field. Its values are
+`subscriber_registry`, `openbts_tmsi`, or `inconsistent_registry`. A matching
+subscriber-registry row is authoritative: a current binding overrides a stale
+or empty native TMSI value, and an authoritative unbind keeps `number:null`
+even if the TMSI cache still contains an old number. An inconsistent registry
+row also yields `number:null` with `number_source:"inconsistent_registry"`
+rather than choosing one conflicting value. If the registry is unavailable or
+has no matching IMSI, the observed TMSI value is used and identified as
+`openbts_tmsi`; no evidenced value leaves the source null. The top-level
+`source` remains `openbts_tmsi_sgsn` because rows and attachment diagnostics
+still originate from the live observation snapshot.
+
+`auth` and `reject_code` are additive, optional response fields during
 a rolling 2.1 upgrade; when present they are nullable integers that preserve
 the native values. AUTH maps to `0=unauthorized`, `1=registrar-authorized`,
 `2=open-registration`, and `3=fail-open`; none of these recorded values is a
@@ -389,7 +402,15 @@ after GPRS is enabled and PDP/SGSN setup succeeds; SMS uses signalling and does
 not depend on that handset IP. Native CLI/read failures return `500`; a stopped
 OpenBTS process returns `412`; an empty result is normal `200`.
 
-`imei`、`number`、`ip` 均可为 `null`；滚动升级期间新增的 `auth`、
+`imei`、`number`、`ip` 均可为 `null`。可选可空的 `number_source` 取值为
+`subscriber_registry`、`openbts_tmsi` 或 `inconsistent_registry`。匹配到
+签约库行时以签约库为准：新绑定覆盖未刷新或为空的 TMSI 号码，权威解绑也会覆盖
+TMSI 遗留号码而保持 `number:null`；签约库不一致时不猜测冲突值，返回
+`number:null` 和 `inconsistent_registry`。签约库不可用或无匹配 IMSI 时才使用
+TMSI 观察值；无证据时来源为 `null`。顶层 `source` 仍为
+`openbts_tmsi_sgsn`，表示连接行及附着诊断的观察来源。
+
+滚动升级期间新增的 `auth`、
 `reject_code` 可缺省，存在时为可空整数。AUTH 原生值为
 `0=未授权`、`1=Registrar 授权`、`2=开放注册`、`3=失败时开放`，均不证明实时
 在线；`reject_code:4` 可能对应多种注册失败原因，不能单凭该值断定
@@ -483,10 +504,33 @@ HTTP `200`, including an empty parsed log:
 }
 ```
 
-Missing log: `404`; read failure: `500`. All six empty message fields are JSON
-`null`. Only complete entries inside the bounded tail window are exposed;
+Missing log: `404`; read failure: `500`. New images preferentially emit and
+parse the keyed structured NOTICE observation `GSM_SMS_V1` with
+`qtag_hex`/`from_hex`/`to_hex`/`text_hex`. Hex encoding preserves the exact
+parties and body without allowing message content to inject log lines; the
+qtag merges the observation with a matching legacy NOTICE in the same smqueue
+process generation. Older `Got SMS rqst qtag ...` events are conservatively
+supported for their timestamp and evidenced parties, but an unkeyed
+`Decoded text:` line is never associated with them: without message identity,
+`text` remains null rather than risking fabricated cross-message content. An
+explicitly keyed decoded line may still merge by qtag. Legacy complete local
+`Request Message Delivery` / `Decoded text` / `Deliver message` blocks also
+remain supported. Records are deduplicated by message identity (qtag scoped to
+one smqueue process generation), never by text or party content; two different
+messages with identical content remain two records. All six fields keep the
+same shape and any fact not evidenced by the logs is JSON `null`. These are log
+observations, not delivery receipts.
+
+Only complete entries inside the bounded tail window are exposed;
 `window.truncated` and top-level `truncated` report excluded older bytes.
-六个字段的空值均为 `null`，日志读取受 `max_history_bytes` 限制。
+新镜像优先记录并解析结构化 NOTICE `GSM_SMS_V1`，其中 qtag、收发方和正文采用
+hex 字段，既能准确恢复值，也避免正文注入伪日志行；同一进程代际内按 qtag 与旧
+NOTICE 合并。旧 `Got SMS rqst qtag ...` 事件仅保留有证据的时间与收发方；不带
+消息身份的 `Decoded text:` 一律不与其关联，`text` 保持 `null`，不会伪造跨消息
+正文。显式携带 qtag 的正文仍可合并，旧版完整局部详细日志块继续支持。去重依据
+消息身份/qtag，而非正文或收发方内容，
+因此同文不同消息仍分别保留。六个字段形状不变，无日志证据的字段均为 `null`；
+这些是日志观察，不是送达回执。日志读取受 `max_history_bytes` 限制。
 
 ### `POST /sms`
 

@@ -1,0 +1,34 @@
+--- a/smqueue/smsc.cpp
++++ b/smqueue/smsc.cpp
+@@ -296,1 +296,25 @@
+-	const TLAddress& address = submit.DA();
++	const TLAddress& address = submit.DA();
++
++	// One keyed record per received SMS observation, safe for concurrent parsing.
++	// Hex encoding prevents SMS bodies from injecting log lines; this is not a receipt.
++	const char* observationTag = scp->scp_qmsg_it->qtag;
++	std::string observationFields[] = {
++		observationTag ? observationTag : "",
++		imsi ? imsi : "",
++		address.digits(),
++		body
++	};
++	const char* observationNames[] = {"qtag_hex", "from_hex", "to_hex", "text_hex"};
++	if (observationFields[0].size() <= 256 && observationFields[1].size() <= 256 &&
++	    observationFields[2].size() <= 256 && body.size() <= 4096) {
++		static const char hexDigits[] = "0123456789abcdef";
++		std::ostringstream observation;
++		observation << "GSM_SMS_V1";
++		for (unsigned field = 0; field < 4; ++field) {
++			observation << " " << observationNames[field] << "=";
++			for (unsigned char byte : observationFields[field]) {
++				observation << hexDigits[byte >> 4] << hexDigits[byte & 15];
++			}
++		}
++		LOG(NOTICE) << observation.str();
++	}
+--- a/smqueue/smqueue.h
++++ b/smqueue/smqueue.h
+@@ -505,1 +505,1 @@
+-				LOG(NOTICE) << "Decoded text: " << decoded_text;
++				LOG(DEBUG) << "Decoded SMS payload; content logged with its message identity";

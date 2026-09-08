@@ -198,9 +198,11 @@ func TestConnectionRegistrationDiagnosticsContract(t *testing.T) {
 	var doc struct {
 		Components struct {
 			Schemas map[string]struct {
+				Required   []string `yaml:"required"`
 				Properties map[string]struct {
-					Type     string `yaml:"type"`
-					Nullable bool   `yaml:"nullable"`
+					Type     string   `yaml:"type"`
+					Nullable bool     `yaml:"nullable"`
+					Enum     []string `yaml:"enum"`
 				} `yaml:"properties"`
 			} `yaml:"schemas"`
 		} `yaml:"components"`
@@ -212,6 +214,17 @@ func TestConnectionRegistrationDiagnosticsContract(t *testing.T) {
 		property, exists := doc.Components.Schemas["Connection"].Properties[field]
 		if !exists || property.Type != "integer" || !property.Nullable {
 			t.Errorf("Connection.%s must expose nullable raw integer diagnostics", field)
+		}
+	}
+	numberSource, exists := doc.Components.Schemas["Connection"].Properties["number_source"]
+	wantSources := []string{"inconsistent_registry", "openbts_tmsi", "subscriber_registry"}
+	sort.Strings(numberSource.Enum)
+	if !exists || numberSource.Type != "string" || !numberSource.Nullable || !reflect.DeepEqual(numberSource.Enum, wantSources) {
+		t.Errorf("Connection.number_source must be optional, nullable, and enumerate all number provenances: %+v", numberSource)
+	}
+	for _, required := range doc.Components.Schemas["Connection"].Required {
+		if required == "number_source" {
+			t.Error("Connection.number_source must remain optional during rolling upgrades")
 		}
 	}
 	collection, _ := readPostman(t)
@@ -235,9 +248,15 @@ func TestConnectionRegistrationDiagnosticsContract(t *testing.T) {
 					checks = append(checks, event.Script.Exec...)
 				}
 			}
-			for _, field := range []string{"auth", "reject_code"} {
-				if !strings.Contains(strings.Join(checks, "\n"), field) {
+			joined := strings.Join(checks, "\n")
+			for _, field := range []string{"auth", "reject_code", "number_source"} {
+				if !strings.Contains(joined, field) {
 					t.Errorf("Postman connection checks must cover %s", field)
+				}
+			}
+			for _, marker := range []string{"subscriber_registry", "openbts_tmsi", "inconsistent_registry", "c.number).to.eql(null)"} {
+				if !strings.Contains(joined, marker) {
+					t.Errorf("Postman connection checks are missing number provenance rule %q", marker)
 				}
 			}
 		}
@@ -245,6 +264,79 @@ func TestConnectionRegistrationDiagnosticsContract(t *testing.T) {
 	walk(collection.Item)
 	if !found {
 		t.Fatal("Postman is missing connections query")
+	}
+}
+
+func TestSMSObservationSchemaAndPostmanContract(t *testing.T) {
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `yaml:"required"`
+				Properties map[string]struct {
+					Type     string `yaml:"type"`
+					Nullable bool   `yaml:"nullable"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(mustRead(t, filepath.Join(root(t), "docs", "api", "openapi.yaml")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	wantFields := []string{"receiver_imsi", "receiver_number", "sender_imsi", "sender_number", "text", "time"}
+	schema := doc.Components.Schemas["SMSMessage"]
+	sort.Strings(schema.Required)
+	if !reflect.DeepEqual(schema.Required, wantFields) {
+		t.Fatalf("SMSMessage must retain exactly six required fields: %v", schema.Required)
+	}
+	gotFields := make([]string, 0, len(schema.Properties))
+	for field, property := range schema.Properties {
+		gotFields = append(gotFields, field)
+		if property.Type != "string" || !property.Nullable {
+			t.Errorf("SMSMessage.%s must remain a nullable string", field)
+		}
+	}
+	sort.Strings(gotFields)
+	if !reflect.DeepEqual(gotFields, wantFields) {
+		t.Fatalf("SMSMessage properties drifted: %v", gotFields)
+	}
+
+	collection, _ := readPostman(t)
+	found := false
+	var walk func([]postmanItem)
+	walk = func(items []postmanItem) {
+		for _, item := range items {
+			walk(item.Item)
+			if item.Request == nil || item.Request.Method != http.MethodGet {
+				continue
+			}
+			var url string
+			_ = json.Unmarshal(item.Request.URL, &url)
+			if !strings.HasPrefix(url, "{{baseUrl}}/api/v1/sms") {
+				continue
+			}
+			found = true
+			var checks []string
+			for _, event := range item.Event {
+				if event.Listen == "test" {
+					checks = append(checks, event.Script.Exec...)
+				}
+			}
+			joined := strings.Join(checks, "\n")
+			for _, marker := range append(wantFields, "d.count", "d.sms.length", "typeof m[k]") {
+				if !strings.Contains(joined, marker) {
+					t.Errorf("Postman SMS checks are missing %q", marker)
+				}
+			}
+			for _, marker := range []string{"GSM_SMS_V1", "qtag_hex", "message identity/qtag", "never by content", "unkeyed text remains null", "never associated", "not delivery receipts"} {
+				if !strings.Contains(item.Request.Description, marker) {
+					t.Errorf("Postman SMS description is missing identity/observation rule %q", marker)
+				}
+			}
+		}
+	}
+	walk(collection.Item)
+	if !found {
+		t.Fatal("Postman is missing SMS observation query")
 	}
 }
 
@@ -301,9 +393,10 @@ type postmanEvent struct {
 }
 
 type postmanRequest struct {
-	Method string          `json:"method"`
-	URL    json.RawMessage `json:"url"`
-	Body   *struct {
+	Method      string          `json:"method"`
+	URL         json.RawMessage `json:"url"`
+	Description string          `json:"description"`
+	Body        *struct {
 		Raw string `json:"raw"`
 	} `json:"body"`
 }

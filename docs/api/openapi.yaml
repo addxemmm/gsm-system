@@ -200,6 +200,7 @@ paths:
       tags: [subscribers]
       operationId: getConnections
       summary: Observe volatile registration/TMSI rows, not online state / 查询易失注册/TMSI 观察行，非在线状态
+      description: Subscriber-registry number bindings and unbindings override stale TMSI numbers; inconsistent registry rows return a null number. The response source remains the TMSI/SGSN observation source. / 签约库号码绑定与解绑覆盖陈旧 TMSI 号码；签约库不一致时号码为空。响应来源仍表示 TMSI/SGSN 观察来源。
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
@@ -273,6 +274,21 @@ paths:
       tags: [messaging]
       operationId: getSMS
       summary: Parse observed smqueue log entries / 读取短信日志观察
+      description: |
+        Preferentially parses keyed `GSM_SMS_V1` NOTICE observations whose
+        qtag/from/to/text values are hex encoded to preserve exact content and
+        prevent log-line injection. The qtag merges matching legacy NOTICE
+        evidence within one process generation. Older `Got SMS rqst qtag ...`
+        events retain only evidenced time and parties; unkeyed Decoded text is
+        never associated and remains null rather than fabricating content.
+        Explicitly keyed text and complete local detailed delivery blocks remain
+        supported. Entries are deduplicated by message identity, not content;
+        missing evidence remains null and observations are not delivery receipts.
+        优先解析 hex 编码 qtag/收发方/正文的结构化 `GSM_SMS_V1` NOTICE，准确保留
+        内容并防止日志行注入；同一进程代际内按 qtag 合并旧 NOTICE 证据。旧 NOTICE
+        仅保留有证据的时间与收发方；不带身份的 Decoded 正文一律不关联并保持为空。
+        显式 keyed 正文及完整局部详细日志继续支持。按消息身份而非内容去重；无证据
+        字段为空，观察记录不是送达回执。
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
@@ -544,6 +560,11 @@ components:
         imsi: { type: string, pattern: '^[0-9]{15}$' }
         imei: { type: string, nullable: true }
         number: { type: string, nullable: true }
+        number_source:
+          type: string
+          nullable: true
+          enum: [subscriber_registry, openbts_tmsi, inconsistent_registry]
+          description: Optional provenance of the resolved number. Registry bindings and authoritative unbindings override stale TMSI values; inconsistent registry state forces number null. The field is null when no source is evidenced. / 可选号码解析来源；签约库绑定及权威解绑覆盖陈旧 TMSI，签约库不一致时号码强制为空，无来源证据时本字段为空
         ip: { type: string, nullable: true, description: Handset packet-data address observed after GPRS/PDP setup; null does not diagnose NAT / GPRS/PDP 后观察到的手机数据地址；null 不用于诊断 NAT }
         auth:
           type: integer
@@ -562,6 +583,7 @@ components:
         binding_consistent: { type: boolean }
     SMSMessage:
       type: object
+      description: One smqueue log observation, deduplicated by message identity rather than content; missing evidence is null and the record is not a delivery receipt / 一条 smqueue 日志观察，按消息身份而非内容去重；无证据字段为空，且不是送达回执
       required: [time, text, sender_number, sender_imsi, receiver_number, receiver_imsi]
       properties:
         time: { type: string, nullable: true }
@@ -723,7 +745,7 @@ components:
                 properties:
                   data: { $ref: '#/components/schemas/CellStatus' }
     ConnectionsOK:
-      description: Paginated volatile registration/TMSI observations; rows are not an admitted or online-device list / 分页易失注册/TMSI 观察；不是已入网或在线名单
+      description: Paginated volatile registration/TMSI observations with an authoritative subscriber-registry number overlay; rows are not an admitted or online-device list / 分页易失注册/TMSI 观察并叠加权威签约库号码；不是已入网或在线名单
       content:
         application/json:
           schema:
@@ -765,7 +787,7 @@ components:
                       window: { type: string, enum: [full] }
                       truncated: { type: boolean, enum: [false] }
     SMSListOK:
-      description: Paginated bounded SMS observations / 分页有界短信观察
+      description: Paginated bounded SMS log observations, deduplicated by message identity and not delivery receipts / 分页有界短信日志观察，按消息身份去重且不是送达回执
       content:
         application/json:
           schema:

@@ -211,7 +211,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/connections?limit=100&offset=0",
-            "description": "Volatile registration/TMSI observation, not an admitted or online-device list. auth and reject_code are additive nullable integers and may be absent during a rolling 2.1 upgrade. AUTH is a native recorded value, not a real-time online indicator; auth=0 means authentication has not succeeded. reject_code=4 alone has multiple possible causes and does not prove a Ki mismatch. ip=null means no handset GPRS/PDP address was observed and does not prove NAT failure; SMS uses signalling and does not depend on this IP. / 易失注册/TMSI 观察，不是已入网或在线名单。滚动升级期间 auth、reject_code 可缺省；存在时为可空整数。AUTH 是原生记录值而非实时在线指标，0 表示鉴权未成功；仅凭拒绝码 4 不能断定 Ki 错误。ip=null 仅表示未观察到手机 GPRS/PDP 地址，不证明 NAT 失败，短信也不依赖该 IP。"
+            "description": "Volatile registration/TMSI observation, not an admitted or online-device list. number_source is optional and nullable: subscriber_registry is authoritative for both bindings and unbindings, openbts_tmsi is the native fallback, and inconsistent_registry forces number=null rather than guessing. The top-level source remains openbts_tmsi_sgsn. auth and reject_code are additive nullable integers and may be absent during a rolling 2.1 upgrade. AUTH is a native recorded value, not a real-time online indicator; auth=0 means authentication has not succeeded. reject_code=4 alone has multiple possible causes and does not prove a Ki mismatch. ip=null means no handset GPRS/PDP address was observed and does not prove NAT failure; SMS uses signalling and does not depend on this IP. / 易失注册/TMSI 观察，不是已入网或在线名单。number_source 可选且可空：subscriber_registry 对绑定和解绑均为权威来源，openbts_tmsi 为原生回退，inconsistent_registry 会将 number 置空而不猜测冲突值。顶层 source 仍为 openbts_tmsi_sgsn。滚动升级期间 auth、reject_code 可缺省；存在时为可空整数。AUTH 是原生记录值而非实时在线指标，0 表示鉴权未成功；仅凭拒绝码 4 不能断定 Ki 错误。ip=null 仅表示未观察到手机 GPRS/PDP 地址，不证明 NAT 失败，短信也不依赖该 IP。"
           },
           "event": [
             {
@@ -220,7 +220,7 @@
                 "exec": [
                   "pm.test('HTTP 200 observation or 412 stopped cell', () => pm.expect([200,412]).to.include(pm.response.code));",
                   "if (pm.response.code === 412) pm.test('precondition code', () => pm.expect(pm.response.json().code).to.eql(41201));",
-                  "if (pm.response.code === 200) pm.test('connections snapshot and additive native fields', function () { const d=pm.response.json().data; pm.expect(d.connections).to.be.an('array'); pm.expect(d.count).to.eql(d.connections.length); pm.expect(d.source).to.eql('openbts_tmsi_sgsn'); pm.expect(d.window).to.eql('current_snapshot'); pm.expect(d.truncated).to.eql(false); d.connections.forEach(function (c) { ['imsi','imei','number','ip'].forEach(k => pm.expect(c).to.have.property(k)); pm.expect(Object.keys(c).every(k => ['imsi','imei','number','ip','auth','reject_code'].includes(k))).to.eql(true); pm.expect(c.imsi).to.be.a('string'); ['imei','number','ip'].forEach(k => pm.expect(c[k] === null || typeof c[k] === 'string').to.eql(true)); ['auth','reject_code'].forEach(function (k) { if (Object.prototype.hasOwnProperty.call(c,k)) pm.expect(c[k] === null || Number.isInteger(c[k])).to.eql(true); }); }); });"
+                  "if (pm.response.code === 200) pm.test('connections snapshot and additive native fields', function () { const d=pm.response.json().data; pm.expect(d.connections).to.be.an('array'); pm.expect(d.count).to.eql(d.connections.length); pm.expect(d.source).to.eql('openbts_tmsi_sgsn'); pm.expect(d.window).to.eql('current_snapshot'); pm.expect(d.truncated).to.eql(false); d.connections.forEach(function (c) { ['imsi','imei','number','ip'].forEach(k => pm.expect(c).to.have.property(k)); pm.expect(Object.keys(c).every(k => ['imsi','imei','number','number_source','ip','auth','reject_code'].includes(k))).to.eql(true); pm.expect(c.imsi).to.be.a('string'); ['imei','number','ip'].forEach(k => pm.expect(c[k] === null || typeof c[k] === 'string').to.eql(true)); if (Object.prototype.hasOwnProperty.call(c,'number_source')) pm.expect(c.number_source === null || ['subscriber_registry','openbts_tmsi','inconsistent_registry'].includes(c.number_source)).to.eql(true); if (c.number_source === 'inconsistent_registry') pm.expect(c.number).to.eql(null); ['auth','reject_code'].forEach(function (k) { if (Object.prototype.hasOwnProperty.call(c,k)) pm.expect(c[k] === null || Number.isInteger(c[k])).to.eql(true); }); }); });"
                 ]
               }
             }
@@ -267,15 +267,17 @@
           "name": "GET /api/v1/sms",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/api/v1/sms?limit=100&offset=0"
+            "url": "{{baseUrl}}/api/v1/sms?limit=100&offset=0",
+            "description": "Preferentially parses keyed GSM_SMS_V1 NOTICE observations whose qtag_hex/from_hex/to_hex/text_hex fields preserve exact content and prevent log-line injection, then merges matching legacy NOTICE evidence by qtag within one smqueue process generation. Older Got SMS rqst qtag events retain evidenced time and parties, but unkeyed text remains null and is never associated; explicitly keyed text and complete local detailed logs remain supported. Records are deduplicated by message identity/qtag, never by content; identical text may therefore appear more than once. Missing evidence is null and rows are not delivery receipts. / 优先解析 GSM_SMS_V1 结构化 NOTICE；qtag/收发方/正文使用 hex 字段，准确保留内容并防日志行注入，再按同一 smqueue 进程代际内的 qtag 合并旧 NOTICE 证据。旧 GotSMS 仅保留有证据的时间与收发方；不带身份的正文一律保持 null 且不关联，显式 keyed 正文及完整局部详细日志继续支持。按消息身份/qtag 去重而非按内容；同文消息可分别出现。无证据字段为空，记录不是送达回执。"
           },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('HTTP 404: no smqueue log before cell activity', () => pm.response.to.have.status(404));",
-                  "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));"
+                  "pm.test('HTTP 200 observations or 404 before log activity', () => pm.expect([200,404]).to.include(pm.response.code));",
+                  "if (pm.response.code === 404) pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));",
+                  "if (pm.response.code === 200) pm.test('SMS snapshot keeps six nullable fields and counts', function () { const d=pm.response.json().data; const keys=['time','text','sender_number','sender_imsi','receiver_number','receiver_imsi']; pm.expect(d.sms).to.be.an('array'); pm.expect(d.count).to.eql(d.sms.length); pm.expect(d.total).to.be.a('number'); pm.expect(d.count).to.be.at.most(d.total); pm.expect(d.source).to.eql('smqueue.log'); pm.expect(d.window).to.be.an('object'); d.sms.forEach(function (m) { pm.expect(Object.keys(m).sort()).to.eql(keys.slice().sort()); keys.forEach(function (k) { pm.expect(m[k] === null || typeof m[k] === 'string').to.eql(true); }); }); });"
                 ]
               }
             }
