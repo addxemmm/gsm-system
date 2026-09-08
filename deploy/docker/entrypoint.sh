@@ -2,6 +2,10 @@
 # Initialize persistent configuration/subscribers only once; TMSI remains volatile.
 # 配置和签约库仅首次初始化并持久化，TMSI 仍为易失运行态。
 set -eu
+. /usr/local/lib/gsm-timezone.sh
+TZ=${TZ:-Asia/Shanghai}
+export TZ
+configure_timezone "$TZ" /usr/share/zoneinfo /etc/localtime /etc/timezone
 . /usr/local/lib/gsm-persistent-state.sh
 data_dir=${GSM_DATA_DIR:-/data}
 mkdir -p "$data_dir/conf" "$data_dir/log" /etc /var/run /var/lib/asterisk

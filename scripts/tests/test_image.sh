@@ -130,6 +130,13 @@ start_container
 wait_ready
 docker exec "$CONTAINER" /usr/local/bin/gsm-system --healthcheck || fail HEALTH "stopped cell health probe failed"
 pass STARTUP "isolated container ready (network=none, no RF devices)"
+[ "$(docker exec "$CONTAINER" date +%z)" = +0800 ] || fail TIMEZONE "default container offset is not +0800"
+[ "$(docker exec "$CONTAINER" cat /etc/timezone)" = Asia/Shanghai ] || fail TIMEZONE "default project timezone is not Asia/Shanghai"
+[ "$(docker run --rm --network none -e TZ=UTC --entrypoint date "$IMAGE" +%z)" = +0000 ] || fail TIMEZONE "custom UTC is ignored"
+if docker run --rm --network none -e TZ=Invalid/Fixture "$IMAGE" --version >/dev/null 2>&1; then
+  fail TIMEZONE "invalid timezone did not fail startup"
+fi
+pass TIMEZONE "default +0800, custom UTC and invalid-zone rejection"
 docker exec "$CONTAINER" test -S /dev/log || fail LOGGING "Go syslog socket /dev/log is missing"
 docker exec "$CONTAINER" test ! -e /OpenBTS/run.so || fail GO-ONLY "legacy run.so is present"
 docker exec "$CONTAINER" test ! -e /OpenBTS/run.py || fail GO-ONLY "legacy run.py is present"

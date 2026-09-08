@@ -30,7 +30,7 @@ type ActiveCall struct {
 }
 
 // HistoryCall represents all 18 columns emitted by cdr_csv when
-// loguniqueid=yes and loguserfield=yes. Times are normalized to RFC3339 UTC.
+// loguniqueid=yes and loguserfield=yes. Times use RFC3339 with an explicit offset.
 type HistoryCall struct {
 	AccountCode        string  `json:"account_code"`
 	Source             string  `json:"source"`
@@ -127,6 +127,15 @@ var conciseSummary = regexp.MustCompile(`^[0-9]+ active (?:channels?|calls?)$`)
 // state is known, to discard the first possibly partial record without treating
 // a newline inside a quoted multiline field as a boundary.
 func History(ctx context.Context, path string, maxBytes int64) ([]HistoryCall, HistoryWindow, error) {
+	return HistoryInLocation(ctx, path, maxBytes, time.UTC)
+}
+
+// HistoryInLocation keeps the native CDR input in UTC (usegmtime=yes), changing
+// only output formatting / 原生 CDR 始终按 UTC 读取，仅转换输出时区。
+func HistoryInLocation(ctx context.Context, path string, maxBytes int64, location *time.Location) ([]HistoryCall, HistoryWindow, error) {
+	if location == nil {
+		return nil, HistoryWindow{}, errors.New("history timezone must be provided")
+	}
 	if maxBytes <= 0 {
 		return nil, HistoryWindow{}, errors.New("history window must be positive")
 	}
@@ -188,7 +197,7 @@ func History(ctx context.Context, path string, maxBytes int64) ([]HistoryCall, H
 		if len(record) != 18 {
 			return nil, HistoryWindow{}, fmt.Errorf("parse CDR: want 18 columns, got %d", len(record))
 		}
-		call, parseErr := parseHistoryRow(record)
+		call, parseErr := parseHistoryRow(record, location)
 		if parseErr != nil {
 			return nil, HistoryWindow{}, parseErr
 		}
@@ -259,16 +268,16 @@ func firstSafeCSVBoundary(ctx context.Context, data []byte) (int, bool, error) {
 	return earliest, earliest >= 0, nil
 }
 
-func parseHistoryRow(row []string) (HistoryCall, error) {
-	started, err := cdrTime(row[9], false)
+func parseHistoryRow(row []string, location *time.Location) (HistoryCall, error) {
+	started, err := cdrTime(row[9], false, location)
 	if err != nil {
 		return HistoryCall{}, fmt.Errorf("parse CDR start: %w", err)
 	}
-	answered, err := cdrTime(row[10], true)
+	answered, err := cdrTime(row[10], true, location)
 	if err != nil {
 		return HistoryCall{}, fmt.Errorf("parse CDR answer: %w", err)
 	}
-	ended, err := cdrTime(row[11], false)
+	ended, err := cdrTime(row[11], false, location)
 	if err != nil {
 		return HistoryCall{}, fmt.Errorf("parse CDR end: %w", err)
 	}
@@ -302,14 +311,14 @@ func parseHistoryRow(row []string) (HistoryCall, error) {
 	}, nil
 }
 
-func cdrTime(value string, optional bool) (string, error) {
+func cdrTime(value string, optional bool, location *time.Location) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" && optional {
 		return "", nil
 	}
 	for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339Nano} {
 		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
-			return parsed.UTC().Format(time.RFC3339), nil
+			return parsed.In(location).Format(time.RFC3339), nil
 		}
 	}
 	return "", fmt.Errorf("invalid UTC timestamp %q", value)

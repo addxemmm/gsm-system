@@ -196,6 +196,7 @@ paths:
       tags: [operations]
       operationId: getHealth
       summary: Read control-plane health; not RF acceptance / 管理面健康检查
+      description: time is RFC3339 in the startup-configured project TZ, default Asia/Shanghai / time 使用项目启动配置 TZ 的带偏移 RFC3339 时间，默认东八区
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }
@@ -286,8 +287,39 @@ paths:
     get:
       tags: [messaging]
       operationId: getSMS
-      summary: Parse observed smqueue log entries / 读取短信日志观察
+      summary: Parse current-start smqueue observations / 读取本轮启动短信观察
       description: |
+        Scope is always current_start, with no all-history switch. Only the latest
+        known cell-start window is read. Stop/degraded preserves that round until
+        the next accepted start; failure of an accepted attempt clears it.
+        Validation rejection and duplicate-start 409 preserve the existing boundary.
+        A recreated manager has no known
+        session and returns HTTP 200 with sms=[], count=total=0, session=null,
+        without adopting or deleting old logs. Pagination and max_history_bytes
+        apply within this session; prior-start bytes do not imply truncation.
+        One rename rotation to .1 is supported. A lost or unverifiable boundary
+        (for example after multiple rotations) returns HTTP 200 empty with
+        session.state=boundary_lost, never unrelated history. Real I/O errors
+        such as permission failures return HTTP 500; missing sessions are not 404.
+        timezone is the startup-configured IANA zone (TZ), default Asia/Shanghai.
+        Native offset-less timestamps use that zone; time is nullable RFC3339Nano
+        with an offset (or Z for UTC). Session timestamps use RFC3339 offsets.
+        running only means the observation window is not frozen, not cell readiness;
+        query GET /api/v1/cell for readiness. Scope selects this log observation
+        window, not original message creation time; persistent-queue messages
+        reprocessed or replayed in this round can still appear.
+        范围固定 current_start，无历史开关。停止/降级保留该轮至下次已接受的启动，
+        已接受启动尝试失败才清空；参数拒绝或重复启动 409 保留边界。
+        管理进程重建后无已知会话，返回 200 空列表和 session=null，不读取或
+        删除旧日志。分页及字节上限在本轮内生效，排除上一轮字节不视为截断。
+        支持一次 rename 轮转至 .1；边界丢失或多次轮转后不可验证时返回 200
+        空观察和 boundary_lost，不回退历史；
+        权限等真实读取错误返回 500，无会话不是 404。
+        TZ 在项目启动前配置，默认 Asia/Shanghai 东八区；原生无偏移时间按此解析，
+        短信时间输出带偏移 RFC3339Nano，会话起止输出 RFC3339，UTC 可使用 Z。
+        running 只表示窗口未冻结，不保证小区 ready，就绪状态查询 GET /api/v1/cell。
+        范围是本次日志观察窗口，不按短信最初创建时刻筛选；持久队列在本次重新
+        处理或重放的短信仍可能出现。
         Preferentially parses keyed `GSM_SMS_V1` NOTICE observations whose
         qtag/from/to/text values are hex encoded to preserve exact content and
         prevent log-line injection. The qtag merges matching legacy NOTICE
@@ -314,7 +346,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/SMSListOK' }
         '401': { $ref: '#/components/responses/Error' }
-        '404': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
     post:
@@ -359,8 +390,8 @@ paths:
     get:
       tags: [calls]
       operationId: getCallHistory
-      summary: Parse real Asterisk CSV CDR and normalize timestamps to UTC / 读取真实 CDR
-      description: Each item maps all 18 configured cdr_csv columns / 每项映射完整18列
+      summary: Parse real Asterisk CSV CDR in the project time zone / 按项目时区读取真实 CDR
+      description: Each item maps all 18 configured cdr_csv columns. Native timestamps remain UTC in storage and are displayed in startup-configured TZ (default Asia/Shanghai) with RFC3339 offsets. / 每项映射完整18列；原始时间保持 UTC 存储，输出按启动配置 TZ（默认 Asia/Shanghai）转换为带偏移 RFC3339。
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
@@ -624,13 +655,24 @@ components:
       description: One smqueue log observation, optionally completed from a unique consistent current subscriber binding; current bindings are query-time context, not historical facts or delivery receipts / 一条 smqueue 日志观察；仅可由唯一且一致的当前签约绑定补全；当前绑定只是查询时上下文，不是历史事实或送达回执
       required: [time, text, sender_number, sender_imsi, receiver_number, receiver_imsi, identity_resolution]
       properties:
-        time: { type: string, nullable: true }
+        time: { type: string, format: date-time, nullable: true, description: RFC3339Nano in the project time zone with offset / 项目时区的带偏移时间 }
         text: { type: string, nullable: true }
         sender_number: { type: string, nullable: true }
         sender_imsi: { type: string, nullable: true }
         receiver_number: { type: string, nullable: true }
         receiver_imsi: { type: string, nullable: true }
         identity_resolution: { $ref: '#/components/schemas/SMSIdentityResolution' }
+    SMSObservationSession:
+      type: object
+      nullable: true
+      additionalProperties: false
+      description: Latest known cell-start observation scope; null after manager recreation or failure of an accepted start attempt; rejected inputs and duplicate-start 409 preserve it / 最近已知小区启动范围；管理进程重建或已接受启动尝试失败后为空；参数拒绝与重复启动 409 保留边界
+      required: [id, started_at, ended_at, state]
+      properties:
+        id: { type: string }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time, nullable: true }
+        state: { type: string, enum: [starting, running, stopped, boundary_lost] }
     SMSIdentityResolution:
       type: object
       additionalProperties: false
@@ -679,9 +721,9 @@ components:
         destination_channel: { type: string }
         last_application: { type: string }
         last_data: { type: string }
-        started_at: { type: string, format: date-time, description: RFC3339 UTC }
-        answered_at: { type: string, format: date-time, nullable: true, description: RFC3339 UTC }
-        ended_at: { type: string, format: date-time, description: RFC3339 UTC }
+        started_at: { type: string, format: date-time, description: RFC3339 in project TZ / 项目时区 }
+        answered_at: { type: string, format: date-time, nullable: true, description: RFC3339 in project TZ / 项目时区 }
+        ended_at: { type: string, format: date-time, description: RFC3339 in project TZ / 项目时区 }
         duration_seconds: { type: integer, minimum: 0 }
         billed_seconds: { type: integer, minimum: 0 }
         disposition: { type: string }
@@ -839,7 +881,7 @@ components:
                       window: { type: string, enum: [full] }
                       truncated: { type: boolean, enum: [false] }
     SMSListOK:
-      description: Paginated bounded SMS log observations, deduplicated by message identity and not delivery receipts / 分页有界短信日志观察，按消息身份去重且不是送达回执
+      description: Paginated bounded current-start SMS observations, deduplicated by message identity and not delivery receipts / 本轮启动的分页有界短信观察，按消息身份去重且不是送达回执
       content:
         application/json:
           schema:
@@ -849,7 +891,7 @@ components:
                 properties:
                   data:
                     type: object
-                    required: [sms, count, total, limit, offset, source, window, truncated]
+                    required: [sms, count, total, limit, offset, source, scope, timezone, session, window, truncated]
                     properties:
                       sms: { type: array, items: { $ref: '#/components/schemas/SMSMessage' } }
                       count: { type: integer }
@@ -857,6 +899,9 @@ components:
                       limit: { type: integer }
                       offset: { type: integer }
                       source: { type: string, enum: [smqueue.log] }
+                      scope: { type: string, enum: [current_start] }
+                      timezone: { type: string, example: Asia/Shanghai, description: Startup-configured IANA time zone from TZ / TZ 配置的项目启动时区 }
+                      session: { $ref: '#/components/schemas/SMSObservationSession' }
                       window: { $ref: '#/components/schemas/HistoryWindow' }
                       truncated: { type: boolean }
     ActiveCallsOK:

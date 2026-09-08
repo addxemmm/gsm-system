@@ -254,7 +254,7 @@ func TestSMSHistoryPaginationAndTailMetadata(t *testing.T) {
 	if err := os.WriteFile(cfg.LogPath(cfg.SmqueueLogName), []byte(logText), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	recorder := serve(t, New(cfg, gsm.New(cfg)), http.MethodGet, "/api/v1/sms?limit=1&offset=1", "", "")
+	recorder := serve(t, smsFixtureServer(t, cfg), http.MethodGet, "/api/v1/sms?limit=1&offset=1", "", "")
 	assertCode(t, recorder, http.StatusOK, CodeOK)
 	var envelope struct {
 		Data struct {
@@ -294,7 +294,7 @@ func TestSMSHistoryCompletesUniqueCurrentSubscriberBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recorder := serve(t, New(cfg, gsm.New(cfg)), http.MethodGet, "/api/v1/sms", "", "")
+	recorder := serve(t, smsFixtureServer(t, cfg), http.MethodGet, "/api/v1/sms", "", "")
 	assertCode(t, recorder, http.StatusOK, CodeOK)
 	var envelope struct {
 		Data struct {
@@ -358,7 +358,7 @@ func TestCallHistoryPaginationUsesReal18ColumnCSV(t *testing.T) {
 		t.Fatal(err)
 	}
 	if envelope.Data.Count != 1 || envelope.Data.Total != 2 || len(envelope.Data.Calls) != 1 ||
-		envelope.Data.Calls[0].StartedAt != "2026-09-08T01:02:03Z" ||
+		envelope.Data.Calls[0].StartedAt != "2026-09-08T09:02:03+08:00" ||
 		envelope.Data.Calls[0].AnsweredAt != nil || envelope.Data.Calls[0].UniqueID == nil ||
 		*envelope.Data.Calls[0].UniqueID != "second" {
 		t.Fatalf("unexpected CDR page: %+v", envelope.Data)
@@ -371,7 +371,7 @@ func TestStoppedLiveCollectionsAndMissingHistoryErrorClasses(t *testing.T) {
 		recorder := serve(t, server, http.MethodGet, path, "", "")
 		assertCode(t, recorder, http.StatusPreconditionFailed, CodePrecondition)
 	}
-	for _, path := range []string{"/api/v1/sms", "/api/v1/calls/history"} {
+	for _, path := range []string{"/api/v1/calls/history"} {
 		recorder := serve(t, New(cfg, gsm.New(cfg)), http.MethodGet, path, "", "")
 		assertCode(t, recorder, http.StatusNotFound, CodeNotFound)
 	}

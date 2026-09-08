@@ -62,6 +62,8 @@ type Manager struct {
 	ownedChildren []*managedProcess
 	startedAt     time.Time
 	lastStart     StartParams
+	smsMu         sync.Mutex
+	smsSession    *smsSession
 }
 
 // New creates a Manager.
@@ -184,6 +186,14 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	if m.cellRunningLocked() {
 		return ErrCellRunning
 	}
+	// A newly accepted attempt must never expose the previous launch's SMS.
+	// 新启动尝试清空旧会话；重复启动在上方拒绝，不影响当前边界。
+	m.clearSMSSession()
+	defer func() {
+		if err != nil {
+			m.clearSMSSession()
+		}
+	}()
 	if err := checkIface(p.Network); err != nil {
 		return err
 	}
@@ -212,6 +222,9 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 			stopManagedReverse(owned, 2*time.Second)
 		}
 	}()
+	if err := m.beginSMSSession(); err != nil {
+		return fmt.Errorf("establish SMS session boundary: %w", err)
+	}
 
 	// Launch order mirrors v1.3/run.sh (direct binaries, not systemctl).
 	if !sysop.Running("sipauthserve") {
@@ -294,6 +307,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	m.openbts = openbts
 	m.ownedChildren = append(m.ownedChildren[:0], owned[:len(owned)-1]...)
 	committed = true
+	m.commitSMSSession()
 	return nil
 }
 
@@ -332,6 +346,7 @@ func (m *Manager) stopLocked() (was, stopped bool) {
 	stopped = !m.anyServiceRunningLocked()
 	if stopped {
 		m.startedAt = time.Time{}
+		m.endSMSSession()
 	}
 	return was, stopped
 }

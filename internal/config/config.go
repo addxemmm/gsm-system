@@ -9,6 +9,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
+	_ "time/tzdata" // Keep IANA zones available in minimal images / 精简镜像内置时区。
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,6 +21,7 @@ type Config struct {
 	Version    string `yaml:"-"`
 	Revision   string `yaml:"-"`
 	ListenAddr string `yaml:"listen_addr"`
+	Timezone   string `yaml:"timezone"` // IANA name; TZ overrides YAML / TZ 优先于 YAML。
 	DataDir    string `yaml:"data_dir"` // e.g. /data : last_start.json, conf, log live here
 	ConfDir    string `yaml:"conf_dir"` // default DataDir/conf
 	LogDir     string `yaml:"log_dir"`  // default DataDir/log
@@ -55,6 +59,7 @@ func Default() Config {
 		Version:         "2.1.0",
 		Revision:        "unknown",
 		ListenAddr:      ":8082",
+		Timezone:        "Asia/Shanghai",
 		DataDir:         "/data",
 		OpenBTSBin:      "/OpenBTS/OpenBTS",
 		TransceiverBin:  "transceiver",
@@ -98,6 +103,15 @@ func Load(path string) (Config, error) {
 	if v := os.Getenv("GSM_LISTEN"); v != "" {
 		cfg.ListenAddr = v
 	}
+	if v, ok := os.LookupEnv("TZ"); ok {
+		cfg.Timezone = v
+	}
+	if _, err := cfg.Location(); err != nil {
+		return cfg, err
+	}
+	if cfg.Timezone == "" {
+		cfg.Timezone = Default().Timezone
+	}
 	if v := os.Getenv("GSM_DATA_DIR"); v != "" {
 		cfg.DataDir = v
 	}
@@ -133,3 +147,22 @@ func (c Config) EnsureDirs() error {
 
 // LogPath joins a log filename under LogDir.
 func (c Config) LogPath(name string) string { return filepath.Join(c.LogDir, name) }
+
+// Location resolves the project timezone without mutating process-global state.
+// 解析项目时区；不改变全局环境，空值使用东八区。
+func (c Config) Location() (*time.Location, error) {
+	name := c.Timezone
+	if name == "" {
+		name = "Asia/Shanghai"
+	}
+	// Reject host-dependent Local and filesystem/POSIX forms: use one named zone
+	// for Go and native libc processes / Go 与原生进程统一使用命名时区。
+	if name == "Local" || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") || strings.Contains(name, "..") {
+		return nil, fmt.Errorf("timezone/TZ must be an IANA timezone name, got %q", name)
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timezone/TZ %q: %w", name, err)
+	}
+	return loc, nil
+}

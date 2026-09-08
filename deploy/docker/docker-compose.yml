@@ -39,6 +39,9 @@ services:
       - /dev/bus/usb:/dev/bus/usb
       - gsm-data:/data
     environment:
+      # One timezone for container/native logs/API; CDR storage remains UTC.
+      # 容器、原生日志与 API 使用统一时区；CDR 持久记录仍为 UTC。
+      TZ: "${TZ:-Asia/Shanghai}"
       GSM_CONFIG: /app/configs/app.yaml
       # Canonical GSM API port (v2 retired, :8082 is free).
       GSM_LISTEN: "${GSM_LISTEN:-:8082}"

@@ -44,6 +44,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	location, err := cfg.Location()
+	if err != nil {
+		log.Fatalf("load timezone: %v", err)
+	}
+	if err := os.Setenv("TZ", cfg.Timezone); err != nil {
+		log.Fatalf("set native timezone: %v", err)
+	}
+	// Set once, before goroutines and native children start / 启动前统一时区。
+	time.Local = location
 	cfg.Version, cfg.Revision = version, revision
 	if *probe {
 		if err := healthcheck.Check(context.Background(), cfg.ListenAddr, os.Getenv("GSM_API_TOKEN")); err != nil {
@@ -76,7 +85,7 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
-		log.Printf("gsm-system listening on %s (data=%s)", cfg.ListenAddr, cfg.DataDir)
+		log.Printf("gsm-system listening on %s (data=%s timezone=%s)", cfg.ListenAddr, cfg.DataDir, cfg.Timezone)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}

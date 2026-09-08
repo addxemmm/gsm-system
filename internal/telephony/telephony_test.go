@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+	_ "time/tzdata"
 )
 
 func TestParseConciseAsterisk18Fields(t *testing.T) {
@@ -98,6 +100,33 @@ func TestHistoryParses18ColumnsAndNormalizesUTC(t *testing.T) {
 		call.AnsweredAt != nil || call.UniqueID == nil || *call.UniqueID != "169.1" ||
 		call.UserField == nil || *call.UserField != "note\nline" {
 		t.Fatalf("unexpected call: %+v", call)
+	}
+}
+
+func TestHistoryConvertsDisplayTimezoneWithoutReinterpretingUTCStorage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "Master.csv")
+	writeCDR(t, path, [][]string{{
+		"acct", "10001", "10002", "phones", "Caller", "SIP/a", "SIP/b", "Dial", "SIP/b",
+		"2026-09-08 01:02:03", "2026-09-08T09:02:04+08:00", "2026-09-08 01:02:15", "12", "11", "ANSWERED", "DOCUMENTATION", "169.1", "",
+	}})
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, _, err := HistoryInLocation(context.Background(), path, 1<<20, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0].StartedAt != "2026-09-08T09:02:03+08:00" ||
+		calls[0].EndedAt != "2026-09-08T09:02:15+08:00" || calls[0].AnsweredAt == nil || *calls[0].AnsweredAt != "2026-09-08T09:02:04+08:00" {
+		t.Fatalf("unexpected converted calls=%+v", calls)
+	}
+	utc, _, err := History(context.Background(), path, 1<<20)
+	if err != nil || utc[0].StartedAt != "2026-09-08T01:02:03Z" {
+		t.Fatalf("UTC storage changed: %+v err=%v", utc, err)
+	}
+	if _, _, err := HistoryInLocation(context.Background(), path, 1<<20, nil); err == nil {
+		t.Fatal("nil location accepted")
 	}
 }
 

@@ -1,4 +1,6 @@
 listen_addr: ":8082"
+# IANA project timezone; TZ environment takes precedence / TZ 环境变量优先。
+timezone: "Asia/Shanghai"
 data_dir: "/data"
 conf_dir: ""
 log_dir: ""

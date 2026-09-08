@@ -488,7 +488,7 @@ Invalid IMSI `422`; missing subscriber `404`; native transaction failure `500`.
 
 ### `GET /sms`
 
-HTTP `200`, including an empty parsed log:
+HTTP `200`, including an empty current-start observation window:
 
 ```json
 {
@@ -511,12 +511,65 @@ HTTP `200`, including an empty parsed log:
   "limit":100,
   "offset":0,
   "source":"smqueue.log",
+  "scope":"current_start",
+  "timezone":"Asia/Shanghai",
+  "session":{
+    "id":"SESSION_ID",
+    "started_at":"2026-09-08T16:00:00+08:00",
+    "ended_at":null,
+    "state":"running"
+  },
   "window":{"bytes":1024,"max_bytes":8388608,"truncated":false},
   "truncated":false
 }
 ```
 
-Missing log: `404`; read failure: `500`. New images preferentially emit and
+The scope is always `current_start`; there is no all-history query switch.
+Only observations within the latest known cell-start boundary are returned.
+Stopping or degrading a cell preserves that round until the next accepted start;
+failure of an accepted start attempt clears the observation session. Parameter
+validation rejection and duplicate-start `409` preserve the existing boundary.
+Recreating the management process does not
+adopt old log history: with no known start, return `200`, `sms: []`, `count: 0`,
+`total: 0`, and `session: null`, even if an old log exists. Original logs are not
+deleted. One rename rotation to `.1` is supported. If the boundary is lost or
+cannot be verified (for example, after multiple rotations), return `200` with
+empty observations and `session.state: boundary_lost`,
+never another log's history; genuine I/O failures such as permission errors return
+`500`. Session states are `starting`, `running`, `stopped`, or `boundary_lost`.
+`running` only means the observation window is not frozen; it does not guarantee
+cell readiness (query `GET /api/v1/cell`). This scope selects the current log
+observation window, not the message's original creation time: messages in a
+persistent queue can appear when reprocessed or replayed during this round.
+Pagination and the bounded tail window apply after session scoping, not
+to all historical messages. `window` retains only `bytes`, `max_bytes`, and
+`truncated`; excluded bytes from prior starts do not themselves mean truncation.
+
+`timezone` is the project's startup-configured IANA time zone, default
+`Asia/Shanghai` (UTC+08:00), overridable with `TZ` before launching the project.
+Native SMS timestamps without an offset are interpreted in that zone. Non-null
+message `time` is RFC3339Nano with a zone offset (UTC may use `Z`); session
+`started_at` and nullable `ended_at` are RFC3339 timestamps with a zone offset.
+These settings control time-zone interpretation/display, not the host clock.
+
+短信范围固定为 `current_start`，没有全历史查询开关。只返回最近一次已知小区启动
+边界内的观察；停止或降级后保留该轮，直到下一次已接受的启动尝试。已接受的
+启动尝试失败才清空会话；参数校验拒绝或重复启动 `409` 保留现有边界。
+管理进程重建后不接管旧历史：无已知启动时，即使存在旧日志，也返回 `200`、
+空短信数组、零计数和 `session: null`，不是 `404`，且不删除原日志。
+支持一次 rename 轮转至 `.1`；边界丢失或多次轮转后不可验证时，返回 `200`
+空观察和 `boundary_lost`，不回退
+读取其他历史；真实读取错误（例如权限错误）返回 `500`。会话状态为 `starting`、
+`running`、`stopped` 或 `boundary_lost`。
+`running` 仅表示观察窗口尚未冻结，不保证小区 ready；就绪状态查询 `GET /api/v1/cell`。
+范围依据本次日志观察窗口，而非短信最初创建时刻；持久队列中的短信在本次重新
+处理或重放时仍可能出现。
+分页和最大读取字节数限制均在本轮范围内生效；上一轮被排除的字节不算截断。
+时区在整个项目启动前通过 `TZ` 自定义，默认东八区 `Asia/Shanghai`。
+不带时区的原生短信时间按项目时区解析；非空短信时间输出带偏移的 RFC3339Nano，
+会话起止时间输出带偏移的 RFC3339，UTC 可使用 `Z`。时区配置不修改宿主机时钟。
+
+New images preferentially emit and
 parse the keyed structured NOTICE observation `GSM_SMS_V1` with
 `qtag_hex`/`from_hex`/`to_hex`/`text_hex`. Hex encoding preserves the exact
 parties and body without allowing message content to inject log lines; the
@@ -539,7 +592,7 @@ remain unresolved. An observed log value is never overwritten. The four fixed
 `current_subscriber_binding`, or `unknown` for each identity field. A
 `current_subscriber_binding` value is query-time context and must not be treated
 as the binding that existed when the message was logged. These are observations,
-not delivery receipts. If the registry is unavailable, log history remains
+not delivery receipts. If the registry is unavailable, current-start observations remain
 available and missing identity fields stay `null` with `unknown` provenance.
 
 Only complete entries inside the bounded tail window are exposed;
@@ -555,7 +608,7 @@ NOTICE 合并。旧 `Got SMS rqst qtag ...` 事件仅保留有证据的时间与
 不一致或未绑定记录，以及 `101`、`411` 等服务短码都保持未知；日志观察值绝不覆盖。
 固定四键 `identity_resolution` 为每个身份字段标注 `log_observation`、
 `current_subscriber_binding` 或 `unknown`。当前绑定只是查询时上下文，不表示短信发生时
-的历史绑定。签约库不可读时仍返回日志历史，缺失身份保持 `null`/`unknown`。这些是
+的历史绑定。签约库不可读时仍返回本轮日志观察，缺失身份保持 `null`/`unknown`。这些是
 日志观察，不是送达回执。日志读取受 `max_history_bytes` 限制。
 
 ### `POST /sms`
@@ -655,10 +708,12 @@ Reads the real Asterisk CSV CDR (`Master.csv`):
 ```
 
 Each item maps all 18 configured `cdr_csv` columns. The three native GMT values
-are returned as RFC3339 UTC. `answered_at`, `unique_id`, and `user_field` are
+are interpreted as UTC and returned as RFC3339 in the startup-configured project
+time zone (`TZ`, default `Asia/Shanghai`); native CDR storage remains UTC.
+`answered_at`, `unique_id`, and `user_field` are
 nullable. Missing CDR: `404`; non-18-column/malformed/time/read failure: `500`.
-No records are synthesized. 每项映射真实 CDR 的 18 列，时间统一为 RFC3339 UTC；
-不生成虚假记录。
+No records are synthesized. 每项映射真实 CDR 的 18 列，原生时间按 UTC 解析，
+输出转换为项目启动时区的 RFC3339；原始 CDR 仍按 UTC 存储，不生成虚假记录。
 
 ## 8. Network / 网络
 
@@ -707,10 +762,12 @@ or command failure: `503`. `POST /network` is removed and returns `405` with
   "version":"2.1.0",
   "revision":"REVISION",
   "cell":{"state":"stopped","ready":false,"sms_ready":false,"voice_ready":false},
-  "time":"2026-09-08T00:00:00Z"
+  "time":"2026-09-08T08:00:00+08:00"
 }
 ```
 
 The handler does not take the start/stop transition lock and does not run an
 exclusive SDR scan. Health remaining responsive during a long transition is by
 design. 健康检查不获取启停锁、不独占探测 SDR，因此切换期间仍可响应。
+`time` uses RFC3339 in the startup-configured project time zone (`TZ`, default
+`Asia/Shanghai`). / `time` 为项目启动时区的带偏移 RFC3339 时间，默认东八区。

@@ -26,7 +26,7 @@ func (s *Server) serveV1(w http.ResponseWriter, r *http.Request) {
 		}
 		switch r.Method {
 		case http.MethodGet:
-			writeV1(w, r, CodeOK, "ok", s.mgr.IsRunning())
+			writeV1(w, r, CodeOK, "ok", s.cellStatus())
 		case http.MethodPost:
 			s.handleCellStart(w, r)
 		case http.MethodDelete:
@@ -162,13 +162,13 @@ func (s *Server) handleCellStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCellStop(w http.ResponseWriter, r *http.Request) {
-	before := s.mgr.IsRunning()
+	before := s.cellStatus()
 	if before.State == "stopped" {
 		writeV1(w, r, CodeOK, "already stopped", map[string]any{"stopped": false})
 		return
 	}
 	s.mgr.Stop()
-	after := s.mgr.IsRunning()
+	after := s.cellStatus()
 	if after.State == "stopped" {
 		writeV1(w, r, CodeOK, "cell stopped", map[string]any{"stopped": true})
 		return
@@ -241,7 +241,7 @@ func (s *Server) handleProfileGet(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeV1(w, r, CodeOK, "ok", map[string]any{
 		"ok": true, "version": s.cfg.Version, "revision": s.cfg.Revision,
-		"cell": s.mgr.IsRunning(), "time": time.Now().UTC().Format(time.RFC3339),
+		"cell": s.cellStatus(), "time": time.Now().In(s.location).Format(time.RFC3339),
 	})
 }
 
@@ -264,7 +264,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.mgr.IsRunning().OpenBTS {
+	if !s.cellStatus().OpenBTS {
 		writeV1(w, r, CodePrecondition, "OpenBTS is not running", nil)
 		return
 	}
@@ -465,34 +465,39 @@ func (s *Server) handleSMSList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := s.cfg.LogPath(s.cfg.SmqueueLogName)
-	content, window, err := readTail(path, s.cfg.MaxHistoryBytes)
+	content, current, err := s.readCurrentSMS(s.cfg.MaxHistoryBytes)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			writeV1(w, r, CodeNotFound, "smqueue log not found", nil)
-		} else {
-			log.Printf("rid=%s smqueue log read failed: %v", RequestID(r), err)
-			writeV1(w, r, CodeInternal, "smqueue log read failed", nil)
-		}
+		log.Printf("rid=%s current SMS log read failed: %v", RequestID(r), err)
+		writeV1(w, r, CodeInternal, "current SMS log read failed", nil)
 		return
+	}
+	window := tailWindow{Bytes: current.Bytes, MaxBytes: current.MaxBytes, Truncated: current.Truncated}
+	var session any
+	if current.SessionID != "" {
+		session = map[string]any{"id": current.SessionID, "state": current.State,
+			"started_at": timestampIn(current.StartedAt, s.location),
+			"ended_at":   timestampIn(current.EndedAt, s.location)}
 	}
 	messages := parser.ParseSmqueueLog(string(content))
 	// The registry is a current snapshot, not historical SMS evidence. Use it
 	// only to complete a uniquely mapped party and retain explicit provenance.
 	// A registry read failure must not hide otherwise valid log observations.
-	registryCtx, registryCancel := context.WithTimeout(r.Context(), 2*time.Second)
-	registered, registryErr := s.subscriberStore().List(registryCtx)
-	registryCancel()
 	var bindings smsBindingIndex
-	if registryErr == nil {
-		bindings = newSMSBindingIndex(registered)
-	} else {
-		log.Printf("rid=%s SMS current-binding registry unavailable; returning log observations only", RequestID(r))
+	if len(messages) > 0 {
+		registryCtx, registryCancel := context.WithTimeout(r.Context(), 2*time.Second)
+		registered, registryErr := s.subscriberStore().List(registryCtx)
+		registryCancel()
+		if registryErr == nil {
+			bindings = newSMSBindingIndex(registered)
+		} else {
+			log.Printf("rid=%s SMS current-binding registry unavailable; returning log observations only", RequestID(r))
+		}
 	}
 	items := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
 		resolution := smsIdentityResolution(&message, bindings)
 		items = append(items, map[string]any{
-			"time": nilStr(message.Time), "text": nilStr(message.Text),
+			"time": nativeSMSTime(message.Time, s.location), "text": nilStr(message.Text),
 			"sender_number": nilStr(message.SenderNumber), "sender_imsi": nilStr(message.SenderIMSI),
 			"receiver_number": nilStr(message.ReceiverNumber), "receiver_imsi": nilStr(message.ReceiverIMSI),
 			"identity_resolution": resolution,
@@ -503,7 +508,31 @@ func (s *Server) handleSMSList(w http.ResponseWriter, r *http.Request) {
 		"sms": paged, "count": len(paged), "total": len(items),
 		"limit": page.Limit, "offset": page.Offset, "source": filepath.Base(path),
 		"window": window, "truncated": window.Truncated,
+		"scope": "current_start", "session": session, "timezone": s.location.String(),
 	})
+}
+
+// Native Logger uses local wall time without an offset. Only the current start
+// is read, so it shares this process's configured timezone; old runs are excluded.
+func nativeSMSTime(raw string, location *time.Location) any {
+	if raw == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		parsed, err = time.ParseInLocation("2006-01-02T15:04:05", raw, location)
+	}
+	if err != nil {
+		return nil
+	}
+	return parsed.In(location).Format(time.RFC3339Nano)
+}
+
+func timestampIn(value *time.Time, location *time.Location) any {
+	if value == nil {
+		return nil
+	}
+	return value.In(location).Format(time.RFC3339Nano)
 }
 
 const (
@@ -614,7 +643,7 @@ func (s *Server) handleSMSSend(w http.ResponseWriter, r *http.Request) {
 		writeValidation(w, r, fieldErrors)
 		return
 	}
-	state := s.mgr.IsRunning()
+	state := s.cellStatus()
 	if !state.SMSReady {
 		writeV1(w, r, CodePrecondition, "SMS services are not ready", map[string]any{"cell": state})
 		return
@@ -658,7 +687,7 @@ func (s *Server) handleCalls(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.mgr.IsRunning().Asterisk {
+	if !s.cellStatus().Asterisk {
 		writeV1(w, r, CodePrecondition, "Asterisk is not running", nil)
 		return
 	}
@@ -681,7 +710,7 @@ func (s *Server) handleCallHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	calls, window, err := telephony.History(r.Context(), s.cfg.AsteriskCDRPath, s.cfg.MaxHistoryBytes)
+	calls, window, err := telephony.HistoryInLocation(r.Context(), s.cfg.AsteriskCDRPath, s.cfg.MaxHistoryBytes, s.location)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			writeV1(w, r, CodeNotFound, "Asterisk CDR not found", nil)

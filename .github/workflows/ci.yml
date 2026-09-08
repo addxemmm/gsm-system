@@ -19,6 +19,7 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - run: sh deploy/docker/test-persistent-state.sh
+      - run: sh deploy/docker/test-timezone.sh
       - run: sh scripts/tests/test_prefetch_vendor.sh
       - run: sh scripts/tests/test_deploy_to_ubuntu.sh
       - run: sh scripts/tests/test_build_contract.sh

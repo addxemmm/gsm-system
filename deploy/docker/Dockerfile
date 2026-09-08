@@ -150,7 +150,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-system1.74.0 libboost-thread1.74.0 libboost-serialization1.74.0 \
     libboost-program-options1.74.0 libboost-chrono1.74.0 \
     libosip2-11 libsqliteodbc \
-    asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates procps psmisc \
+    asterisk sqlite3 iptables iproute2 usbutils curl ca-certificates procps psmisc tzdata \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=openbts4-builder /usr/local /usr/local
 # Clone-board FPGA image (Artix-7) + B2xx FX3 firmware, paired with UHD 4.1.
@@ -187,6 +187,7 @@ RUN cp /app/configs/app.yaml.example /app/configs/app.yaml \
  && mkdir -p /data/conf /data/log /etc/OpenBTS /var/run /var/lib/asterisk/sqlite3dir
 COPY deploy/docker/entrypoint.sh /entrypoint.sh
 COPY deploy/docker/persistent-state.sh /usr/local/lib/gsm-persistent-state.sh
+COPY deploy/docker/timezone.sh /usr/local/lib/gsm-timezone.sh
 RUN chmod +x /entrypoint.sh /OpenBTS/OpenBTSDo
 
 # Revision metadata follows expensive runtime layers so API-only releases reuse them.
@@ -201,6 +202,7 @@ LABEL org.opencontainers.image.title="gsm-system" \
 
 ENV GSM_CONFIG=/app/configs/app.yaml \
     GSM_DATA_DIR=/data \
+    TZ=Asia/Shanghai \
     UHD_IMAGES_DIR=/usr/share/uhd/images
 
 EXPOSE 8082

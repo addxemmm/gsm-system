@@ -47,6 +47,29 @@ still retained. 当前策略只保留在用 GSM 镜像 ID 及两个标签，不�
 
 ## 2. Vendor inputs / 上游源码缓存
 
+### Project timezone / 项目时区
+
+Set `TZ=Asia/Shanghai` in the root `.env` (the default, UTC+08:00), or another
+installed IANA name such as `Asia/Hong_Kong` or `UTC`, before creating the
+container. The same setting controls container `date`, Go/native process logs
+and API timestamp display. Invalid names fail startup explicitly. This changes
+timezone presentation, not the host/kernel clock; do not manually add eight
+hours to system time. The standalone Go YAML setting is `timezone`; a nonempty
+`TZ` environment variable takes precedence. Recreate the container to apply a
+changed deployment timezone. CDR files retain UTC storage and are converted
+only when queried.
+根 `.env` 使用 `TZ=Asia/Shanghai` 默认东八区，也可改为上述其他 IANA 名称。
+它统一容器、Go/原生日志及 API 展示；非法值明确启动失败，仅改变时区展示，
+不改宿主机时钟、不手动加八小时。独立 Go 可配置 YAML `timezone`，非空环境变量
+`TZ` 优先；部署修改后重建容器生效，话单仍以 UTC 存储、查询时转换。
+
+SMS queries are limited to the latest cell start recognized by this management
+process. After container/API recreation, `GET /api/v1/sms` returns an empty
+current-start view until a new cell start establishes a boundary. Persistent
+logs and subscriber bindings remain intact; historical runs are not relabeled
+using the new timezone. / 短信查询仅限本管理进程识别的最近小区启动；重建后尚未
+启动时返回空范围，不删除日志或绑定，也不拿新时区重解释旧轮日志。
+
 Fresh data volumes seed `GPRS.Enable=1`, two C0 packet-data channels and
 `GGSN.DNS=${GSM_GPRS_DNS:-1.1.1.1}`. The DNS must be a reachable upstream IPv4
 resolver, not a container/host loopback stub. Existing OpenBTS database settings,

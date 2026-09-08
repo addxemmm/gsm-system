@@ -441,12 +441,12 @@ func TestSMSObservationSchemaAndPostmanContract(t *testing.T) {
 				}
 			}
 			joined := strings.Join(checks, "\n")
-			for _, marker := range append(wantFields, "d.count", "d.sms.length", "typeof m[k]", "d.limit", "d.offset", "d.window.bytes", "d.window.max_bytes", "d.truncated", "d.window.truncated", "log_observation", "current_subscriber_binding", "unknown") {
+			for _, marker := range append(wantFields, "d.count", "d.sms.length", "typeof m[k]", "d.limit", "d.offset", "d.window.bytes", "d.window.max_bytes", "d.truncated", "d.window.truncated", "log_observation", "current_subscriber_binding", "unknown", "d.scope", "current_start", "d.timezone", "d.session", "session.id", "session.started_at", "session.ended_at", "session.state", "boundary_lost", "Date.parse", "isOffsetTime(m.time)", "['bytes','max_bytes','truncated']") {
 				if !strings.Contains(joined, marker) {
 					t.Errorf("Postman SMS checks are missing %q", marker)
 				}
 			}
-			for _, marker := range []string{"GSM_SMS_V1", "qtag_hex", "message identity/qtag", "never by content", "unkeyed text remains null", "never associated", "identity_resolution", "current_subscriber_binding", "101/411", "not historical facts", "delivery receipts"} {
+			for _, marker := range []string{"GSM_SMS_V1", "qtag_hex", "message identity/qtag", "never by content", "unkeyed text remains null", "never associated", "identity_resolution", "current_subscriber_binding", "101/411", "not historical facts", "delivery receipts", "current_start", "session=null", "Asia/Shanghai", "boundary_lost", "RFC3339Nano", "no all-history switch"} {
 				if !strings.Contains(item.Request.Description, marker) {
 					t.Errorf("Postman SMS description is missing identity/observation rule %q", marker)
 				}
