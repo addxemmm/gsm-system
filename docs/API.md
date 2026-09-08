@@ -351,7 +351,14 @@ HTTP `200` even when empty:
 ```json
 {
   "connections": [
-    {"imsi":"IMSI","imei":null,"number":null,"ip":null}
+    {
+      "imsi":"IMSI",
+      "imei":null,
+      "number":null,
+      "ip":null,
+      "auth":0,
+      "reject_code":4
+    }
   ],
   "count": 1,
   "total": 1,
@@ -363,10 +370,33 @@ HTTP `200` even when empty:
 }
 ```
 
-Nullable fields are JSON `null`, not an empty string. Native CLI/read failures
-return `500`; a stopped OpenBTS process returns `412`. Empty results are normal
-`200`. This is a current observation and does not label subscribers online.
-空列表是正常 `200`；可空字段使用 JSON `null`；连接观察不等于在线判定。
+`imei`, `number`, and `ip` are nullable and use JSON `null`, not an empty
+string. `auth` and `reject_code` are additive, optional response fields during
+a rolling 2.1 upgrade; when present they are nullable integers that preserve
+the native values. AUTH maps to `0=unauthorized`, `1=registrar-authorized`,
+`2=open-registration`, and `3=fail-open`; none of these recorded values is a
+real-time online indicator. In particular, `auth:0` is not authorized.
+`reject_code:4` is a native registration rejection result with more than one
+possible cause, so it does not by itself diagnose a Ki mismatch. The parser
+reads `number` from its fixed native column and the packet-data address from
+`SGSN.IPs=`; unrelated tokens such as `WELCOME_SENT` are not phone numbers.
+
+Rows originate from volatile TMSI/SGSN observations and may represent
+registration attempts without an allocated TMSI. They are not an admitted or
+online-device list. `ip:null` only means that no handset packet-data address was
+observed: it does not prove a NAT failure. A handset data IP is expected only
+after GPRS is enabled and PDP/SGSN setup succeeds; SMS uses signalling and does
+not depend on that handset IP. Native CLI/read failures return `500`; a stopped
+OpenBTS process returns `412`; an empty result is normal `200`.
+
+`imei`、`number`、`ip` 均可为 `null`；滚动升级期间新增的 `auth`、
+`reject_code` 可缺省，存在时为可空整数。AUTH 原生值为
+`0=未授权`、`1=Registrar 授权`、`2=开放注册`、`3=失败时开放`，均不证明实时
+在线；`reject_code:4` 可能对应多种注册失败原因，不能单凭该值断定
+Ki 错误。号码按原生固定列解析，`WELCOME_SENT` 等状态字段不会被当作号码。
+TMSI/SGSN 行也可能只是未分配 TMSI 的注册尝试，不是已入网或在线名单。
+`ip:null` 仅表示未观察到手机分组数据地址，不证明 NAT 失败；手机数据 IP 需在
+GPRS 开启且 PDP/SGSN 就绪后才会出现，而短信走信令，不依赖手机数据 IP。
 
 ### `GET /subscribers`
 
@@ -478,6 +508,12 @@ Cell/SMS service not ready: `412`; upstream rejection/CLI failure: `500`.
 
 `202` 仅表示上游接受提交，不代表送达。仅安全 ASCII/GSM 默认基本表交集，最长 159
 字节；拒绝中文/UCS-2、扩展表、单双引号与反引号。
+
+The normal welcome path does not submit an SMS when the configured message is
+empty. A native `WELCOME_SENT` scheduling marker records neither API submission
+nor handset delivery; likewise, HTTP `202` is not delivery evidence. / 正常欢迎
+消息为空时不会提交短信；原生 `WELCOME_SENT` 调度标记不代表已提交或手机已收到，
+HTTP `202` 同样不代表送达。
 
 ## 7. Calls / 通话
 

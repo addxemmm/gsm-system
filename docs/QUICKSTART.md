@@ -146,9 +146,31 @@ curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/subscribers"; echo
 curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/subscribers/IMSI"; echo
 ```
 
-`connections` is a volatile observation and may be empty; it is not proof of
-offline/online subscriber status. `subscribers` is the persistent Asterisk
-registry. `/connections` 是当前观察视图，不能当作持久签约或在线判定。
+`connections` is a volatile registration/TMSI observation and may be empty or
+contain rejected attempts; it is not an admitted or online-device list.
+`subscribers` is the persistent Asterisk registry. During a rolling 2.1 upgrade,
+connection rows may additionally contain nullable integer `auth` and
+`reject_code` fields. Values are passed through from native records: AUTH is
+`0=unauthorized`, `1=registrar-authorized`, `2=open-registration`, or
+`3=fail-open`, and no recorded value is a live-online indicator.
+`reject_code:4` alone does not identify a unique cause or prove a Ki
+mismatch. `/connections` 是注册/TMSI 观察视图，不是持久签约、已入网或在线
+判定；`auth:0` 表示鉴权未成功，且不能只凭拒绝码 4 断定 Ki 错误。
+
+`ip:null` means no handset packet-data address was observed; it does not prove
+NAT failure. Such an address is expected only after GPRS and PDP/SGSN setup are
+ready, while SMS uses signalling and does not depend on it. The broadcast PLMN
+`001/01` is not an IMSI-prefix allowlist: a `001/11` test SIM may attempt manual
+selection but must satisfy the active admission policy. Strict registrar mode
+requires matching provisioning/authentication; open registration instead needs
+an explicit matching rule and is not enabled by an empty rule.
+Automatic selection may also select a permitted roaming network rather than
+matching only the IMSI prefix; see TS 23.122
+[4.4.3.1.1/4.4.3.1.2](https://www.etsi.org/deliver/etsi_ts/123100_123199/123122/18.11.00_60/ts_123122v181100p.pdf).
+`ip:null` 不证明 NAT 失败；手机数据 IP 仅在 GPRS 与 PDP/SGSN 就绪后出现，
+短信走信令且不依赖该 IP。`001/01` 是广播 PLMN 而非 IMSI 前缀白名单；
+`001/11` 测试 SIM 可手选尝试但仍须满足当前接入策略；严格模式要求匹配签约与
+鉴权，开放注册则须显式配置非空匹配规则。自动选网也可选择允许的漫游网。
 
 Bind a unique test number only inside a controlled mutation window:
 
@@ -180,6 +202,10 @@ backticks. HTTP `202` means submitted directly through the OpenBTS CLI, not
 delivered and not queued through an API-owned `smqueue` job. 短信 `202` 只表示提交，
 不表示送达。
 
+An empty normal welcome-message setting submits nothing. `WELCOME_SENT` is a
+native scheduling marker, not a phone number and not proof of delivery. / 正常
+欢迎消息为空就不发送；`WELCOME_SENT` 是原生调度标记，不是号码，也不代表送达。
+
 `GET /calls` lists current Asterisk channels. `/calls/history` reads real
 Asterisk CSV CDR rows and normalizes timestamps to UTC; neither endpoint creates
 synthetic calls. 语音状态与历史均来自 Asterisk 真实数据。
@@ -210,8 +236,11 @@ DELETE 停止，再执行网络 GET/PUT；否则 PUT 返回 `409`。
 | `41201` | inspect `sms_ready`, `voice_ready`, or required native process state |
 | `42201` | inspect `data.errors`; verify radio ranges, IMSI, number, SMS alphabet, and interface |
 | `50301` | inspect the named native dependency on the SDR host; do not infer RF success from health |
+| connection rows with `auth:0` | authentication has not succeeded; compare persistent `SIP_BUDDIES`/`DIALDATA` rows and `sipauthserve` logs; do not count rows as admitted handsets |
+| `reject_code:4` | correlate native logs and subscriber provisioning; this code alone does not prove a Ki mismatch |
+| `ip:null` | check `GPRS.Enable` and `SGSN.IPs=`/PDP readiness separately from a healthy NAT rule; SMS does not require this IP |
 | empty connections | wait for/manual-select the test network; compare the persistent subscriber record |
-| SMS not received | `202` is submission only; inspect `/data/log/smqueue.log` and handset state |
+| SMS not received | `202` and `WELCOME_SENT` are not delivery evidence; inspect `/data/log/smqueue.log` and handset state |
 | no CDR | verify `/data/log/asterisk/cdr-csv/Master.csv`, CDR modules, and a completed call |
 
 For a read-only inspection, run only **Read-only / 查询接口**. Send each

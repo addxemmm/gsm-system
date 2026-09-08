@@ -199,7 +199,7 @@ paths:
     get:
       tags: [subscribers]
       operationId: getConnections
-      summary: Observe current volatile connections / 查询当前易失连接
+      summary: Observe volatile registration/TMSI rows, not online state / 查询易失注册/TMSI 观察行，非在线状态
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
@@ -544,7 +544,15 @@ components:
         imsi: { type: string, pattern: '^[0-9]{15}$' }
         imei: { type: string, nullable: true }
         number: { type: string, nullable: true }
-        ip: { type: string, nullable: true }
+        ip: { type: string, nullable: true, description: Handset packet-data address observed after GPRS/PDP setup; null does not diagnose NAT / GPRS/PDP 后观察到的手机数据地址；null 不用于诊断 NAT }
+        auth:
+          type: integer
+          nullable: true
+          description: Optional additive native AUTH record value (0 unauthorized, 1 registrar-authorized, 2 open-registration, 3 fail-open); no value is a live online indicator / 可选新增原生 AUTH 记录值（0 未授权、1 Registrar 授权、2 开放注册、3 失败时开放）；均非实时在线指标
+        reject_code:
+          type: integer
+          nullable: true
+          description: Optional additive native rejection code; code 4 alone does not identify a unique cause or prove a Ki mismatch / 可选新增原生拒绝码；仅凭 4 不能确定唯一原因或断定 Ki 错误
     Subscriber:
       type: object
       required: [imsi, number, binding_consistent]
@@ -715,7 +723,7 @@ components:
                 properties:
                   data: { $ref: '#/components/schemas/CellStatus' }
     ConnectionsOK:
-      description: Paginated current observations / 分页当前观察
+      description: Paginated volatile registration/TMSI observations; rows are not an admitted or online-device list / 分页易失注册/TMSI 观察；不是已入网或在线名单
       content:
         application/json:
           schema:

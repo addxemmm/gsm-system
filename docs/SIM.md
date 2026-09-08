@@ -16,6 +16,67 @@ The persistent database lives at `/data/state/asterisk/sqlite3.db` and is expose
 to Asterisk at its native path. The TMSI database is volatile and may not contain
 a disconnected subscriber. 持久签约库与易失 TMSI 表用途不同。
 
+### Interpret registration evidence / 解读注册证据
+
+TMSI/SGSN rows are observations of native registration activity, not an
+admitted or online-device list. The additive `auth` and `reject_code` connection
+fields are optional during a rolling 2.1 upgrade and are nullable integers when
+present. They preserve native recorded values rather than calculating a new
+status: `0=unauthorized`, `1=registrar-authorized`, `2=open-registration`, and
+`3=fail-open`. None is a real-time online guarantee. `reject_code:4` has multiple
+possible registration-failure causes and does not alone prove a Ki mismatch.
+
+TMSI/SGSN 行是原生注册活动的观察值，不是已入网或在线名单。滚动升级期间新增的
+`auth`、`reject_code` 可缺省；存在时为可空整数并按原生值透传。AUTH 值为
+`0=未授权`、`1=Registrar 授权`、`2=开放注册`、`3=失败时开放`，均非实时在线
+证明；拒绝码 4 可能有多种原因，
+不能据此单独断定 Ki 错误。
+
+A synthetic, redacted diagnostic pattern may look like this:
+
+```text
+GPRS.Enable=0
+SGSN.IPs=
+connections: 3 synthetic source rows; each has native TMSI absent, number=null, ip=null, auth=0, reject_code=4
+SIP_BUDDIES rows=0; DIALDATA rows=0
+sipauthserve: repeated IMSI unknown
+network: rule_present=true; ipv4_forwarding=true
+```
+
+This pattern shows an observed, rejected registration attempt with no persistent
+subscriber rows; it does not show three admitted handsets. `ip:null` is also
+compatible with healthy NAT: a handset packet-data address appears only after
+GPRS is enabled and PDP/SGSN setup succeeds. SMS uses GSM signalling and does
+not require that handset data IP. The parser takes `number` from the fixed
+native number column and packet-data IPs from `SGSN.IPs=`; a scheduling token
+such as `WELCOME_SENT 1` must not become phone number `1`.
+
+该合成例子表示观察到了被拒绝的注册尝试，且持久签约表为空，并不表示三台手机已
+入网。即使 NAT 正常，GPRS 关闭或 PDP/SGSN 未就绪时 `ip` 仍会是 `null`；短信走
+GSM 信令，不依赖该手机数据 IP。号码来自固定原生列，`WELCOME_SENT 1` 之类的
+调度状态不得被误读为号码 `1`。
+
+The cell PLMN (for example `001/01`) is the broadcast MCC/MNC, not an IMSI-prefix
+allowlist. A SIM with a different home PLMN placeholder such as `001/11` may try
+manual selection, but it must still satisfy the active admission policy. In the
+strict registrar mode that means matching provisioning and authentication;
+explicit open-registration rules are a different policy, and an empty matching
+rule does not enable them. Automatic selection is not restricted to an exact
+IMSI-prefix match and may select a permitted roaming network. See 3GPP/ETSI TS
+23.122, automatic and manual network selection, clauses
+[4.4.3.1.1 and 4.4.3.1.2](https://www.etsi.org/deliver/etsi_ts/123100_123199/123122/18.11.00_60/ts_123122v181100p.pdf).
+
+小区 `001/01` 是广播 PLMN，不是 IMSI 前缀白名单。归属 PLMN 为 `001/11` 的
+测试 SIM 可以手选尝试，但仍须满足当前接入策略：严格 Registrar 模式要求匹配
+签约与鉴权；开放注册是另一种须显式配置匹配规则的策略，空规则并未开启它。
+自动选网也可按规则选择漫游网，并非只选择与 IMSI 前缀相同的 PLMN。
+
+An empty configured welcome message causes no normal welcome SMS submission.
+`WELCOME_SENT` is only a native scheduling marker, not delivery evidence. An API
+HTTP `202` likewise means submitted, not delivered; verify handset receipt
+separately. / 正常欢迎消息为空就不发送；`WELCOME_SENT` 仅是原生调度标记，
+不代表送达。API 的 HTTP `202` 同样仅表示已提交，须另行核验手机收件。
+
 ## Bind a number / 绑定号码
 
 ```http

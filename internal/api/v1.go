@@ -281,19 +281,28 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connections := parser.ParseTMSIs(tmsiOutput, parser.ParseSGSN(sgsnOutput))
-	items := make([]map[string]any, 0, len(connections))
-	for _, connection := range connections {
-		items = append(items, map[string]any{
-			"imsi": connection.IMSI, "imei": nilStr(connection.IMEI),
-			"number": nilStr(connection.Number), "ip": nilStr(connection.IP),
-		})
-	}
+	items := connectionItems(connections)
 	paged := pageSlice(items, page)
 	writeV1(w, r, CodeOK, "ok", map[string]any{
 		"connections": paged, "count": len(paged), "total": len(items),
 		"limit": page.Limit, "offset": page.Offset, "source": "openbts_tmsi_sgsn",
 		"window": "current_snapshot", "truncated": false,
 	})
+}
+
+// These are observed TMSI records, including rejected registration attempts,
+// not proof that a handset is currently attached or has a PDP context.
+// 返回原生观测及拒绝原因，不把出现过的终端等同于已入网/已分配 IP。
+func connectionItems(connections []parser.UE) []map[string]any {
+	items := make([]map[string]any, 0, len(connections))
+	for _, connection := range connections {
+		items = append(items, map[string]any{
+			"imsi": connection.IMSI, "imei": nilStr(connection.IMEI),
+			"number": nilStr(connection.Number), "ip": nilStr(connection.IP),
+			"auth": connection.Auth, "reject_code": connection.RejectCode,
+		})
+	}
+	return items
 }
 
 func (s *Server) subscriberStore() subscriber.Store {

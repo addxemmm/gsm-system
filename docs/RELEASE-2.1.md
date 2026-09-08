@@ -307,3 +307,35 @@ still reject malformed start input. This is a client/docs/test-only change, with
 no image rebuild, service restart or RF operation. 只读检查仅运行 GET 分组，
 不要全量运行包含实际写操作的集合；离线测试覆盖旧开关残留及参数拒绝。本次不重建
 镜像、不重启服务、不操作射频。
+
+## Registration observation correction / 注册观测纠正
+
+A live, read-only investigation found three rejected TMSI observations, not
+three successful registrations: native `AUTH=0`, `REJECT_CODE=4`, no assigned
+TMSI, an empty subscriber/routing registry, and repeated registrar `imsi unknown`
+messages. `GPRS.Enable=0`, the SGSN list was empty, and the container's `eth0`
+forwarding/NAT rule was present. 当前只读调查确认列表为被拒绝的注册尝试；GPRS
+未启用，空 IP 不是 NAT 故障的证据。没有保存真实终端标识或密钥。
+
+- Fix a parser defect that collapsed blank identity columns and misread
+  `WELCOME_SENT=1` as a telephone number. Parse the native fixed-width header,
+  and derive numbers only from explicit telephone identities. 修复空列折叠造成
+  的号码错位，不再将欢迎短信状态当作电话号码。
+- Recognize native SGSN `IPs=` as well as legacy `IP=`, validating address lists
+  rather than displaying arbitrary tokens. 支持真实复数 IP 字段及有效地址列表。
+- Add nullable raw `auth` / `reject_code` diagnostics to connection responses.
+  They describe the stored observation, not real-time online status; unknown
+  values remain null. OpenAPI/Postman permit absent fields on older 2.1 runtimes
+  during rollout. 新增诊断值兼容旧版响应，不将记录存在误判为成功入网。
+- Document strict registration versus OpenBTS open registration, PLMN selection,
+  packet-data versus signaling SMS, and the fact that `WELCOME_SENT`/HTTP `202`
+  do not prove delivery. 正常注册欢迎消息为空时不发送；曾经调度失败提示短信也
+  不代表正常欢迎短信送达。
+
+Synthetic parser/API regressions, Windows unit/vet, Linux race/vet and offline
+Postman script tests passed. This investigation did not send SMS, provision SIM
+keys, enable open registration/GPRS, restart the cell or replace its image.
+The running image remains source `fbdaa5be2209`; deployment and any access-policy
+change await the operator's confirmation while the cell is in use. 合成回归验证
+通过；当前只修复源码和契约，线上仍为原镜像。小区使用期间，部署及开放注册/GPRS
+变更等待确认，不声称真实短信或数据业务已经修复。

@@ -194,6 +194,60 @@ func TestPresetContractArtifacts(t *testing.T) {
 	}
 }
 
+func TestConnectionRegistrationDiagnosticsContract(t *testing.T) {
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Type     string `yaml:"type"`
+					Nullable bool   `yaml:"nullable"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(mustRead(t, filepath.Join(root(t), "docs", "api", "openapi.yaml")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"auth", "reject_code"} {
+		property, exists := doc.Components.Schemas["Connection"].Properties[field]
+		if !exists || property.Type != "integer" || !property.Nullable {
+			t.Errorf("Connection.%s must expose nullable raw integer diagnostics", field)
+		}
+	}
+	collection, _ := readPostman(t)
+	found := false
+	var walk func([]postmanItem)
+	walk = func(items []postmanItem) {
+		for _, item := range items {
+			walk(item.Item)
+			if item.Request == nil || item.Request.Method != http.MethodGet {
+				continue
+			}
+			var url string
+			_ = json.Unmarshal(item.Request.URL, &url)
+			if !strings.HasPrefix(url, "{{baseUrl}}/api/v1/connections") {
+				continue
+			}
+			found = true
+			var checks []string
+			for _, event := range item.Event {
+				if event.Listen == "test" {
+					checks = append(checks, event.Script.Exec...)
+				}
+			}
+			for _, field := range []string{"auth", "reject_code"} {
+				if !strings.Contains(strings.Join(checks, "\n"), field) {
+					t.Errorf("Postman connection checks must cover %s", field)
+				}
+			}
+		}
+	}
+	walk(collection.Item)
+	if !found {
+		t.Fatal("Postman is missing connections query")
+	}
+}
+
 func readOpenAPIRoutes(t *testing.T) map[string][]string {
 	t.Helper()
 	var doc struct {
