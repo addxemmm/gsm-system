@@ -61,5 +61,8 @@ detached. 解绑仅清除号码路由，不删除签约、不写 SIM、也不代
 5. Exercise voice/SMS and verify delivery separately.
 6. Use `DELETE .../number` to remove the test binding when complete.
 
-Postman defaults to `enable_mutations=false`, so bind/unbind requests are skipped
-until the operator explicitly opens a controlled mutation window. Postman 默认不执行绑定/解绑。
+Postman binding/unbinding requests execute directly when Send is pressed; no
+additional client enable switch is required. Use GET requests for read-only
+inspection, and send each write individually rather than running the entire
+collection. Postman 绑定/解绑点击 Send 即执行，无额外启用开关；只读检查使用
+GET，写操作逐条发送，不要全量运行集合。

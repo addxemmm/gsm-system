@@ -149,17 +149,19 @@ Important failures: `409` running/transitioning, `422` invalid profile,
 
 #### Postman manual start / Postman 手动启动
 
-1. Select the intended Postman environment so `baseUrl` points at the chosen
-   host; configure `token` there only when Bearer auth is enabled. / 选择正确
-   环境，确认 `baseUrl` 指向目标主机；仅开启 Bearer 鉴权时配置 `token`。
-2. Set `enable_mutations=true` **and** `enable_rf_start=true`. They both default
-   to `false`; a missing switch is reported in the Postman Console and the
-   request is skipped. Variable lookup uses normal `pm.variables.get`
-   precedence, so an environment value of `false` or an empty value overrides
-   a collection value of `true`. / 两个开关默认均为 `false`；缺少时
-   Console 会说明具体开关并跳过请求。环境中的 `false` 或空值会覆盖
-   collection 中的 `true`。
-3. Open **Cell start / 小区启动（二选一，需开启双开关）** and press
+1. Re-import the current collection, then use your configured environment or
+   the **gsm-system 2.1 example / 环境示例** template so `baseUrl` points at
+   the chosen host. Configure `token` only when Bearer auth is enabled. Existing `enable_mutations` and
+   `enable_rf_start` environment values may be deleted or left in place; they
+   no longer have any effect. / 必须重新导入新集合；环境可沿用
+   已配置环境或参照示例，`token` 仅在启用鉴权时配置，旧开关值可删除
+   或保留为无效值。
+2. The groups are **Read-only / 查询接口**, **Cell start /
+   小区启动（二选一）**, and **Mutations / 写操作（手动发送）**. Running only
+   the GET group provides a read-only check; mutation requests are sent
+   directly when **Send** is pressed. / 仅运行 GET 分组可做只读检查；
+   写请求点击 **Send** 后直接发送。
+3. Open **Cell start / 小区启动（二选一）** and press
    **Send** on exactly one clearly named request: **POST /cell — Preset /
    按预设启动** uses `start_preset_id` (default `0`, any stored ID is
    allowed); **POST /cell — Custom / 自定义参数启动** uses all of
@@ -168,13 +170,17 @@ Important failures: `409` running/transitioning, `422` invalid profile,
    read-only default-query variable, while `preset_id` remains a preset-CRUD
    fixture. / 在该分组中仅发送 preset 或 custom 其中
    一个；三个 preset 相关变量用途不同，不要混用。
-4. RF transmission is a real side effect. Never run the full collection or
-   folder with both switches enabled. Unresolved variables, an empty/mixed
-   body, or an incomplete custom body are explained and skipped before any RF
-   request is sent. This uses Postman's documented
+4. The start pre-request check remains active: unresolved variables, an
+   empty/mixed JSON body, or an incomplete custom body are explained in the
+   Postman Console and skipped before any RF request is sent. This uses Postman's documented
    [`pm.execution.skipRequest()` behavior](https://learning.postman.com/docs/tests-and-scripts/write-scripts/postman-sandbox-reference/pm-execution/).
-   / RF 发射是真实副作用；两个开关开启时不要运行全集或整个文件夹。
-5. A sent start may take up to 90 seconds. When it returns, send `GET /cell` and
+   / 启动请求仍会检查 JSON 参数，并在 Console 说明跳过原因。
+5. Never run the full collection: cell start, deletion, and SMS submission
+   have real effects, with no additional enable switch. `verify_factory_defaults`
+   is an independent response-assertion option and does not control whether a
+   request is sent. / 不要 Run 整个集合：启动、删除和发短信会真实执行，
+   且没有额外开关；`verify_factory_defaults` 仅控制响应断言。
+6. A sent start may take up to 90 seconds. When it returns, send `GET /cell` and
    inspect `state`, `ready`, `sms_ready`, and `voice_ready`; HTTP success alone
    is not RF or handset acceptance. / 已发出的启动最长可等待 90 秒；返回后
    发送 `GET /cell` 查询状态，HTTP 成功不等于 RF/真机验收。

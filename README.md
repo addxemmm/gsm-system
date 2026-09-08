@@ -38,8 +38,9 @@ management code.
   短信、通话/历史、网络、存档与健康资源。
 - Idempotent network configuration and explicit number bind/unbind semantics.
   出口 NAT 幂等配置，号码绑定/解绑语义明确。
-- OpenAPI 3.0 and a mutation-gated Postman collection.
-  提供 OpenAPI 3.0 与默认只读的 Postman 集合。
+- OpenAPI 3.0 and a Postman collection grouped by read-only queries, cell
+  start, and manually sent mutations. 提供 OpenAPI 3.0，Postman 集合按
+  只读查询、小区启动与手动发送写操作分组。
 - Persistent native OpenBTS/Asterisk databases and Go-native syslog capture.
   持久化 OpenBTS/Asterisk 原生数据库，Go 原生 syslog 采集。
 
@@ -77,13 +78,16 @@ persists in `/data/presets.json`. `POST /cell` accepts complete explicit fields,
 changes a running cell and never autostarts one. 预设库初始包含 `"0"` 至 `"4"`
 五套可编辑默认配置；预设 CRUD 不影响运行中小区，也不会自启动。
 
-For a deliberate RF start in Postman, select the environment that supplies
-`baseUrl`, set both `enable_mutations=true` and `enable_rf_start=true`, then
-open **Cell start / 小区启动** and press **Send** on exactly one of its
-clearly named preset or custom requests. Both switches default to `false`; do
-not run the whole collection with them enabled. Postman 启动小区时，先选择提供
-`baseUrl` 的环境，同时开启两个开关，再在“Cell start / 小区启动”
-中二选一单独发送；不要在开关开启时运行整个集合。
+Re-import the current collection, then use your configured environment or the
+**gsm-system 2.1 example / 环境示例** template so `baseUrl` targets the
+intended host; `token` remains optional. Use
+**Read-only / 查询接口** for GET-only inspection, choose exactly one preset
+or custom request under **Cell start / 小区启动（二选一）**, and send requests
+under **Mutations / 写操作（手动发送）** individually. Do not run the full
+collection: start, delete, and SMS requests have real effects and no extra
+enable switch. 必须重新导入新集合；环境可沿用已配置的环境或参照示例，
+旧环境里的两个开关可删除，留着也不再生效。`verify_factory_defaults`
+仅是独立的响应断言选项，不影响发送。
 
 Full contract / 完整契约：
 

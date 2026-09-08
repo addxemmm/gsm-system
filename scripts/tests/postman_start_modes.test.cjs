@@ -19,14 +19,16 @@ const custom = starts.find(i => !JSON.parse(i.request.body.raw).preset_id);
 assert.ok(preset.name.includes('按预设启动'));
 assert.ok(custom.name.includes('自定义参数启动'));
 for (const values of [defaults, envDefaults]) {
-  assert.equal(values.enable_mutations, 'false');
-  assert.equal(values.enable_rf_start, 'false');
+  assert.equal(Object.hasOwn(values, 'enable_mutations'), false);
+  assert.equal(Object.hasOwn(values, 'enable_rf_start'), false);
   assert.equal(values.start_preset_id, '0');
   assert.equal(values.preset_id, 'lab-900');
   assert.equal(values.short_name, 'addx');
   assert.equal(values.band, '1800');
 }
-const allow = {enable_mutations: 'true', enable_rf_start: 'true'};
+// Imported old environments may still contain these keys. They must be ignored.
+// 已导入的旧环境可以残留这些键；新集合必须忽略它们。
+const legacyOff = {enable_mutations: 'false', enable_rf_start: 'false'};
 const stop = Symbol('skip request');
 function run(item, options = {}) {
   const vars = {...defaults, baseUrl: 'http://fixture.invalid:8082', ...options.collection};
@@ -60,47 +62,45 @@ function blocked(item, options, diagnostic) {
   assert.ok(!result.logs.includes('GSM SENDING'));
 }
 for (const item of starts) {
-  blocked(item, {}, 'enable_mutations=true');
-  blocked(item, {environment: {enable_mutations: 'true'}}, 'enable_rf_start=true');
-  blocked(item, {environment: {enable_rf_start: 'true'}}, 'enable_mutations=true');
-  for (const key of Object.keys(allow)) for (const value of [false, '', 'false', '0']) {
-    blocked(item, {collection: allow, environment: {[key]: value}}, key + '=true');
-  }
-  for (const environment of [allow, {enable_mutations: true, enable_rf_start: true},
-    {enable_mutations: ' TRUE ', enable_rf_start: ' True '}]) {
+  for (const environment of [{}, legacyOff, {enable_mutations: false, enable_rf_start: ''}]) {
     const result = run(item, {environment});
     assert.equal(result.skipped, false);
     assert.match(result.logs, /GSM SENDING/);
   }
   for (const baseUrl of ['http://HOST:8082', '{{unknown_host}}', '', 'http://fixture.invalid:8082/api/v1']) {
-    blocked(item, {environment: {...allow, baseUrl}}, 'baseUrl');
+    blocked(item, {environment: {baseUrl}}, 'baseUrl');
   }
   for (const body of ['null', '[]', '{}', '{', '{"bad":"{{unknown}}"}']) {
-    blocked(item, {environment: allow, body});
+    blocked(item, {body});
   }
-  blocked(item, {environment: allow, body: '{"preset_id":"0","band":"1800"}'});
+  blocked(item, {body: '{"preset_id":"0","band":"1800"}'});
 }
-const chosen = run(preset, {environment: {...allow, start_preset_id: 'my-preset'}});
+const chosen = run(preset, {environment: {start_preset_id: 'my-preset'}});
 assert.equal(chosen.skipped, false);
 assert.deepEqual(JSON.parse(chosen.body), {preset_id: 'my-preset'});
-for (const value of ['', 'Bad ID', '{{missing_id}}']) blocked(preset, {environment: {...allow, start_preset_id: value}});
+for (const value of ['', 'Bad ID', '{{missing_id}}']) blocked(preset, {environment: {start_preset_id: value}});
 const customValues = {arfcns:'1', c0:'55', band:'900', mcc:'001', mnc:'01', lac:'1', ci:'1', short_name:'addx900', iface:'eth0'};
-const result = run(custom, {environment: {...allow, ...customValues}});
+const result = run(custom, {environment: customValues});
 assert.equal(result.skipped, false);
 assert.deepEqual(JSON.parse(result.body), {...Object.fromEntries(Object.entries(customValues).filter(([k]) => k !== 'iface')), network:'eth0'});
-for (const key of Object.keys(customValues)) blocked(custom, {environment: {...allow, [key]: ''}});
+for (const key of Object.keys(customValues)) blocked(custom, {environment: {[key]: ''}});
 const complete = JSON.parse(result.body);
 for (const key of Object.keys(complete)) {
-  blocked(custom, {environment: allow, body: JSON.stringify({...complete, [key]: null})});
-  blocked(custom, {environment: allow, body: JSON.stringify({...complete, [key]: 1})});
+  blocked(custom, {body: JSON.stringify({...complete, [key]: null})});
+  blocked(custom, {body: JSON.stringify({...complete, [key]: 1})});
 }
-// All other mutations also explain skips; false/blank must not fall through.
+// Manual writes must send directly, even with obsolete switches left false.
+// 手动写操作直接发送；旧环境中残留的关闭值不能阻止新请求。
 for (const item of requests.filter(i => !['GET','HEAD','OPTIONS'].includes(i.request.method))) {
-  blocked(item, {}, 'enable_mutations=true');
-  blocked(item, {collection: allow, environment: {enable_mutations: false}}, 'enable_mutations=true');
-  for (const event of item.event || []) new vm.Script(event.script.exec.join('\n'));
+  assert.equal(run(item).skipped, false, item.name);
+  assert.equal(run(item, {environment: legacyOff}).skipped, false, item.name);
 }
-const noAuth = run(custom, {collection: {token: 'collection-secret'}, environment: {...allow, token: ''}});
+for (const item of [collection, ...requests]) for (const event of item.event || []) {
+  const script = event.script.exec.join('\n');
+  assert.ok(!script.includes('enable_mutations') && !script.includes('enable_rf_start'));
+  new vm.Script(script);
+}
+const noAuth = run(custom, {collection: {token: 'collection-secret'}, environment: {token: ''}});
 assert.equal(noAuth.headers.has('Authorization'), false);
 assert.ok(!noAuth.logs.includes('collection-secret'));
-console.log('PASS Postman preset/custom start scripts, variable precedence and visible skip diagnostics; offline, no RF / 预设与自定义启动脚本离线验证通过');
+console.log('PASS Postman direct-send without client switches, preset/custom validation and optional Token; offline, no RF / 无额外开关的直接发送与参数校验离线验证通过');

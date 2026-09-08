@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "gsm-system-2-1-contract",
     "name": "gsm-system 2.1 / 2.1 API",
-    "description": "The /api/v1-only contract. A new preset store contains editable defaults \"0\" through \"4\". Read requests run by default. Preset CRUD persists data but never starts a cell. The CRUD fixture uses the separate lab-900 ID and never edits/deletes a default. Every mutation is guarded by enable_mutations; cell starts additionally require enable_rf_start=true and have no automatic RF tests. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts. network names the container interface (default bridge: eth0), not a host NIC.\n\n仅包含 /api/v1。新预设库包含 ID \"0\" 至 \"4\" 的五套可编辑默认配置；CRUD 夹具使用独立 lab-900，不会修改或删除默认项。所有写操作需 enable_mutations；启动小区还需 enable_rf_start=true，且不自动执行 RF 测试。\nExact factory-value assertions are opt-in with verify_factory_defaults=true; normal reads validate only resource structure and the selected default_preset_id. / 精确工厂值断言仅在 verify_factory_defaults=true 时执行；常规读取只校验结构和所选 ID。\n\nCell start has separate Preset and Custom requests. start_preset_id selects any stored preset; default_preset_id is for read-only queries, preset_id remains the CRUD fixture. Custom fields are all variables (including band and short_name). Missing switches or malformed/unresolved start inputs are explained in Postman Console before skipping. Variables follow Postman scope precedence; empty/false environment values do not fall back to collection values. Select one request manually, not Run collection/folder. / 小区启动分为预设和自定义两项；start_preset_id 用于启动，default_preset_id 用于只读查询，preset_id 仍是 CRUD 测试项。自定义全部字段可配置；开关或参数问题会在 Console 说明后跳过，空或 false 环境值不会回退至集合。请选择一项 Send，不要全量运行。",
+    "description": "The /api/v1-only contract. Send manually to execute a request; no additional client enable switches are required. Preset CRUD persists data but never starts a cell. New stores contain editable defaults 0–4. The CRUD fixture uses lab-900 and does not edit/delete defaults. Use only the Read-only folder for read-only inspection; do not Run the whole collection because starts, deletes and SMS submissions have real side effects. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; never commit real hosts, IMSIs, phone numbers or Tokens. network names the container interface (default eth0), not a host NIC.\n\n仅包含 /api/v1，手动点击 Send 即执行，无额外启用开关。新库包含五套预设，CRUD使用独立lab-900且不启动小区。只读检查仅运行查询分组；不要全量运行集合，启动、删除和短信提交会真实执行。所有真实主机与敏感数据留在私有环境中。\n\nPreset and Custom start are separate requests. start_preset_id selects any stored preset; default_preset_id is for read-only queries and preset_id remains the CRUD fixture. All custom fields are variables, including band and short_name. Malformed, unresolved or incomplete start inputs are explained in the Console before skipping; valid inputs send directly. Variable lookup respects scope precedence, including an empty optional Token. / 预设和自定义分开，三个预设相关变量各司其职；有效请求直接发送，参数问题会在 Console 提示后跳过。空 Token 按作用域覆盖集合值。\n\nExact factory assertions use verify_factory_defaults=true only for response checking; this option never gates sending. / verify_factory_defaults 仅控制精确工厂值响应断言，不影响请求发送。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -14,11 +14,6 @@
     {
       "key": "token",
       "value": "",
-      "type": "string"
-    },
-    {
-      "key": "enable_mutations",
-      "value": "false",
       "type": "string"
     },
     {
@@ -74,11 +69,6 @@
     {
       "key": "preset_description",
       "value": "Indoor fixture",
-      "type": "string"
-    },
-    {
-      "key": "enable_rf_start",
-      "value": "false",
       "type": "string"
     },
     {
@@ -143,7 +133,7 @@
   ],
   "item": [
     {
-      "name": "Read-only / 默认只读",
+      "name": "Read-only / 查询接口",
       "item": [
         {
           "name": "GET /api/v1/health",
@@ -395,7 +385,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/presets/{{preset_id}}",
-            "description": "The independent lab-900 CRUD fixture is absent before guarded creation. Defaults are not targeted. / 独立 lab-900 夹具创建前不存在，不操作默认项。"
+            "description": "The independent lab-900 CRUD fixture is absent before creation. Defaults are not targeted. / 独立 lab-900 夹具创建前不存在，不操作默认项。"
           },
           "event": [
             {
@@ -412,7 +402,7 @@
       ]
     },
     {
-      "name": "Cell start / 小区启动（二选一，需开启双开关）",
+      "name": "Cell start / 小区启动（二选一）",
       "description": "Choose ONE request, not Run folder. Preset and Custom call the same API with mutually exclusive bodies. Both may start RF. / 二选一手动 Send，不要运行整个分组；两者使用同一接口，参数互斥且都会启动射频。",
       "item": [
         {
@@ -424,12 +414,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "(() => {",
-                  "const requiredSwitches = [\"enable_mutations\",\"enable_rf_start\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}",
                   "const startMode = 'preset';",
                   "function stop(reason) { console.error('[GSM NOT SENT / 未发送] ' + reason); pm.execution.skipRequest(); }",
                   "const url = pm.variables.replaceIn(String(pm.request.url));",
@@ -470,7 +454,7 @@
               }
             },
             "url": "{{baseUrl}}/api/v1/cell",
-            "description": "Set start_preset_id to any stored preset ID (0 by default); send only preset_id. This never edits that preset. Requires both enable_mutations=true and enable_rf_start=true. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / start_preset_id 可填任意已有预设 ID，默认 0；只传 preset_id，不修改预设。需双开关；发送会启动射频，未发送原因见 Postman Console。"
+            "description": "Set start_preset_id to any stored preset ID (0 by default); send only preset_id. This never edits that preset. Click Send to start directly after parameter validation. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / start_preset_id 可填任意已有预设 ID，默认 0；只传 preset_id，不修改预设。参数通过校验后点击 Send 直接发送；发送会启动射频，未发送原因见 Postman Console。"
           }
         },
         {
@@ -482,12 +466,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "(() => {",
-                  "const requiredSwitches = [\"enable_mutations\",\"enable_rf_start\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}",
                   "const startMode = 'custom';",
                   "function stop(reason) { console.error('[GSM NOT SENT / 未发送] ' + reason); pm.execution.skipRequest(); }",
                   "const url = pm.variables.replaceIn(String(pm.request.url));",
@@ -528,31 +506,18 @@
               }
             },
             "url": "{{baseUrl}}/api/v1/cell",
-            "description": "Fill all nine custom variables; no preset_id and no fallback/merge with saved or preset values. band and short_name are editable variables, not hardcoded. Requires both enable_mutations=true and enable_rf_start=true. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / 完整填写九项自定义变量，不传 preset_id、不混合或回退至存档。频段和名称均可配置；需双开关，发送会启动射频，未发送原因见 Console。"
+            "description": "Fill all nine custom variables; no preset_id and no fallback/merge with saved or preset values. band and short_name are editable variables, not hardcoded. Click Send to start directly after parameter validation. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / 完整填写九项自定义变量，不传 preset_id、不混合或回退至存档。频段和名称均可配置；参数通过校验后点击 Send 直接发送，发送会启动射频，未发送原因见 Console。"
           }
         }
       ]
     },
     {
-      "name": "Mutations (guarded) / 写操作（默认跳过）",
-      "description": "Every request in this folder skips unless enable_mutations is exactly true. / 每个请求均有独立保护。",
+      "name": "Mutations / 写操作（手动发送）",
+      "description": "Click Send to execute the selected request immediately. Do not Run the entire folder: deletion and other writes are real side effects. / 点击 Send 直接执行所选请求，不要批量运行整个写操作分组。",
       "item": [
         {
           "name": "POST /api/v1/presets",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -588,19 +553,6 @@
           "name": "PUT /api/v1/presets/{id}",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "exec": [
@@ -635,19 +587,6 @@
           "name": "DELETE /api/v1/presets/{id}",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "exec": [
@@ -667,19 +606,6 @@
           "name": "DELETE /api/v1/cell",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "exec": [
@@ -698,19 +624,6 @@
         {
           "name": "PATCH /api/v1/config",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -744,19 +657,6 @@
         {
           "name": "PUT /api/v1/subscribers/{imsi}/number",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -792,19 +692,6 @@
           "name": "DELETE /api/v1/subscribers/{imsi}/number",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "exec": [
@@ -822,19 +709,6 @@
         {
           "name": "POST /api/v1/sms",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -868,19 +742,6 @@
         {
           "name": "PUT /api/v1/network",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -938,19 +799,6 @@
           "name": "SMS rejects Chinese/UCS-2",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "exec": [
@@ -982,19 +830,6 @@
         {
           "name": "Number binding rejects reserved service number",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -1028,19 +863,6 @@
           "name": "Config rejects old name/value shape",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "exec": [
@@ -1072,19 +894,6 @@
         {
           "name": "Network rejects wrong media type",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const requiredSwitches = [\"enable_mutations\"];",
-                  "const missingSwitches = requiredSwitches.filter(key => String(pm.variables.get(key) ?? '').trim().toLowerCase() !== 'true');",
-                  "if (missingSwitches.length) {",
-                  "  console.error('[GSM NOT SENT / 未发送] Set / 请设置 ' + missingSwitches.map(key => key + '=true').join(', ') + '. Select the intended environment; environment false/blank overrides collection values. / 请确认所选环境，环境中的 false/空值会覆盖集合值。');",
-                  "  pm.execution.skipRequest();",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {

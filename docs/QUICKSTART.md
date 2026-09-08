@@ -101,10 +101,12 @@ Poll `GET /cell`; expect `state=running`, `ready=true`, and inspect
 
 ### Postman: choose one start mode / Postman：二选一启动
 
-Select the environment whose `baseUrl` targets this host. Both safety switches
-default to `false`; set `enable_mutations=true` and `enable_rf_start=true`, open
-**Cell start / 小区启动（二选一，需开启双开关）**, and press **Send** on
-exactly one request:
+Re-import the current collection, then use your configured environment or the
+**gsm-system 2.1 example / 环境示例** template, confirming that `baseUrl`
+targets this host and setting the
+optional `token` only when authentication is enabled. Open **Cell start /
+小区启动（二选一）** and press **Send** on exactly one request. / 必须重新导入
+新集合，环境可沿用已配置环境或参照示例，并确认 `baseUrl`；`token` 仅在开启鉴权时填写。
 
 - **POST /cell — Preset / 按预设启动**: `start_preset_id=0` by default;
   replace it with any stored preset
@@ -115,14 +117,18 @@ exactly one request:
   `mcc=001`, `mnc=01`, `lac=1`, `ci=1`, `short_name=addx`, `iface=eth0`.
   / custom 启动必须提供全部九个变量。
 
-Postman uses normal variable precedence: environment `false` or empty values
-override collection `true`. Missing switches are named in the Console rather
-than silently skipped. Unresolved variables, an empty/mixed body, or an
-incomplete custom body are explained and skipped before RF is requested.
-RF transmission is a real side effect: never run the full collection or the
-whole folder with both switches enabled. / 环境值按正常优先级覆盖集合值；
-未解析变量、空/混合/不完整 body 会在 Console 说明并于发射前跳过。
-不要开着两个开关运行全集或整个文件夹。
+The start pre-request check still explains unresolved variables, an empty or
+mixed JSON body, and an incomplete custom body in the Console, then skips that
+invalid start before RF is requested. There is no enable switch: **Send** sends
+a valid request directly. Old `enable_mutations` and `enable_rf_start`
+environment values may be deleted or left in place because they are ignored.
+/启动前置检查仍校验 JSON 参数并在 Console 说明跳过原因；有效请求
+点击 **Send** 即直接发送。旧开关可删除，保留也无效。
+
+Do not run the full collection: start, delete, and SMS requests have real
+effects. `verify_factory_defaults` is an independent response-assertion option
+and does not affect sending. / 不要 Run 整个集合：启动、删除、发短信会真实
+执行；`verify_factory_defaults` 仅控制响应断言，不影响发送。
 
 A sent start can take up to 90 seconds. Then send `GET /cell` and inspect
 `state`, `ready`, `sms_ready`, and `voice_ready`. The API also supports `{}` to
@@ -208,11 +214,10 @@ DELETE 停止，再执行网络 GET/PUT；否则 PUT 返回 `409`。
 | SMS not received | `202` is submission only; inspect `/data/log/smqueue.log` and handset state |
 | no CDR | verify `/data/log/asterisk/cdr-csv/Master.csv`, CDR modules, and a completed call |
 
-Use the Postman example environment with both `enable_mutations=false` and
-`enable_rf_start=false` for default read-only inspection. Preset CRUD requires
-only the first switch; cell start requires both and has no automated RF
-acceptance. / 默认只读环境中两个开关均为 `false`；预设 CRUD 仅需
-第一个，小区启动需要两个，且不包含自动 RF 验收。
+For a read-only inspection, run only **Read-only / 查询接口**. Send each
+request under **Mutations / 写操作（手动发送）** individually; cell start
+still has no automated RF acceptance. / 只读检查仅运行 GET 分组；
+写操作须逐个手动发送，小区启动仍不包含自动 RF 验收。
 
 For a management-plane-only preset CRUD/error smoke test (no valid cell start
 and no RF), run from the development checkout. The script reads the optional

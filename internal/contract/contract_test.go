@@ -82,15 +82,19 @@ func TestOpenAPIAndPostmanMatchRouter(t *testing.T) {
 	if got = canonical(got); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Postman route drift\n got: %#v\nwant: %#v", got, want)
 	}
-	assertMutationGuards(t, collection.Item)
-	assertCellStartsRequireExplicitRFAck(t, collection.Item)
+	assertCellStartInputChecks(t, collection.Item)
+	for _, key := range []string{"enable_mutations", "enable_rf_start"} {
+		if strings.Contains(string(mustRead(t, filepath.Join(root(t), "postman", "gsm-system.postman_collection.json"))), key) {
+			t.Errorf("Postman collection must not require retired client switch %s", key)
+		}
+	}
 	assertPostmanDoesNotMutateDefaults(t, collection.Item)
 	if got := collectionVariable(collection, "verify_factory_defaults"); got != "false" {
 		t.Errorf("Postman collection verify_factory_defaults=%q, want false", got)
 	}
 }
 
-func TestPostmanExampleIsReadOnlyAndPlaceholderOnly(t *testing.T) {
+func TestPostmanExampleIsPlaceholderOnlyWithoutEnableSwitches(t *testing.T) {
 	b := mustRead(t, filepath.Join(root(t), "postman", "gsm-system.postman_environment.example.json"))
 	var env struct {
 		Values []struct {
@@ -105,15 +109,17 @@ func TestPostmanExampleIsReadOnlyAndPlaceholderOnly(t *testing.T) {
 	for _, value := range env.Values {
 		values[value.Key] = value.Value
 	}
-	if values["enable_mutations"] != "false" {
-		t.Fatalf("example environment must default to read-only, got %q", values["enable_mutations"])
+	for _, key := range []string{"enable_mutations", "enable_rf_start"} {
+		if _, exists := values[key]; exists {
+			t.Errorf("example environment must omit retired client switch %s", key)
+		}
 	}
 	if values["verify_factory_defaults"] != "false" {
 		t.Fatalf("example environment must not assume an unmodified preset store, got verify_factory_defaults=%q", values["verify_factory_defaults"])
 	}
 	for key, want := range map[string]string{
 		"imsi": "001010000000000", "number": "10000", "iface": "eth0", "preset_id": "lab-900", "default_preset_id": "0", "start_preset_id": "0", "token": "",
-		"arfcns": "1", "band": "1800", "short_name": "addx", "enable_rf_start": "false",
+		"arfcns": "1", "band": "1800", "short_name": "addx",
 	} {
 		if values[key] != want {
 			t.Errorf("example %s=%q, want placeholder %q", key, values[key], want)
@@ -177,7 +183,7 @@ func TestPresetContractArtifacts(t *testing.T) {
 		`"verify_factory_defaults"`,
 		`preset list structure`,
 		`=== 'true'`,
-		`enable_rf_start`,
+		`GSM SENDING`,
 	} {
 		if !strings.Contains(collection, marker) {
 			t.Errorf("Postman preset fixture is missing %q", marker)
@@ -277,30 +283,10 @@ func readPostman(t *testing.T) (postmanCollection, map[string][]string) {
 	return collection, out
 }
 
-func assertMutationGuards(t *testing.T, items []postmanItem) {
+func assertCellStartInputChecks(t *testing.T, items []postmanItem) {
 	t.Helper()
 	for _, item := range items {
-		assertMutationGuards(t, item.Item)
-		if item.Request == nil || strings.EqualFold(item.Request.Method, http.MethodGet) {
-			continue
-		}
-		var scripts []string
-		for _, event := range item.Event {
-			if event.Listen == "prerequest" {
-				scripts = append(scripts, event.Script.Exec...)
-			}
-		}
-		joined := strings.Join(scripts, "\n")
-		if !strings.Contains(joined, "enable_mutations") || !strings.Contains(joined, "pm.execution.skipRequest") {
-			t.Errorf("Postman mutation %q has no independent enable_mutations skip guard", item.Name)
-		}
-	}
-}
-
-func assertCellStartsRequireExplicitRFAck(t *testing.T, items []postmanItem) {
-	t.Helper()
-	for _, item := range items {
-		assertCellStartsRequireExplicitRFAck(t, item.Item)
+		assertCellStartInputChecks(t, item.Item)
 		if item.Request == nil || !strings.EqualFold(item.Request.Method, http.MethodPost) {
 			continue
 		}
@@ -317,10 +303,7 @@ func assertCellStartsRequireExplicitRFAck(t *testing.T, items []postmanItem) {
 				pre = append(pre, event.Script.Exec...)
 			}
 		}
-		if !strings.Contains(strings.Join(pre, "\n"), "enable_rf_start") {
-			t.Errorf("Postman cell start %q requires an explicit enable_rf_start guard", item.Name)
-		}
-		for _, marker := range []string{"console.error", "GSM NOT SENT", "pm.variables.get", "pm.variables.replaceIn", "JSON.parse", "GSM SENDING"} {
+		for _, marker := range []string{"console.error", "GSM NOT SENT", "pm.execution.skipRequest", "pm.variables.replaceIn", "JSON.parse", "GSM SENDING"} {
 			if !strings.Contains(strings.Join(pre, "\n"), marker) {
 				t.Errorf("Postman cell start %q is missing %s diagnostics/validation", item.Name, marker)
 			}
@@ -385,7 +368,7 @@ func TestPostmanContainsIndependentPresetAndCustomStarts(t *testing.T) {
 	if !reflect.DeepEqual(counts, map[string]int{"preset": 1, "custom": 1}) {
 		t.Fatalf("want exactly one preset and one custom start, got %v", counts)
 	}
-	for key, want := range map[string]string{"start_preset_id": "0", "enable_mutations": "false", "enable_rf_start": "false"} {
+	for key, want := range map[string]string{"start_preset_id": "0"} {
 		if got := collectionVariable(collection, key); got != want {
 			t.Errorf("collection %s=%q, want %q", key, got, want)
 		}

@@ -283,3 +283,27 @@ image rebuild or service restart is required. 管理 API 已支持预设和完�
   are included in Windows CI. API regressions exercise start-mode isolation
   against an absent hardware detector, not an actual cell launch. 新增脚本离线
   执行验证和无硬件 API 模式隔离回归，不执行真实射频启动。
+
+### Direct manual Send / 手动直接发送
+
+The operator requested removal of the extra Postman enable switches. This
+supersedes the client-switch behavior recorded above; they were never backend
+API requirements. Both `enable_mutations` and `enable_rf_start` are removed from
+the collection, environment and request scripts. Valid manual requests now send
+directly, including preset/custom starts and other writes. 用户要求移除额外的
+Postman 启用开关；此决定取代上文历史行为。两个开关原本就不是后端 API 要求，
+现已从集合、环境和脚本移除，有效请求点击 Send 即执行。
+
+Input validation and its bilingual Console diagnostics remain, as do optional
+Bearer auth and the independent factory-response assertion option. Old imported
+environment switch values no longer affect sending; re-import the new collection
+to replace the old scripts. 参数检查、双语 Console 提示及可选 Token 保留；旧环境
+中残留的开关不再生效，需重新导入新集合替换旧脚本。工厂响应断言选项不影响发送。
+
+Use the GET-only folder for read-only inspection. Running the entire collection
+can start/stop the cell, delete records and submit SMS; prefer individual Send.
+Offline script tests verify direct sending even with stale false switches and
+still reject malformed start input. This is a client/docs/test-only change, with
+no image rebuild, service restart or RF operation. 只读检查仅运行 GET 分组，
+不要全量运行包含实际写操作的集合；离线测试覆盖旧开关残留及参数拒绝。本次不重建
+镜像、不重启服务、不操作射频。

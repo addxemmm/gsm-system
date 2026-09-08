@@ -162,11 +162,20 @@ at 16 MiB with one `.1` backup. OpenBTS startup stdout/readiness remains in
 - `go test ./...` and `go vet ./...` are development-machine checks.
 - Docker image build, image smoke test, cell start, and RF acceptance run only
   on the SDR host.
-- The Postman environment defaults `enable_mutations=false`; set it to `true`
-  only for an isolated test window, then restore it.
-- Postman cell starts require the additional `enable_rf_start=true` switch and
-  contain no automated RF assertions. / Postman 启动小区还需二次显式开关，
-  不包含自动 RF 验收。
+- Re-import the current Postman collection and use your configured environment
+  or the **gsm-system 2.1 example / 环境示例** template. Old `enable_mutations`
+  and `enable_rf_start` values are ignored
+  and may be removed. `token` remains optional. / 必须重新导入新集合；
+  环境可沿用已配置环境或参照示例，旧开关可删除，保留也无效，`token` 仍可选。
+- Run only **Read-only / 查询接口** for read-only checks. Start exactly
+  one preset/custom request under **Cell start / 小区启动（二选一）** and send
+  **Mutations / 写操作（手动发送）** requests individually. Never run the
+  full collection: start, delete, and SMS execute without an extra switch.
+  / 只读检查仅运行 GET 分组；小区启动二选一，写操作逐个手动发送。
+  不要 Run 整个集合：启动、删除和发短信会在没有额外开关时真实执行。
+- Cell-start JSON validation and Console reasons remain. `verify_factory_defaults`
+  is an independent response assertion and never gates sending. / 启动 JSON
+  校验及 Console 原因保留；断言选项不影响请求发送。
 - Never commit real IMSIs, numbers, tokens, IPs, PCAPs, logs, or databases.
 
 API、OpenAPI、Postman 与契约测试必须同步修改。Docker/RF 仅在服务器执行，仓库不得
