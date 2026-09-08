@@ -1,25 +1,40 @@
-# gsm-system compose (Ubuntu SDR host with USRP B210 attached)
-# Host networking REQUIRED (OpenBTS + uplink iface name).
-# USB passthrough REQUIRED for USRP.
+# gsm-system 2.1 production compose (Ubuntu 22.04 + OpenBTS 5 + UHD 4.1).
 services:
   gsm-system:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-    image: gsmsystem-dep:2.0
-    container_name: gsmsystem-v2
+      args:
+        VERSION: "${GSM_VERSION:-2.1.0}"
+        REVISION: "${GSM_REVISION:-unknown}"
+    image: "${GSM_IMAGE:-gsm-system:2.1.0}"
+    # Retain the proven UHD4 container name so the rollback container
+    # `gsmsystem` can remain stopped on the host without a name collision.
+    container_name: gsmsystem-uhd4
     network_mode: host
     privileged: true
     restart: unless-stopped
     init: true
     stop_grace_period: 90s
+    healthcheck:
+      # Process-free status probe: do not repeatedly claim/probe the SDR.
+      # 仅查状态，避免健康检查周期性探测或占用 SDR。
+      test: ["CMD-SHELL", "curl --fail --silent --max-time 30 -H \"Authorization: Bearer $$GSM_API_TOKEN\" http://127.0.0.1:8082/api/v1/cell >/dev/null"]
+      interval: 60s
+      timeout: 35s
+      start_period: 30s
+      retries: 3
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - gsm-data:/data
     environment:
       GSM_CONFIG: /app/configs/app.yaml
+      # Canonical GSM API port (v2 retired, :8082 is free).
       GSM_LISTEN: "${GSM_LISTEN:-:8082}"
+      # Optional bearer authentication; set via a host-only --env-file.
+      # 可选 Bearer 鉴权：通过服务器专用 --env-file 注入，不提交密钥。
       GSM_API_TOKEN: "${GSM_API_TOKEN:-}"
+      UHD_IMAGES_DIR: /usr/share/uhd/images
     logging:
       driver: json-file
       options:
@@ -28,3 +43,9 @@ services:
 
 volumes:
   gsm-data:
+    # Keep the existing data volume when using a new release project name.
+    # 切换发布项目名称时仍使用现有卷，保留配置及签约。
+    name: "${GSM_DATA_VOLUME:-docker_gsm-data}"
+    # Lifecycle is operator-owned, not tied to compose down -v.
+    # 数据卷由运维显式管理，避免随 Compose 项目删除。
+    external: true

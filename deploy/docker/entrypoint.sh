@@ -7,6 +7,9 @@ data_dir=${GSM_DATA_DIR:-/data}
 mkdir -p "$data_dir/conf" "$data_dir/log" /etc /var/run /var/lib/asterisk
 persist_directory /etc/OpenBTS "$data_dir/state/OpenBTS"
 persist_directory /var/lib/asterisk/sqlite3dir "$data_dir/state/asterisk"
+# Asterisk CSV CDRs are operational history, not disposable container logs.
+# Asterisk CSV 通话详单属于业务历史，迁移到数据卷且不覆盖已有记录。
+persist_directory /var/log/asterisk "$data_dir/log/asterisk"
 # smqueue writes CDRs here; missing dir kills it at boot (seen live).
 mkdir -p /var/lib/OpenBTS
 initialize_sqlite /etc/OpenBTS/OpenBTS.db /app/seeds/OpenBTS.example.sql sql
@@ -25,9 +28,11 @@ fi
 
 # Asterisk runs as root:www-data (asterisk.conf runuser/rungroup): state dirs
 # and the registry DB must be group-writable, AFTER the seed copy above.
-mkdir -p /var/lib/asterisk /var/spool/asterisk /var/log/asterisk /var/run/asterisk
+mkdir -p /var/lib/asterisk /var/spool/asterisk /var/log/asterisk/cdr-csv /var/run/asterisk
 chown -R root:www-data /var/lib/asterisk /var/spool/asterisk /var/log/asterisk /var/run/asterisk 2>/dev/null || true
 chmod -R g+rwX /var/lib/asterisk /var/spool/asterisk /var/log/asterisk /var/run/asterisk
 chown -R root:www-data "$data_dir/state/asterisk"
 chmod -R g+rwX "$data_dir/state/asterisk"
+chown -R root:www-data "$data_dir/log/asterisk"
+chmod -R g+rwX "$data_dir/log/asterisk"
 exec /usr/local/bin/gsm-system

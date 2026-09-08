@@ -22,7 +22,7 @@ if "%1"=="status" (
   exit /b 0
 )
 if "%1"=="rev-parse" (
-  echo abc1234
+  echo abcdef123456
   exit /b 0
 )
 if "%1"=="archive" (
@@ -60,9 +60,13 @@ exit /b 0
   $calls = Get-Content -Raw -LiteralPath $log
   $source = Get-Content -Raw -LiteralPath $script
   Assert-True ($output -match "excluded") "dirty HEAD-only sync warning should be visible"
-  Assert-True ($calls -match "docker compose -f 'deploy/docker/docker-compose\.uhd4\.yml' build") "UHD4 must be the build default"
+  Assert-True ($calls -match "gsm-system:2\.1\.0-abcdef123456") "immutable image must use VERSION plus 12-char revision"
+  Assert-True ($calls -match "docker compose -p 'gsm-system-live' -f 'deploy/docker/docker-compose\.yml' build") "single production Compose file must be the build default"
   Assert-True ($calls -notmatch "compose .*up") "Windows sync/build must never run compose up"
-  Assert-True ($source -match "rsync -a --exclude=/third_party/") "sync must overlay HEAD and preserve third_party"
+  Assert-True ($source -match "rsync -a --delete") "sync must delete stale tracked files"
+  Assert-True ($source -match "--exclude=/third_party/") "sync must preserve third_party"
+  Assert-True ($source -match "\.release-revision") "sync must record the archived HEAD revision"
+  Assert-True ($source -notmatch "docker-compose\.uhd4") "retired experimental Compose must not be referenced"
 
   Clear-Content -LiteralPath $log
   $env:FAKE_SCP_FAIL = "1"

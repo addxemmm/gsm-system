@@ -7,7 +7,7 @@ command -v sqlite3 >/dev/null || { echo 'sqlite3 is required' >&2; exit 1; }
 workspace=$(mktemp -d)
 trap 'rm -rf "$workspace"' EXIT HUP INT TERM
 seed="$workspace/seed.sql"
-printf 'CREATE TABLE sample(value TEXT); INSERT INTO sample VALUES ("seed");\n' > "$seed"
+printf "CREATE TABLE sample(value TEXT); INSERT INTO sample VALUES ('seed');\n" > "$seed"
 
 mkdir -p "$workspace/native" "$workspace/volume"
 persist_directory "$workspace/native" "$workspace/volume/state"
@@ -41,6 +41,19 @@ test "$(sqlite3 "$workspace/old-native/registry.db" 'SELECT value FROM sample;')
 initialize_sqlite "$workspace/volume/new-registry.db" "$workspace/old-native/registry.db" db
 test "$(sqlite3 "$workspace/volume/new-registry.db" 'SELECT value FROM sample;')" = migrated
 echo 'PASS: native database migration and binary seeds / 原生库迁移及二进制种子'
+
+# CDR directory migration keeps volume history and only fills missing files.
+mkdir "$workspace/old-cdr" "$workspace/volume/cdr"
+printf 'container-copy\n' >"$workspace/old-cdr/Master.csv"
+printf 'old-extra\n' >"$workspace/old-cdr/queue_log"
+printf 'volume-history\n' >"$workspace/volume/cdr/Master.csv"
+persist_directory "$workspace/old-cdr" "$workspace/volume/cdr"
+test -L "$workspace/old-cdr"
+test "$(cat "$workspace/old-cdr/Master.csv")" = volume-history
+test "$(cat "$workspace/old-cdr/queue_log")" = old-extra
+test "$(cat "$workspace/old-cdr.pre-persistence/Master.csv")" = container-copy
+persist_directory "$workspace/old-cdr" "$workspace/volume/cdr"
+echo 'PASS: CDR migration preserves volume history / CDR 迁移保留卷内历史'
 
 ln -s "$workspace/missing" "$workspace/broken"
 if (set -e; persist_directory "$workspace/broken" "$workspace/volume/state"); then

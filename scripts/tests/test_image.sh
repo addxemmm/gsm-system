@@ -3,7 +3,7 @@
 # 服务器镜像隔离冒烟测试：不使用射频、USB、host 网络或线上数据卷。
 set -eu
 
-IMAGE=${1:-gsmsystem-uhd4:test}
+IMAGE=${1:-gsm-system:2.1.0}
 TOKEN=gsm-image-smoke-token-fixture-v1
 LABEL=com.addx.gsm-system.image-smoke
 RUN_ID_RAW=$(od -An -N8 -tx1 /dev/urandom)
@@ -59,6 +59,13 @@ trap 'exit 130' HUP INT TERM
 case "$IMAGE" in ''|-*) fail INPUT "invalid image tag" ;; esac
 command -v docker >/dev/null 2>&1 || fail PREREQ "docker command not found"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || fail PREREQ "image not found: $IMAGE"
+IMAGE_VERSION=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$IMAGE")
+IMAGE_REVISION=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")
+[ "$IMAGE_VERSION" = 2.1.0 ] || fail IDENTITY "unexpected OCI version: $IMAGE_VERSION"
+case "$IMAGE_REVISION" in ''|*[!0-9a-f]*) fail IDENTITY "invalid OCI revision: $IMAGE_REVISION" ;; esac
+[ "${#IMAGE_REVISION}" -eq 12 ] || fail IDENTITY "OCI revision is not 12 characters: $IMAGE_REVISION"
+[ "$(docker run --rm --entrypoint /usr/local/bin/gsm-system "$IMAGE" --version)" = \
+  "gsm-system $IMAGE_VERSION ($IMAGE_REVISION)" ] || fail IDENTITY "binary and OCI identity differ"
 if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   fail COLLISION "test container already exists: $CONTAINER"
 fi
@@ -113,11 +120,33 @@ assert_marker_state() {
   [ "$(docker exec "$CONTAINER" sqlite3 -bail \
     /var/lib/asterisk/sqlite3dir/sqlite3.db 'PRAGMA quick_check;')" = ok ] || \
     fail SQLITE "Asterisk quick_check failed"
+  [ "$(docker exec "$CONTAINER" cat /var/log/asterisk/cdr-csv/image-smoke.cdr)" = "$RUN_ID" ] || \
+    fail PERSISTENCE "Asterisk CDR marker mismatch"
 }
 
 start_container
 wait_ready
 pass STARTUP "isolated container ready (network=none, no RF devices)"
+docker exec "$CONTAINER" test -S /dev/log || fail LOGGING "Go syslog socket /dev/log is missing"
+docker exec "$CONTAINER" test ! -e /OpenBTS/run.so || fail GO-ONLY "legacy run.so is present"
+docker exec "$CONTAINER" test ! -e /OpenBTS/run.py || fail GO-ONLY "legacy run.py is present"
+for pinned in \
+  'cppzmq:76bf169fd67b8e99c1b0e6490029d9cd5ef97666' \
+  'liba53:27354560dc7b554e03d40a520d41290e731193b6' \
+  'libcoredumper:7527fb3804927c7fdc72ff5139a2cdea3db4d59a' \
+  'openbts:7766ef94f2d885c197430e74a89f02740f0c04e6' \
+  'smqueue:e168a262db311231c51cf7295f9bd1f440567485' \
+  'subscriberRegistry:c65b5d59f744a8df5f3395e217f2598f53e9fe65' \
+  'uhd4:d21735d543d5a3c265507965c7bb6c9e9df95fcd'
+do
+  component=${pinned%%:*}
+  revision=${pinned#*:}
+  docker exec "$CONTAINER" awk -F '\t' -v component="$component" -v revision="$revision" \
+    '$1 == component && $2 == "repository" && $4 == revision { found++ } END { exit found == 1 ? 0 : 1 }' \
+    /usr/share/doc/gsm-system/VENDOR-REVISIONS.tsv || \
+    fail PROVENANCE "missing pinned vendor row: $pinned"
+done
+pass IDENTITY "OCI labels, Go binary and vendor provenance agree"
 
 status=$(docker exec "$CONTAINER" curl -sS --max-time 5 \
   -o /tmp/image-smoke-response.json -w '%{http_code}' \
@@ -148,7 +177,7 @@ dd if=/dev/zero of="$zeros" bs=65537 count=1 2>/dev/null
 tr "\000" " " <"$zeros" >>"$payload"
 rm -f "$zeros"
 curl -sS --max-time 5 -o /tmp/image-smoke-response.json -w "%{http_code}" \
-  -X POST -H "Authorization: Bearer $GSM_API_TOKEN" \
+  -X PUT -H "Authorization: Bearer $GSM_API_TOKEN" \
   -H "Content-Type: application/json" --data-binary @"$payload" \
   http://127.0.0.1:8082/api/v1/network
 ')
@@ -166,6 +195,7 @@ docker exec "$CONTAINER" sqlite3 -bail /etc/OpenBTS/OpenBTS.db \
   "INSERT INTO CONFIG(KEYSTRING,VALUESTRING,STATIC,OPTIONAL,COMMENTS) VALUES('ImageSmoke.Marker','$RUN_ID',1,1,'isolated image smoke fixture');"
 docker exec "$CONTAINER" sqlite3 -bail /var/lib/asterisk/sqlite3dir/sqlite3.db \
   "CREATE TABLE image_smoke_fixture(id INTEGER PRIMARY KEY, marker TEXT NOT NULL); INSERT INTO image_smoke_fixture VALUES(1,'$RUN_ID');"
+docker exec "$CONTAINER" sh -c 'printf "%s\n" "$1" >/var/log/asterisk/cdr-csv/image-smoke.cdr' sh "$RUN_ID"
 assert_marker_state
 pass SQLITE-WRITE "isolated OpenBTS and Asterisk markers written"
 
@@ -193,6 +223,11 @@ if docker exec "$CONTAINER" grep -Eq \
   fail ODBC-CONFIG "res_config_odbc has an active noload"
 fi
 pass ODBC-CONFIG "res_config_odbc is not disabled"
+docker exec "$CONTAINER" grep -Eq '^[[:space:]]*usegmtime[[:space:]]*=[[:space:]]*yes' /etc/asterisk/cdr.conf || \
+  fail CDR-CONFIG "CDR UTC timestamps are not enabled"
+docker exec "$CONTAINER" grep -Eq '^[[:space:]]*batch[[:space:]]*=[[:space:]]*no' /etc/asterisk/cdr.conf || \
+  fail CDR-CONFIG "CDR batch mode must be disabled for durable writes"
+pass CDR-CONFIG "Asterisk CDR history uses UTC and durable writes"
 
 docker exec -d "$CONTAINER" sh -c \
   'exec asterisk -f -g >/tmp/asterisk-smoke.log 2>&1'
@@ -210,6 +245,43 @@ while [ "$attempt" -lt 30 ]; do
 done
 printf '%s\n' "$odbc_status" | grep -Eq 'res_config_odbc\.so.*Running' || \
   fail ODBC-RUNTIME "res_config_odbc did not reach Running"
+for module in cdr_csv cdr_custom; do
+  module_status=$(docker exec "$CONTAINER" asterisk -rx "module show like $module" 2>/dev/null) || \
+    fail CDR-RUNTIME "failed to query $module"
+  printf '%s\n' "$module_status" | grep -Eq "$module\.so.*Running" || \
+    fail CDR-RUNTIME "$module did not reach Running"
+done
+cdr_status=$(docker exec "$CONTAINER" asterisk -rx 'cdr show status' 2>/dev/null) || \
+  fail CDR-RUNTIME "failed to query CDR status"
+printf '%s\n' "$cdr_status" | grep -Eqi 'CDR logging:[[:space:]]*enabled' || \
+  fail CDR-RUNTIME "CDR logging is not enabled"
+
+# Reload and resolve representative contexts/extensions. This makes parse or
+# include errors observable without starting OpenBTS or touching RF.
+# 重载并解析代表性上下文/号码；无需启动 OpenBTS 或射频即可发现 dialplan 错误。
+dialplan_reload=$(docker exec "$CONTAINER" asterisk -rx 'dialplan reload' 2>&1) || {
+  printf '%s\n' "$dialplan_reload" >&2
+  fail DIALPLAN "dialplan reload failed"
+}
+for target in from-openBTS phones to-pstn default 112@emergency 911@emergency; do
+  dialplan_output=$(docker exec "$CONTAINER" asterisk -rx "dialplan show $target" 2>&1) || {
+    printf '%s\n' "$dialplan_output" >&2
+    fail DIALPLAN "dialplan target did not load: $target"
+  }
+  if printf '%s\n' "$dialplan_output" | grep -Eqi 'there is no existence of|no such context|not found'; then
+    printf '%s\n' "$dialplan_output" >&2
+    fail DIALPLAN "dialplan target is absent: $target"
+  fi
+done
+if docker exec "$CONTAINER" grep -Eqi \
+  'parse error|unable to include context|unable to register extension|failed to load.*extensions\.conf' \
+  /tmp/asterisk-smoke.log; then
+  docker exec "$CONTAINER" grep -Ein \
+    'parse error|unable to include context|unable to register extension|failed to load.*extensions\.conf' \
+    /tmp/asterisk-smoke.log >&2
+  fail DIALPLAN "Asterisk reported a dialplan parse/load error"
+fi
+pass ASTERISK-RUNTIME "ODBC/CDR modules and dialplan loaded without parse errors"
 docker exec "$CONTAINER" asterisk -rx 'core stop now' >/dev/null
 ASTERISK_STARTED=0
 pass ODBC-RUNTIME "res_config_odbc loaded; isolated Asterisk stopped"

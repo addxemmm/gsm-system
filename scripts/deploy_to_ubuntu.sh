@@ -2,7 +2,7 @@
 # Build, start, and verify on the SDR server. 在 SDR 服务器构建、启动并验证。
 set -eu
 
-COMPOSE_FILE=${COMPOSE_FILE:-deploy/docker/docker-compose.uhd4.yml}
+COMPOSE_FILE=${COMPOSE_FILE:-deploy/docker/docker-compose.yml}
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:-gsm-system-live}
 HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:8082/api/v1/cell}
 HEALTH_RETRIES=${HEALTH_RETRIES:-30}
@@ -12,7 +12,7 @@ VERIFY=1
 usage() {
   cat <<'EOF'
 Usage: ./scripts/deploy_to_ubuntu.sh [options]
-  --compose-file PATH  Compose file (default: deploy/docker/docker-compose.uhd4.yml)
+  --compose-file PATH  Compose file (default: deploy/docker/docker-compose.yml)
   --project-name NAME  Compose project (default: gsm-system-live)
   --skip-build         Start the already-built image
   --skip-health        Do not poll the HTTP health endpoint
@@ -62,9 +62,57 @@ esac
 cd "$(dirname "$0")/.."
 [ -f "$COMPOSE_FILE" ] || { echo "compose file not found: $COMPOSE_FILE" >&2; exit 2; }
 
+VERSION=${GSM_VERSION:-$(sed -n '1p' VERSION | tr -d '[:space:]')}
+printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+  echo "VERSION must be semantic x.y.z: $VERSION" >&2
+  exit 2
+}
+
+IMAGE_WAS_SET=0
+if [ "${GSM_IMAGE+x}" = x ]; then IMAGE_WAS_SET=1; fi
+REVISION=${GSM_REVISION:-}
+if [ -z "$REVISION" ] && [ "$IMAGE_WAS_SET" -eq 1 ]; then
+  prefix=gsm-system:$VERSION-
+  case "$GSM_IMAGE" in "$prefix"*) REVISION=${GSM_IMAGE#"$prefix"} ;; esac
+fi
+if [ -z "$REVISION" ] && [ -f .release-revision ]; then
+  REVISION=$(sed -n '1p' .release-revision | tr -d '[:space:]')
+fi
+if [ -z "$REVISION" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  REVISION=$(git rev-parse --short=12 HEAD)
+fi
+case "$REVISION" in
+  ''|*[!0-9a-f]*) echo "revision must be 12 lowercase hexadecimal characters: $REVISION" >&2; exit 2 ;;
+esac
+[ "${#REVISION}" -eq 12 ] || { echo "revision must contain 12 characters: $REVISION" >&2; exit 2; }
+
+IMMUTABLE_IMAGE=gsm-system:$VERSION-$REVISION
+RELEASE_IMAGE=gsm-system:$VERSION
+GSM_IMAGE=${GSM_IMAGE:-$IMMUTABLE_IMAGE}
+case "$GSM_IMAGE" in ''|*[!A-Za-z0-9._:/-]*) echo "invalid GSM_IMAGE: $GSM_IMAGE" >&2; exit 2 ;; esac
+GSM_VERSION=$VERSION
+GSM_REVISION=$REVISION
+export GSM_IMAGE GSM_VERSION GSM_REVISION
+
+DATA_VOLUME=${GSM_DATA_VOLUME:-docker_gsm-data}
+docker volume inspect "$DATA_VOLUME" >/dev/null
+
 if [ "$BUILD" -eq 1 ]; then
   docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build
 fi
+
+verify_image_contract() {
+  label_version=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$GSM_IMAGE") || return 1
+  label_revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$GSM_IMAGE") || return 1
+  [ "$label_version" = "$VERSION" ] || { echo "image version label mismatch: $label_version" >&2; return 1; }
+  [ "$label_revision" = "$REVISION" ] || { echo "image revision label mismatch: $label_revision" >&2; return 1; }
+  binary_version=$(docker run --rm --entrypoint /usr/local/bin/gsm-system "$GSM_IMAGE" --version) || return 1
+  [ "$binary_version" = "gsm-system $VERSION ($REVISION)" ] || {
+    echo "image binary version mismatch: $binary_version" >&2
+    return 1
+  }
+}
+verify_image_contract
 
 # Capture intended image IDs before starting; an unrelated API on the host port
 # must not turn an exited/wrong-image deployment into a false success.
@@ -117,3 +165,13 @@ if [ "$VERIFY" -eq 1 ]; then
   echo
 fi
 verify_containers
+
+if [ "$VERIFY" -eq 1 ] && [ "$IMAGE_WAS_SET" -eq 0 ]; then
+  # Publish the mutable release alias only after container and HTTP validation.
+  # 容器及 HTTP 验证完成后才更新可变版本别名。
+  docker image tag "$GSM_IMAGE" "$RELEASE_IMAGE"
+  immutable_id=$(docker image inspect --format '{{.Id}}' "$GSM_IMAGE")
+  release_id=$(docker image inspect --format '{{.Id}}' "$RELEASE_IMAGE")
+  [ "$immutable_id" = "$release_id" ] || { echo 'release alias image ID mismatch' >&2; exit 1; }
+  printf 'Published %s -> %s / 已发布版本别名\n' "$RELEASE_IMAGE" "$GSM_IMAGE"
+fi

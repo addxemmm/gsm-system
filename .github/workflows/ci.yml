@@ -15,12 +15,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-      - run: sudo apt-get update && sudo apt-get install -y sqlite3
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep sqlite3
       - run: go vet ./...
       - run: go test -race ./...
       - run: sh deploy/docker/test-persistent-state.sh
+      - run: sh scripts/tests/test_prefetch_vendor.sh
       - run: sh scripts/tests/test_deploy_to_ubuntu.sh
-      - run: GOOS=linux GOARCH=amd64 go build -o /tmp/gsm-system ./cmd/server
+      - run: sh scripts/tests/test_build_contract.sh
+      - run: REVISION=$(git rev-parse --short=12 HEAD) make linux && ./bin/gsm-system-linux-amd64 --version
 
   windows-deploy:
     runs-on: windows-latest

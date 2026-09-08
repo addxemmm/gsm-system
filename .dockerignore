@@ -1,12 +1,12 @@
 # Keep the build context small: the fresh image builds OpenBTS from
 # source, so legacy binaries/logs/DB copies must not be sent to the daemon.
-.git/
+/.git/
+**/.git/
 bin/
 var/
 TempFile/
 image/
 gsmsystem/log/
-gsmsystem_v1.3/log/
 gsmsystem/smqueue.db
 gsmsystem/smqueue_5.0_amd64.deb
 *.pdf
@@ -16,6 +16,7 @@ gsmsystem/smqueue_5.0_amd64.deb
 vendor/
 .env
 .env.*
+.release-revision
 __pycache__/
 crash/
 *_run.conf

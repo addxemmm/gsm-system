@@ -1,0 +1,70 @@
+#!/bin/sh
+# Offline 2.1 build/release contract; no Docker, network, services or RF.
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
+cd "$ROOT"
+fail() { echo "FAIL [BUILD-CONTRACT] $1" >&2; exit 1; }
+
+[ "$(tr -d '[:space:]' <VERSION)" = 2.1.0 ] || fail 'VERSION is not 2.1.0'
+[ "$(find deploy/docker -maxdepth 1 -type f -name 'Dockerfile*' | wc -l | tr -d '[:space:]')" = 1 ] || \
+  fail 'multiple Dockerfiles remain'
+[ "$(find deploy/docker -maxdepth 1 -type f -name 'docker-compose*.yml' | wc -l | tr -d '[:space:]')" = 1 ] || \
+  fail 'multiple Compose files remain'
+
+grep -F 'org.opencontainers.image.version="${VERSION}"' deploy/docker/Dockerfile >/dev/null || fail 'OCI version label missing'
+grep -F 'org.opencontainers.image.revision="${REVISION}"' deploy/docker/Dockerfile >/dev/null || fail 'OCI revision label missing'
+grep -F -- '-X main.version=${VERSION} -X main.revision=${REVISION}' deploy/docker/Dockerfile >/dev/null || fail 'Docker Go ldflags missing'
+grep -F 'COPY cmd/ ./cmd/' deploy/docker/Dockerfile >/dev/null || fail 'minimal cmd COPY missing'
+grep -F 'COPY internal/ ./internal/' deploy/docker/Dockerfile >/dev/null || fail 'minimal internal COPY missing'
+if grep -Eq '^COPY[[:space:]]+\.[[:space:]]+\.' deploy/docker/Dockerfile; then fail 'broad Go-stage COPY remains'; fi
+if grep -F 'run.so' deploy/docker/Dockerfile >/dev/null; then fail 'legacy run.so is copied'; fi
+
+grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1.0}"' deploy/docker/docker-compose.yml >/dev/null || fail 'release image default missing'
+grep -F 'container_name: gsmsystem-uhd4' deploy/docker/docker-compose.yml >/dev/null || fail 'collision-free container name missing'
+grep -F 'external: true' deploy/docker/docker-compose.yml >/dev/null || fail 'data volume is not external'
+grep -F 'docker_gsm-data' deploy/docker/docker-compose.yml >/dev/null || fail 'existing data volume name missing'
+
+if rg -n --glob '!test_build_contract.sh' 'docker-compose\.uhd4|Dockerfile\.uhd4|gsmsystem-uhd4:test' \
+  Makefile .github/workflows/ci.yml deploy/docker scripts >/dev/null; then
+  fail 'retired experimental build path is still referenced'
+fi
+
+for obsolete in \
+  configs/seeds/run.so \
+  gsmsystem/run.py gsmsystem/run_c.py gsmsystem/setup.py \
+  gsmsystem/run.sh gsmsystem/stop.sh gsmsystem/stop_systemctl.sh \
+  gsmsystem/supervisord.conf \
+  gsmsystem_v1.3
+do
+  [ ! -e "$obsolete" ] || fail "obsolete runtime remains: $obsolete"
+done
+
+for pair in \
+  cppzmq:76bf169fd67b8e99c1b0e6490029d9cd5ef97666 \
+  liba53:27354560dc7b554e03d40a520d41290e731193b6 \
+  libcoredumper:7527fb3804927c7fdc72ff5139a2cdea3db4d59a \
+  openbts:7766ef94f2d885c197430e74a89f02740f0c04e6 \
+  smqueue:e168a262db311231c51cf7295f9bd1f440567485 \
+  subscriberRegistry:c65b5d59f744a8df5f3395e217f2598f53e9fe65 \
+  uhd4:d21735d543d5a3c265507965c7bb6c9e9df95fcd
+do
+  revision=${pair#*:}
+  grep -F "$revision" scripts/prefetch_vendor.sh >/dev/null || fail "prefetch lock missing: $pair"
+  grep -F "$revision" deploy/docker/Dockerfile >/dev/null || fail "Docker manifest check missing: $pair"
+done
+archive_sha=c7dc2f0ee2b00a3192bd1fa595d175ce6ecf6c5499220ba1232fa2fb4cc3774d
+grep -F "$archive_sha" scripts/prefetch_vendor.sh >/dev/null || fail 'prefetch archive hash missing'
+grep -F "$archive_sha" deploy/docker/Dockerfile >/dev/null || fail 'Docker archive hash missing'
+
+command -v go >/dev/null 2>&1 || fail 'go is required'
+TMP=${TMPDIR:-/tmp}/gsm-build-contract-$$
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+mkdir -p "$TMP"
+CGO_ENABLED=0 go build -trimpath \
+  -ldflags '-s -w -X main.version=2.1.0 -X main.revision=0123456789ab' \
+  -o "$TMP/gsm-system" ./cmd/server
+[ "$("$TMP/gsm-system" --version)" = 'gsm-system 2.1.0 (0123456789ab)' ] || \
+  fail 'Go binary version metadata mismatch'
+
+echo 'PASS test_build_contract.sh / 2.1 构建发布契约通过'
