@@ -1,9 +1,9 @@
 # Quick start 2.1 / 2.1 快速开始
 
-> Run Docker, SDR, and RF commands only on the SDR host. Release 2.1 is still a
-> repository candidate: complete image/RF/handset acceptance before calling it
-> deployed. Docker、SDR 与射频命令仅在 SDR 服务器执行。2.1 当前仍是仓库候选版，
-> 完成镜像、射频与真机验收后才能标记为已部署。
+> Run Docker, SDR, and RF commands only on the SDR host. The 2.1 management
+> plane is deployed and non-RF acceptance passed. RF and handset acceptance are
+> still pending. Docker、SDR 与射频命令仅在 SDR 服务器执行；2.1 管理面已部署并通过
+> 非射频验收，射频与真机验收仍待完成。
 
 Prerequisites / 前置条件：Ubuntu 22.04, Docker Compose, a USB3-connected B210,
 port `8082`, the external `docker_gsm-data` volume, and externally provisioned

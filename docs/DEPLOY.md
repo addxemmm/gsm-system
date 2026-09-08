@@ -9,8 +9,8 @@ Release 2.1 uses exactly:
 - `deploy/docker/Dockerfile`;
 - `deploy/docker/docker-compose.yml`;
 - Compose project `gsm-system-live`;
-- Compose service `gsm-system`, container `gsmsystem-uhd4` (leaves the stopped
-  rollback container `gsmsystem` name available);
+- Compose service `gsm-system`, container `gsmsystem-uhd4`; retained pre-2.1
+  rollback container `gsmsystem-rollback-pre21-20260908`;
 - external volume `docker_gsm-data`;
 - immutable image `gsm-system:2.1.0-<12sha>` and validated release alias
   `gsm-system:2.1.0`.
@@ -166,7 +166,13 @@ publish the moving release alias. 跳过健康检查不构成发布成功。
 
 Record exact image ID/tag, revision, timestamps, API request IDs, and native
 logs. Local tests or a successful HTTP probe alone do not prove RF readiness.
-当前 2.1 仍为候选版，服务器构建和真机结果完成前不得写成“已发布/已验收”。
+The management plane was deployed and its non-RF acceptance completed on
+2026-09-08. Continue to distinguish that result from the pending handset/RF
+acceptance. 管理面已部署并完成非射频验收；真机与射频验收仍须单独记录。
+
+The recorded deployment used runtime revision `16986725daa9`; a later
+deployment-script orphan fix `8d361a0` was rerun successfully without changing
+the runtime image identity. Exact evidence is in [`RELEASE-2.1.md`](RELEASE-2.1.md).
 
 Offline build/deploy contract checks / 离线构建与部署契约检查：
 

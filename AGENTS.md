@@ -37,5 +37,6 @@
 - Message 信息：`<scope>: <what> / <中文说明>` (e.g. `api: retire root routes / 移除根路径旧接口`), one thing per commit.
 - Before push 推前必跑：`go test ./...` green 全绿 + `go vet ./...` + `git status` clean.
 - Release via `scripts/deploy_from_windows.ps1` (sync) then server `docker compose up -d --build`;
-  rollback = previous image tag + kept old container `gsmsystem`.
+  rollback = previous image tag + kept old container
+  `gsmsystem-rollback-pre21-20260908` (do not assume a generic `gsmsystem` name).
 - Docs and commits are bilingual 文档与提交均为中英双语. GitHub repo is private 仓库私有。

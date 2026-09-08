@@ -93,7 +93,12 @@ SHA tag for rollback. 脚本先构建 SHA 标签，验证通过后再更新发�
 7. Place a two-way call; compare active channels and `/calls/history` CDR.
 8. Stop the cell and verify log/CDR/database persistence after recreation.
 
-服务器 SSH 在本次工作中超时，因此步骤 2–8 仍为待办，不能据此标记生产完成。
+Steps 1–2 and the applicable non-RF portions of steps 3 and 8 passed on
+2026-09-08. A local
+Asterisk bridge fixture also verified the calls API and a real 18-column
+`ANSWERED` CDR without SIP, handsets, or RF. Steps 4–7 and handset/RF portions
+of step 8 remain pending. 2026-09-08 已完成构建、隔离镜像、管理面及非射频持久化验收；
+本地 Asterisk 桥接验证不等于真机/SIP/RF 验收，步骤 4–7 仍待执行。
 
 ## 7. Rollback / 回滚
 

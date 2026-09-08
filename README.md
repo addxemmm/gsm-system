@@ -15,16 +15,17 @@ through one versioned REST API. Release 2.1 keeps only the standardized
 `/api/v1` surface and removes the ad-hoc root endpoints and project-owned Python
 management code.
 
-> **2.1 status / 状态：** the repository is being prepared as a release candidate.
-> Local Go checks can be run on the development machine; image build, RF start,
-> handset attach, SMS, and voice acceptance must be performed on the SDR host.
-> Server connectivity has been restored and acceptance work is resuming. This
-> document does not claim 2.1 built, deployed, or handset-verified until that
-> run records successful evidence.
+> **2.1 status / 状态：** the Go management plane was deployed on the SDR host
+> on 2026-09-08 10:45–10:50 HKT from revision `16986725daa9`. The container and
+> read-only API are healthy with every cell process stopped and RF off. Image,
+> persistence, Asterisk, contract, and read-only Newman acceptance passed.
+> Handset attach, over-the-air SMS, two-way handset voice, and RF acceptance
+> remain pending and are not implied by management-plane deployment.
 >
-> 仓库当前为 2.1 候选版；开发机只执行 Go 检查，镜像构建、射频启动、真机入网、
-> 短信与通话验收必须在 SDR 服务器执行。服务器网络已恢复，验收正在继续；成功证据
-> 完整记录前不声称 2.1 已构建、部署或完成真机验证。
+> 2.1 Go 管理面已于 2026-09-08 10:45–10:50 HKT 从 `16986725daa9` 部署到
+> SDR 服务器；容器与只读 API 健康，小区进程全部停止且 RF 关闭。镜像、持久化、
+> Asterisk、契约及只读 Newman 验收通过。真机入网、空口短信、双向手机语音与射频
+> 验收仍未执行，管理面部署不代表这些业务已通过。
 
 ## Highlights / 主要特性
 
@@ -126,8 +127,9 @@ The release script builds immutable `gsm-system:2.1.0-<12sha>`, validates the
 container and HTTP endpoint, then moves `gsm-system:2.1.0` to the same image ID.
 It never deletes the external `docker_gsm-data` volume. Read
 [`docs/DEPLOY.md`](docs/DEPLOY.md) before migrating or cleaning Docker objects.
-The Compose service is `gsm-system`; its container is `gsmsystem-uhd4` so the
-stopped rollback container `gsmsystem` can remain on the host.
+The Compose service is `gsm-system`; its container is `gsmsystem-uhd4`. The
+retained pre-2.1 rollback container is
+`gsmsystem-rollback-pre21-20260908`.
 
 发布脚本构建不可变 tag `gsm-system:2.1.0-<12sha>`，容器与 HTTP 验证通过后，
 再将 `gsm-system:2.1.0` 指向同一镜像 ID。脚本不删除外部数据卷。
