@@ -66,9 +66,13 @@ func Active(ctx context.Context, asteriskBin string) ([]ActiveCall, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, asteriskBin, "-rx", "core show channels concise").CombinedOutput()
+	// Asterisk can emit unrelated startup warnings on stderr even when the CLI
+	// request succeeds (for example, no ethernet interface for global EID
+	// seeding). Parse stdout only; stderr must never be mistaken for a channel
+	// row. Keep failures generic so native diagnostics cannot leak call data.
+	out, err := exec.CommandContext(ctx, asteriskBin, "-rx", "core show channels concise").Output()
 	if err != nil {
-		return nil, fmt.Errorf("asterisk active calls: %w: %s", err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("asterisk active channel query: %w", err)
 	}
 	return ParseConcise(string(out))
 }
@@ -79,6 +83,12 @@ func ParseConcise(output string) ([]ActiveCall, error) {
 	calls := make([]ActiveCall, 0)
 	for _, line := range strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
+		// Asterisk 18 remote CLI emits this fixed bootstrap notice on stdout
+		// before the concise response when an isolated host has no Ethernet.
+		// Ignore only this known notice; arbitrary command errors still fail.
+		if line == "No ethernet interface found for seeding global EID. You will have to set it manually." {
+			continue
+		}
 		if line == "" {
 			continue
 		}

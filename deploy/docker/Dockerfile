@@ -127,26 +127,19 @@ RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /us
 
 # ---------- stage 3: Go API server (same as main line) ----------
 FROM golang:1.26.8-bookworm AS go-builder
-ARG VERSION
-ARG REVISION
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+ARG VERSION
+ARG REVISION
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
     -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION}" \
     -o /out/gsm-system ./cmd/server
 
 # ---------- stage 4: runtime ----------
 FROM ubuntu:22.04
-ARG VERSION
-ARG REVISION
-LABEL org.opencontainers.image.title="gsm-system" \
-      org.opencontainers.image.description="OpenBTS 5 with UHD 4 and Go management API" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.source="https://github.com/addxemmm/gsm-system"
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 libortp15 libusb-1.0-0 libreadline8 libzmq5 \
@@ -186,6 +179,16 @@ RUN cp /app/configs/app.yaml.example /app/configs/app.yaml \
 COPY deploy/docker/entrypoint.sh /entrypoint.sh
 COPY deploy/docker/persistent-state.sh /usr/local/lib/gsm-persistent-state.sh
 RUN chmod +x /entrypoint.sh /OpenBTS/OpenBTSDo
+
+# Revision metadata follows expensive runtime layers so API-only releases reuse them.
+# 将版本元数据放在运行依赖之后，API 迭代不重复安装系统包。
+ARG VERSION
+ARG REVISION
+LABEL org.opencontainers.image.title="gsm-system" \
+      org.opencontainers.image.description="OpenBTS 5 with UHD 4 and Go management API" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="https://github.com/addxemmm/gsm-system"
 
 ENV GSM_CONFIG=/app/configs/app.yaml \
     GSM_DATA_DIR=/data \

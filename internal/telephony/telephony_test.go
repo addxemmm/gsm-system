@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -39,6 +40,43 @@ func TestParseConciseEmptyAndMalformedOutput(t *testing.T) {
 		if _, err := ParseConcise(output); err == nil {
 			t.Fatalf("accepted malformed output %q", output)
 		}
+	}
+}
+
+func TestActiveParsesStdoutAndIgnoresAsteriskStderrWarning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	script := writeExecutable(t, `#!/bin/sh
+printf '%s\n' 'SIP/IMSI001-0001!phones!10002!1!Up!Dial!SIP/IMSI002!10001!!peer!3!12!bridge-1!169.1'
+printf '%s\n' 'No ethernet interface found for seeding global EID' >&2
+`)
+	calls, err := Active(context.Background(), script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0].UniqueID == nil || *calls[0].UniqueID != "169.1" {
+		t.Fatalf("calls=%+v", calls)
+	}
+}
+
+func TestActiveRejectsExitZeroCommandErrorOnStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	script := writeExecutable(t, "#!/bin/sh\nprintf '%s\\n' 'No such command core show channels concise'\n")
+	if _, err := Active(context.Background(), script); err == nil {
+		t.Fatal("exit-zero command error was accepted as an empty channel list")
+	}
+}
+
+func TestActiveRejectsNonzeroExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	script := writeExecutable(t, "#!/bin/sh\nprintf '%s\\n' 'native failure' >&2\nexit 1\n")
+	if _, err := Active(context.Background(), script); err == nil {
+		t.Fatal("nonzero asterisk CLI exit was accepted")
 	}
 }
 
@@ -165,5 +203,25 @@ func writeCDR(t *testing.T, path string, rows [][]string) {
 	}
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func writeExecutable(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "asterisk-fixture")
+	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestConciseKnownEIDNoticeOnly(t *testing.T) {
+	valid := "Local/test@fixture-1;1!fixture!test!1!Up!Wait!1!10001!!!3!2!bridge-uuid!123.45"
+	calls, err := ParseConcise("No ethernet interface found for seeding global EID. You will have to set it manually.\n" + valid)
+	if err != nil || len(calls) != 1 || calls[0].UniqueID == nil || *calls[0].UniqueID != "123.45" {
+		t.Fatalf("known native notice: calls=%+v err=%v", calls, err)
+	}
+	if _, err := ParseConcise("No ethernet interface found for another reason.\n" + valid); err == nil {
+		t.Fatal("unexpected native output was silently swallowed")
 	}
 }

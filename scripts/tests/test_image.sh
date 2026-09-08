@@ -33,6 +33,8 @@ cleanup() {
     echo "--- isolated container logs / 隔离容器日志 ---" >&2
     docker logs "$CONTAINER" >&2
     docker exec "$CONTAINER" sh -c 'test ! -f /tmp/asterisk-smoke.log || cat /tmp/asterisk-smoke.log' >&2
+    docker exec "$CONTAINER" sh -c 'test ! -f /tmp/image-smoke-calls.json || { echo "--- active calls ---"; cat /tmp/image-smoke-calls.json; }' >&2
+    docker exec "$CONTAINER" sh -c 'test ! -f /tmp/image-smoke-history.json || { echo "--- call history ---"; cat /tmp/image-smoke-history.json; }' >&2
   fi
   if [ "$ASTERISK_STARTED" -eq 1 ] && [ "$CONTAINER_CREATED" -eq 1 ] && container_owned; then
     docker exec "$CONTAINER" asterisk -rx 'core stop now' >/dev/null 2>&1
@@ -253,7 +255,7 @@ for module in cdr_csv cdr_custom; do
 done
 cdr_status=$(docker exec "$CONTAINER" asterisk -rx 'cdr show status' 2>/dev/null) || \
   fail CDR-RUNTIME "failed to query CDR status"
-printf '%s\n' "$cdr_status" | grep -Eqi 'CDR logging:[[:space:]]*enabled' || \
+printf '%s\n' "$cdr_status" | grep -Eqi '^[[:space:]]*Logging:[[:space:]]*Enabled[[:space:]]*$' || \
   fail CDR-RUNTIME "CDR logging is not enabled"
 
 # Reload and resolve representative contexts/extensions. This makes parse or
@@ -282,6 +284,103 @@ if docker exec "$CONTAINER" grep -Eqi \
   fail DIALPLAN "Asterisk reported a dialplan parse/load error"
 fi
 pass ASTERISK-RUNTIME "ODBC/CDR modules and dialplan loaded without parse errors"
+
+# Create an isolated Local-channel call. No SIP/OpenBTS/RF endpoint is named or
+# reachable (the container remains network=none and has no radio device).
+# 仅创建 Asterisk Local 通道：不引用 SIP/OpenBTS/RF，容器仍为 network=none 且无射频设备。
+docker exec "$CONTAINER" sh -ceu '
+id=$1
+cat >>/etc/asterisk/extensions.conf <<EOF
+
+[image-smoke-local]
+exten => probe,1,Set(CDR(userfield)=image-smoke-$id)
+ same => n,Set(CALLERID(num)=$id)
+ same => n,Answer()
+ same => n,Dial(Local/sink@image-smoke-local/n,8)
+ same => n,Hangup()
+exten => sink,1,Set(CDR(userfield)=image-smoke-$id)
+ same => n,Answer()
+ same => n,Wait(6)
+ same => n,Hangup()
+EOF
+' sh "$RUN_ID"
+channeltypes=$(docker exec "$CONTAINER" asterisk -rx 'core show channeltypes' 2>/dev/null) || \
+  fail LOCAL-CALL "failed to query channel types"
+printf '%s\n' "$channeltypes" | grep -Eq '^[[:space:]]*Local[[:space:]]' || \
+  fail LOCAL-CALL "core Local channel technology is unavailable"
+module_status=$(docker exec "$CONTAINER" asterisk -rx 'module show like app_dial' 2>/dev/null) || \
+  fail LOCAL-CALL "failed to query app_dial"
+printf '%s\n' "$module_status" | grep -Eq 'app_dial\.so.*Running' || \
+  fail LOCAL-CALL "app_dial did not reach Running"
+dialplan_reload=$(docker exec "$CONTAINER" asterisk -rx 'dialplan reload' 2>&1) || {
+  printf '%s\n' "$dialplan_reload" >&2
+  fail LOCAL-CALL "fixture dialplan reload failed"
+}
+fixture_dialplan=$(docker exec "$CONTAINER" asterisk -rx 'dialplan show image-smoke-local' 2>&1) || {
+  printf '%s\n' "$fixture_dialplan" >&2
+  fail LOCAL-CALL "fixture dialplan did not load"
+}
+printf '%s\n' "$fixture_dialplan" | grep -Eq "'probe'.*Set|probe.*Set" || \
+  fail LOCAL-CALL "fixture probe extension is absent"
+printf '%s\n' "$fixture_dialplan" | grep -Eq "'sink'.*Set|sink.*Set" || \
+  fail LOCAL-CALL "fixture sink extension is absent"
+
+originate_output=$(docker exec "$CONTAINER" asterisk -rx \
+  'channel originate Local/probe@image-smoke-local/n application Wait 8' 2>&1) || {
+  printf '%s\n' "$originate_output" >&2
+  fail LOCAL-CALL "Local-channel originate failed"
+}
+
+# Observe the real Asterisk concise output through the REST parser while the
+# Dial(Local/...) bridge is alive. HTTP 200 plus these fields guards against a
+# silently empty result or parser error, without requiring jq in the image.
+active_ok=0
+attempt=0
+while [ "$attempt" -lt 20 ]; do
+  active_status=$(docker exec "$CONTAINER" curl -sS --max-time 5 \
+    -o /tmp/image-smoke-calls.json -w '%{http_code}' \
+    -H "Authorization: Bearer $TOKEN" \
+    http://127.0.0.1:8082/api/v1/calls 2>/dev/null || true)
+  if [ "$active_status" = 200 ] && \
+     docker exec "$CONTAINER" grep -Eq '"count"[[:space:]]*:[[:space:]]*[1-9][0-9]*' /tmp/image-smoke-calls.json && \
+     docker exec "$CONTAINER" grep -Eq '"channel"[[:space:]]*:[[:space:]]*"Local/[^" ]+"' /tmp/image-smoke-calls.json && \
+     docker exec "$CONTAINER" grep -Eq '"bridge_id"[[:space:]]*:[[:space:]]*"[^" ]+"' /tmp/image-smoke-calls.json && \
+     docker exec "$CONTAINER" grep -Eq '"unique_id"[[:space:]]*:[[:space:]]*"[^" ]+"' /tmp/image-smoke-calls.json; then
+    active_ok=1
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+[ "$active_ok" -eq 1 ] || fail LOCAL-CALL "REST active-call snapshot lacked Local channel/bridge_id/unique_id"
+pass CALLS-REST "live Local bridge parsed with non-empty channel, bridge_id and unique_id"
+
+# Wait for the answered call to finish and cdr_csv to flush (batch=no), then
+# require REST to parse the real 18-column Master.csv record carrying our marker.
+history_ok=0
+attempt=0
+while [ "$attempt" -lt 20 ]; do
+  history_status=$(docker exec "$CONTAINER" curl -sS --max-time 5 \
+    -o /tmp/image-smoke-history.json -w '%{http_code}' \
+    -H "Authorization: Bearer $TOKEN" \
+    'http://127.0.0.1:8082/api/v1/calls/history?limit=20' 2>/dev/null || true)
+  if [ "$history_status" = 200 ] && \
+     docker exec "$CONTAINER" grep -Eq '"count"[[:space:]]*:[[:space:]]*[1-9][0-9]*' /tmp/image-smoke-history.json && \
+     docker exec "$CONTAINER" grep -Fq '"source":"Master.csv"' /tmp/image-smoke-history.json && \
+     docker exec "$CONTAINER" grep -Eq '"channel"[[:space:]]*:[[:space:]]*"Local/[^" ]+"' /tmp/image-smoke-history.json && \
+     docker exec "$CONTAINER" grep -Fq '"destination_context":"image-smoke-local"' /tmp/image-smoke-history.json && \
+     docker exec "$CONTAINER" grep -Fq '"disposition":"ANSWERED"' /tmp/image-smoke-history.json && \
+     docker exec "$CONTAINER" grep -Eq '"unique_id"[[:space:]]*:[[:space:]]*"[^" ]+"' /tmp/image-smoke-history.json && \
+     docker exec "$CONTAINER" grep -Fq "\"user_field\":\"image-smoke-$RUN_ID\"" /tmp/image-smoke-history.json; then
+    history_ok=1
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+[ "$history_ok" -eq 1 ] || fail CALL-HISTORY "REST did not parse the marked 18-column CDR record"
+pass CALL-HISTORY "real answered Local-call CDR parsed from Master.csv"
+
 docker exec "$CONTAINER" asterisk -rx 'core stop now' >/dev/null
 ASTERISK_STARTED=0
 pass ODBC-RUNTIME "res_config_odbc loaded; isolated Asterisk stopped"
