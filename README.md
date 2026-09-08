@@ -15,16 +15,17 @@ through one versioned REST API. Release 2.1 keeps only the standardized
 `/api/v1` surface and removes the ad-hoc root endpoints and project-owned Python
 management code.
 
-> **2.1 status / 状态：** the 2026-09-08 audit observed runtime revision
-> `08f184f063c5`; the cell was `degraded` after smqueue exited. The latest
-> workspace fixes have not yet been rebuilt or deployed. The operator confirmed welcome-message receipt; the registry contains three
-> number bindings. Complete SMS
-> transmit/receive, packet-data/DNS/Internet, two-way voice, and RF acceptance
-> remain pending.
+> **2.1 status / 状态：** deployed and verified on 2026-09-08 15:42 HKT:
+> image `gsm-system:2.1.0-b830c6fd1119`, management healthy, cell stopped and RF off.
+> Isolated image, persistence, Asterisk/ODBC/CDR, preset/custom start-path and SMS
+> history/deduplication tests passed. The three number bindings were preserved;
+> legacy welcome defaults now include `101`/`411` instructions. Real handset SMS
+> and Internet acceptance remain separate from these management-plane checks.
 >
-> 2026-09-08 审计现场运行版本为 `08f184f063c5`；smqueue 退出后小区为
-> `degraded`，工作区最新修复尚未重新构建部署。用户此前已确认欢迎短信实收，注册库中已查到三个
-> 号码绑定；完整短信收发、分组数据/DNS/互联网、双向语音及射频仍待验收。
+> 2026-09-08 15:42 HKT 已部署并验证上述镜像，管理容器健康，小区停止、射频关闭。
+> 隔离镜像、持久化、Asterisk/ODBC/CDR、双启动路径及短信历史去重测试通过；三条
+> 号码绑定完整保留，旧默认欢迎短信已迁移为 `101`/`411` 提示。真机短信收发和上网
+> 仍须另行验收，管理面测试不代表空口业务已通过。详见 [发布记录](docs/RELEASE-2.1.md)。
 
 ## Highlights / 主要特性
 

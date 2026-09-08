@@ -447,3 +447,49 @@ This is an audit and code-correction record, **not a new deployment record**.
 - API completeness is checked across 14 path templates and 23 operations in the router, Markdown, OpenAPI and Postman. Actual middleware errors, the eight-key config allowlist and SMS pagination/window assertions are covered. / 14 个路径模板、23 项操作已对齐四套契约，并覆盖中间件错误、8 键配置白名单及短信分页窗口断言。
 
 - Validation passed: Windows Go test/vet; Linux full race/vet; persistent-state, vendor-prefetch, Ubuntu/Windows deployment contracts; Postman offline script and schema/route checks. Native image execution remains pending. / Windows 与 Linux 离线测试、race/vet、持久化及部署构建契约、Postman 脚本与接口契约均通过；新版原生镜像执行验收仍待完成。
+
+## Verified deployment, 2026-09-08 15:42 HKT / 已验证部署
+
+The operator explicitly authorized source sync, detailed commits/GitHub push,
+image build and replacement of the GSM container. This completes the deployment
+that was pending in the preceding audit. 用户明确授权源码同步、详细提交及推送、构建和
+更换 GSM 容器；本节完成上一节待处理的部署，不改写历史审计事实。
+
+- Runtime implementation revision: `b830c6fd1119`; image
+  `gsm-system:2.1.0-b830c6fd1119`, validated alias `gsm-system:2.1.0`.
+- Image ID: `sha256:e9187d08d0ba4c31ebfed2941770872a7df8501b0c8d54d6c09f58b50c2dc383`.
+- Container: `gsmsystem-uhd4`, ID `db0ea753292c774ef817fd9a5578be5fdcedd1298cb8bf6bf36d00bbead09a2f`.
+- Go binary/OCI revision agree; native `GSM_SMS_V1` marker and loopback-only SIP
+  contact ACL are present. `test_image.sh`, `test_presets_image.sh`, and
+  `test_sms_image.sh` all passed with isolated volumes and no RF/USB access.
+  / 二进制、标签一致；原生短信标记与本机 ACL 已入镜像，三套隔离镜像测试全部通过。
+- Both native database integrity checks passed before maintenance. Subscriber
+  SQL-dump SHA-256 matched exactly before and after recreation; three subscriber
+  rows and three number bindings remain, with `quick_check=ok`.
+  / 升级前后签约库 SQL 摘要完全一致，三条签约与三条号码绑定保留，完整性检查通过。
+- Known old normal/open welcome defaults now explain replying a 7–10 digit
+  number to `101` and sending `info` to `411`. Existing custom/blank messages are
+  still preserved by the migration. / 已知旧默认欢迎文案迁移生效，自定义及留空设置不覆盖。
+- Management is healthy, Token remains blank/disabled, all five cell processes
+  are stopped and RF is off. Bridge mode and existing external data volume remain;
+  only the operator's LAN management TCP `8082` is published.
+  / 管理容器健康、仍为免 Token；五个小区进程全部停止。保留 bridge 与业务卷，仅发布管理端口。
+- The container's `eth0` NAT setup returned `changed=true`, then `false` on repeat.
+  GPRS settings and upstream DNS were preserved. Existing SMS history now returns
+  six deduplicated observations; unkeyed legacy text remains unknown.
+  / NAT 恢复且幂等，GPRS 配置保留；历史接口恢复六条去重观察，旧无键正文仍保持未知。
+- LTE container ID, image ID, stopped state and start/finish timestamps are
+  unchanged. No LTE service, business volume or subscriber record was deleted.
+- The obsolete `08f184f063c5` GSM image and old container are gone. All test
+  containers/volumes were removed. Builder pruning reported **3.526 GB** reclaimed;
+  final build cache is **0 B**. Only the active GSM image ID with two aliases,
+  LTE image, Go/Ubuntu bases and the two business volumes remain.
+  / 旧 GSM 镜像及旧容器、隔离测试资源已清理；构建缓存回收 3.526 GB，最终为零。
+- Implementation CI passed: [GitHub Actions run 34199517420](https://github.com/addxemmm/gsm-system/actions/runs/34199517420).
+  Documentation-only commits after this record do not change the running image
+  implementation or `.release-revision`. / 后续纯文档提交不改变运行镜像或构建版本标记。
+
+Handset reply/confirmation SMS, peer SMS, two-way voice and Internet access still
+require a separate live acceptance run after the operator starts the cell.
+用户启动小区后仍须完成号码回复确认、手机互发短信、双向语音和互联网的真机验收；
+本次没有发送空口短信或重新开启射频。
