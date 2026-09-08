@@ -1,50 +1,52 @@
-# GSM-System Legacy API Reference 旧版接口参考（根路径，已冻结 Frozen）
+# Retired legacy API / 已退役旧接口
 
-> **New integrations use 新集成请用 [`/api/v1`](API.md).**
-> This file records the frozen legacy routes verbatim 逐字记录冻结旧路由：
-> behavior never changes (critical bugfix only), `message_id` semantics kept forever.
-> Implementation 实现：`internal/api/server.go`. `message` wording, `message_id`,
-> field names follow this doc; changing impl must sync this doc + `*_test.go`.
+> Historical migration reference only. Release 2.1 does not register any root
+> management endpoint; every public endpoint is under `/api/v1`. The old paths
+> return the standard `40401` envelope and must not be restored.
+> 本文仅供迁移查阅。2.1 不注册任何根路径管理接口，旧路径返回标准 `40401`，不得恢复。
 
-- Base 基地址：`http://<server>:8082` (host `http://127.0.0.1:8082`)
-- 10 legacy routes, all `POST` + JSON. Plus `GET /healthz`, `GET /status`, `GET /profile`.
-- **HTTP status always 200 恒为200** (success or failure); check JSON `status`.
-- Envelope 包络：`{"status": bool, "message_id": int, "message": str, ...}`.
-- `message_id = 0` everywhere = generic failure, inspect logs
-  (`docker logs gsmsystem-uhd4` / `/data/log/`).
-- Non-POST to a POST route returns that route's own `message_id 0` text.
+The pre-2.1 API used action-style root routes, HTTP-200-only signaling, and a
+`status/message_id/message` response shape. Those semantics are not part of the
+2.1 compatibility contract. 旧版“恒 HTTP 200 + message_id”语义已退出兼容范围。
 
-## Compatibility Matrix 兼容矩阵
+## Migration map / 迁移映射
 
-Source of truth 以 `gsmsystem/run.py` 为准 (`run_c.py`/README differences noted).
+| Pre-2.1 route / 旧路由 | Release 2.1 replacement / 2.1 替代接口 |
+|---|---|
+| `POST /start` | `POST /api/v1/cell` |
+| `POST /stop` | `DELETE /api/v1/cell` |
+| `POST /config` preset action | no replacement; send explicit cell parameters / 无预设替代，显式提交小区参数 |
+| `POST /getconfig` | `GET /api/v1/config` |
+| `POST /allconfig` | `PATCH /api/v1/config` with `{"values":{"KEY":"VALUE"}}` |
+| `POST /iptables` | `GET /api/v1/network?iface=IFACE`, `PUT /api/v1/network` |
+| `POST /smsinfo` | `GET /api/v1/sms` |
+| `POST /ueinfo` | `GET /api/v1/connections` |
+| `POST /setphonenumber` | `PUT` or `DELETE /api/v1/subscribers/{imsi}/number` |
+| `POST /sendsms` | `POST /api/v1/sms` (HTTP `202` means submitted) |
+| `GET /healthz` | `GET /api/v1/health` |
+| `GET /status` | `GET /api/v1/cell` |
+| `GET /profile` | `GET /api/v1/profile` |
 
-| # | Route 路由 | Request 请求 | Response 响应原文 | Backend 后端依赖 |
-|---|---|---|---|---|
-| 1 | `POST /start` | no args 无参 | `0 Start Failed / 1 Start successfully / 2 is running / 3 device is not connected, please connect usrp device.` | `ps -eo pid,stat,comm` OpenBTS check → `rm /var/run/OpenBTS.pid` → `uhd_find_devices\|grep B210` → start sipauthserve/smqueue/asterisk/OpenBTS → `OpenBTSCLI -c tmsis clear` |
-| 2 | `POST /stop` | no args | `0 Stop failed. / 1 Stop successfully. / 2 Not running.` | check 5 procs (OpenBTS/sipauthserve/smqueue/asterisk/transceiver) → `kill TERM→KILL` + `tmsis clear` + `rm pid` |
-| 3 | `POST /config` | `{"id":0-4}` | `0 Failed. / 1 Success, please start system manually. / 2 Stop failed, please stop manually. / 3 Can not find database file. / 4 The config id is not existed.` | stop cell first, then `sqlite3 /etc/OpenBTS/OpenBTS.db UPDATE CONFIG` 8 keys (ARFCNs/C0/Band/MCC/MNC/LAC/CI/ShortName). Presets see `internal/gsm/gsm.go:Presets` |
-| 4 | `POST /getconfig` | no args | `+ data:[[KEY,VALUE]...]` `0 Failed / 1 Success / 3 Can not find database file.` | `SELECT KEYSTRING,VALUESTRING FROM CONFIG` |
-| 5 | `POST /allconfig` | `{"name":"GSM.Identity.ShortName","value":"gsmsystem"}` | `0 Failed / 1 Success / 2 Stop failed or No db` | stop first, single `UPDATE CONFIG`. Legacy allowed arbitrary keys (kept compat, shape-checked in Go) |
-| 6 | `POST /iptables` | `{"iface":"eth0"}` (legacy example `wlo1`) | `0 Failed / 1 Success` | `iptables -t nat -A POSTROUTING -s 192.168.99.0/24 -o $iface -j MASQUERADE` (argv exec, iface metachar-rejected) |
-| 7 | `POST /smsinfo` | no args | `+ infos:[[time,sms,from_num,from_imsi,to_num,to_imsi]]` `0 Failed / 1 Success / 2 Can not find /var/log/smqueue.log / 3 SMS message not fount.` (typo kept) | parse `/data/log/smqueue.log` (`get_text: Decoded text` + `Deliver message:` 13-line SIP block). Code reads smqueue.log; README `syslog` is stale. Chinese SMS not retrievable |
-| 8 | `POST /ueinfo` | no args | `+ infos:[[imsi,imei,number,ip]]` `0 Failed / 1 Success / 2 System is not running. / 3 Can not find info.` | `OpenBTSCLI -c sgsn list` (IMSI+IP) join `OpenBTSCLI -c tmsis -l` (imsi/imei/number). `none`/empty IP = no PDP address |
-| 9 | `POST /setphonenumber` | `{"imsi":"00101...","number":"10000002"}` | `0 False / 1 Success / 2 Can not find TMSITable/asterisk db / 3 imsi not existed / 4 not existed in asterisk` | `sqlite3 /var/run/TMSITable.db:tmsi_table(IMSI→ASSOCIATED_URI)` + `/var/lib/asterisk/sqlite3dir/sqlite3.db:sip_buddies(callerid)+dialdata_table(exten)` |
-| 10 | `POST /sendsms` | `{"imsi":"...","sender":"1111111","smsmessage":"hello"}` | `0 Send failed. / 1 Send successfully. / 2 Not running.` | `OpenBTSCLI -c sendsms <imsi> <sender> <msg>`, success iff output contains `message submitted for delivery`. ASCII only (Chinese unsupported) |
+`POST /api/v1/subscribers` and `POST /api/v1/network` were transitional v1
+methods and are also removed; both return `40501` with `Allow` listing the
+supported methods. Do not retry them against the old root routes. 过渡期 v1 POST
+同样已移除，客户端必须更新方法与资源模型。
 
-## Known drifts 已知漂移（以代码为准）
+## Behavior changes / 语义变化
 
-- `smsinfo id=2` path: code `/var/log/smqueue.log` (Go: `/data/log/smqueue.log`), README `syslog` stale.
-- `sendsms` table in old README copied `stop` wording; code wording above wins.
-- `run_c.py` lacks `tmsis clear` on start, lacks `id` bounds check (Go keeps `run.py` semantics).
-- `config`/`allconfig` stop the cell first (documented behavior, kept).
+- Every response uses `code/message/data/request_id` and a meaningful HTTP
+  status. `code=0` includes successful HTTP `202`.
+- `/connections` is a volatile observation, while `/subscribers` is a persistent
+  registry; “no connection” is not “subscriber offline”.
+- Number binding is transactional and unique; optional TMSI projection is
+  reported separately.
+- SMS input is explicitly validated, and successful submission never claims
+  delivery.
+- Network configuration uses an idempotent `PUT` and reports
+  `persisted:false`.
+- Root-path response wording and legacy numeric `message_id` values are not
+  preserved.
 
-## Typical flow 典型流程
-
-```bash
-BASE=http://127.0.0.1:8082
-curl -s -X POST $BASE/stop -d '{}'
-curl -s -X POST $BASE/start -d '{}'
-curl -s -X POST $BASE/ueinfo -d '{}'
-curl -s -X POST $BASE/smsinfo -d '{}'
-curl -s -X POST $BASE/sendsms -H 'Content-Type: application/json' -d '{"imsi":"001010123456780","sender":"101","smsmessage":"hello"}'
-```
+完整 2.1 契约见 [`API.md`](API.md)、[`api/openapi.yaml`](api/openapi.yaml) 与
+[`MIGRATION.md`](MIGRATION.md)。A snapshot of older prose remains under
+[`legacy/`](legacy/) for archaeology only; it is not an executable contract.

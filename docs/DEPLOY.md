@@ -1,264 +1,209 @@
-# DEPLOY / 部署 (SDR host, `vm-sdr`)
+# Deploy 2.1 / 部署 2.1
 
-> Dev machine only edits + syncs; builds run on server. 本地只改与同步，构建在服务器。
-> No `sudo` below: the server user must belong to `docker`; passworded sudo fails over SSH.
-> 以下命令不使用 `sudo`：服务器用户须属于 `docker` 组，SSH 下带密码的 sudo 会失败。
-> Live line: `folk/uhd4` → image `gsmsystem-uhd4:test` → container `gsmsystem-uhd4`
-> (22.04 + UHD 4.1 + ported OpenBTS, Artix-7 clone FPGA bundled).
+> Development machines edit, test Go, and synchronize committed source only.
+> Docker builds, container changes, SDR probes, and RF acceptance run on the SDR
+> host. 开发机仅编辑、Go 检查与同步；镜像、容器、SDR 与射频操作只在服务器执行。
 
-## Prerequisites / 前置条件 (on server / 服务器)
+Release 2.1 uses exactly:
+
+- `deploy/docker/Dockerfile`;
+- `deploy/docker/docker-compose.yml`;
+- Compose project `gsm-system-live`;
+- Compose service `gsm-system`, container `gsmsystem-uhd4` (leaves the stopped
+  rollback container `gsmsystem` name available);
+- external volume `docker_gsm-data`;
+- immutable image `gsm-system:2.1.0-<12sha>` and validated release alias
+  `gsm-system:2.1.0`.
+
+The former `.uhd4` Docker/Compose definitions are retired. There is no Xenial
+production fallback for the Artix-7-compatible board. 旧 `.uhd4` 构建文件不再使用。
+
+## 1. Preconditions / 前置检查
+
+On `HOST`:
 
 ```bash
-lsb_release -a; docker --version; docker compose version
-rsync --version | head -1      # required by the transactional Windows sync / Windows 同步需要
-lsusb | grep 2500              # B210 present?
-ss -tlnp | grep 8082 || echo "8082 free"
-docker ps -a --format '{{.Names}} | {{.Image}} | {{.Status}}'
-docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'
+docker --version
+docker compose version
+lsusb | grep 2500
+ss -tlnp | grep 8082 || echo '8082 is free'
+docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_gsm-data
 ```
 
-Kept on host: `gsmsystem-uhd4:test` (live), `gsmsystem-dep:2.0` (485MB
-xenial fallback), `ltesystem-dep:2.0` (LTE), base images. Legacy
-`gsmsystem-dep:1.x` (6.25GB) removed 2026-09-06 (seeds/configs extracted to git).
+The operator must have Docker access without interactive sudo. Keep a verified
+old immutable image, a stopped rollback container, and state backups until full
+RF acceptance. Docker Hub/network failures may be retried after connectivity is
+restored; cached native build layers should be retained.
 
-## First-time vendor sources / 首次预取依赖源码
+## 2. Vendor inputs / 上游源码缓存
+
+The multi-stage Dockerfile builds upstream UHD/OpenBTS components from the
+pinned, server-side `third_party/` cache. Initialize or verify it on the server:
 
 ```bash
-cd ~/gsm-system && ./scripts/prefetch_vendor.sh   # fills third_party/ (~450MB, untracked)
+cd ~/gsm-system
+./scripts/prefetch_vendor.sh
 ```
 
-## Safe sync and build / 安全同步与构建 (Windows dev machine / 开发机)
+The build verifies `third_party/REVISION_MANIFEST.tsv`. Python/Mako is an
+upstream UHD builder-stage dependency, not project-owned management runtime.
+
+## 3. Synchronize committed HEAD / 同步已提交 HEAD
+
+From Windows PowerShell:
 
 ```powershell
-# Sync committed HEAD only; does not build or touch containers.
-# 只同步已提交 HEAD；不构建，也不启动或替换容器。
-.\scripts\deploy_from_windows.ps1 -HostAlias vm-sdr
-
-# Sync and build the live UHD4 image; still does not run compose up.
-# 同步并构建当前 UHD4 镜像；仍不执行 compose up。
-.\scripts\deploy_from_windows.ps1 -HostAlias vm-sdr -Build
-
-# Archival Xenial build (genuine B210 only) / 归档 Xenial 构建（仅原装 B210）：
-.\scripts\deploy_from_windows.ps1 -HostAlias vm-sdr -Build `
-  -ComposeFile deploy/docker/docker-compose.yml
+pwsh -NoProfile -File scripts/deploy_from_windows.ps1 -HostAlias vm-sdr
+# Optional remote immutable-image build; does not run compose up:
+pwsh -NoProfile -File scripts/deploy_from_windows.ps1 -HostAlias vm-sdr -Build `
+  -ComposeFile deploy/docker/docker-compose.yml -ProjectName gsm-system-live
 ```
 
-The default compose file is `deploy/docker/docker-compose.uhd4.yml`, matching the
-live Artix-7/UHD4 line. `-ComposeFile` accepts a safe repository-relative path.
-默认 Compose 文件对应当前 Artix-7/UHD4 实机；可用 `-ComposeFile` 明确选择其他配置。
+The script archives committed `HEAD`, uses a unique remote staging directory,
+mirrors the tracked tree, preserves operator-owned `third_party/`, `.git`, env,
+and release-revision inputs, and records the 12-character revision. Uncommitted
+or untracked changes are not deployed. 同步仅包含已提交 HEAD，不会把当前工作区改动当作发布。
 
-Sync uses a unique local/remote archive and staging directory, checks every
-`git`/`scp`/`ssh` exit code, and overlays committed `HEAD` with `rsync -a`.
-It does not delete unknown server files, and retains the large server-only
-`third_party/` build cache. If a committed path was removed, review and remove
-that stale server path explicitly. 本流程检查所有原生命令退出码，用 `rsync -a` 覆盖
-已提交的 `HEAD`，不删除未知服务器文件并保留 `third_party/` 缓存；仓库若删除了已提交
-路径，须复核后在服务器明确清理对应陈旧路径。
+## 4. Back up pre-2.1 state / 备份旧状态
 
-`git archive` intentionally excludes modified and untracked files. The script
-prints a warning listing them; commit intended changes before deployment.
-`git archive` 不包含未提交与未跟踪文件；脚本会逐项警告，部署前请提交需要同步的改动。
+Stop the old cell and pause all config/subscriber writes. Back up these as one
+operational set before replacing an older container:
 
-`docker.io` is flaky from this host; on manifest errors retry the build (cached
-layers resume). 若镜像清单下载失败，可重试构建并复用已缓存层。
+1. `/etc/OpenBTS/OpenBTS.db`;
+2. `/etc/OpenBTS/sipauthserve.db`;
+3. `/etc/OpenBTS/smqueue.db`;
+4. `/var/lib/asterisk/sqlite3dir/sqlite3.db`;
+5. `/var/log/asterisk/cdr-csv/Master.csv`, if present.
 
-## One-time persistent-state migration / 一次性持久化迁移
+Use SQLite `.backup`, `umask 077`, mode `0600`, and `PRAGMA quick_check` for each
+database. Store a timestamped copy below `/data/backups/pre-2.1-STAMP/` and
+initialize the matching `/data/state/` files only after all checks succeed.
+四份数据库逐一使用 SQLite 在线备份并检查；CDR 同批复制。不得混用不同批次作为回滚集。
 
-**Do not recreate a pre-persistence UHD4 container directly.** First make SQLite
-online backups of all three OpenBTS databases and Asterisk, writing both the new
-state files and a retained timestamped backup into the existing `docker_gsm-data`
-volume. 旧版 UHD4 容器升级时严禁直接 recreate；必须先备份三份 OpenBTS 数据库和
-Asterisk 数据库，再切换容器。
-
-Before starting the backups, stop the cell through the normal management flow
-and pause subscriber/configuration write requests. Each `.backup` is transactionally
-consistent, but the four independent files are not a single cross-database instant.
-备份前按正常管理流程停止小区，并暂停签约/配置写请求；单个 `.backup` 具备事务一致性，
-但四个数据库的备份并非同一时刻的跨库快照。
-
-Run while the old container is still running (replace `old` only if its name is
-different). 在旧容器仍运行时执行（名称不同才修改 `old`）：
+Example skeleton (replace `OLD_CONTAINER` only after inspection):
 
 ```bash
-old=gsmsystem-uhd4
+old=OLD_CONTAINER
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-docker volume inspect docker_gsm-data >/dev/null
 docker inspect "$old" --format '{{range .Mounts}}{{println .Name .Destination}}{{end}}'
 docker exec "$old" sh -ceu '
-stamp=$1
-umask 077
-backup=/data/backups/pre-persistence-$stamp
-items="/etc/OpenBTS/OpenBTS.db:OpenBTS/OpenBTS.db
-/etc/OpenBTS/sipauthserve.db:OpenBTS/sipauthserve.db
-/etc/OpenBTS/smqueue.db:OpenBTS/smqueue.db
-/var/lib/asterisk/sqlite3dir/sqlite3.db:asterisk/sqlite3.db"
-for item in $items; do
-  src=${item%%:*}; rel=${item#*:}; dst=/data/state/$rel
-  [ -f "$src" ] || { echo "missing source database: $src" >&2; exit 1; }
-  [ ! -e "$dst" ] || { echo "refusing to overwrite: $dst" >&2; exit 1; }
-done
-for item in $items; do
-  src=${item%%:*}; rel=${item#*:}; dst=/data/state/$rel
-  mkdir -p "$(dirname "$backup/$rel")" "$(dirname "$dst")"
-  sqlite3 "$src" ".backup '\''$backup/$rel'\''"
-  sqlite3 "$src" ".backup '\''$dst'\''"
-  chmod 700 "$(dirname "$backup/$rel")" "$(dirname "$dst")"
-  chmod 600 "$backup/$rel" "$dst"
-  [ "$(sqlite3 "$backup/$rel" "PRAGMA quick_check;")" = ok ]
-  [ "$(sqlite3 "$dst" "PRAGMA quick_check;")" = ok ]
-done
-echo "retained backup: $backup"
+  umask 077
+  stamp=$1
+  backup=/data/backups/pre-2.1-$stamp
+  mkdir -p "$backup/OpenBTS" "$backup/asterisk"
+  sqlite3 /etc/OpenBTS/OpenBTS.db ".backup $backup/OpenBTS/OpenBTS.db"
+  sqlite3 /etc/OpenBTS/sipauthserve.db ".backup $backup/OpenBTS/sipauthserve.db"
+  sqlite3 /etc/OpenBTS/smqueue.db ".backup $backup/OpenBTS/smqueue.db"
+  sqlite3 /var/lib/asterisk/sqlite3dir/sqlite3.db ".backup $backup/asterisk/sqlite3.db"
+  for db in "$backup"/OpenBTS/*.db "$backup"/asterisk/sqlite3.db; do
+    [ "$(sqlite3 "$db" "PRAGMA quick_check;")" = ok ]
+    chmod 600 "$db"
+  done
+  if [ -f /var/log/asterisk/cdr-csv/Master.csv ]; then
+    mkdir -p "$backup/asterisk/cdr-csv"
+    cp /var/log/asterisk/cdr-csv/Master.csv "$backup/asterisk/cdr-csv/"
+    chmod 600 "$backup/asterisk/cdr-csv/Master.csv"
+  fi
 ' sh "$stamp"
 ```
 
-Only after all eight backup/verification operations succeed, stop and retain the
-old UHD4 container, then launch the new Compose project. 全部备份和校验成功后，才停止
-并保留旧 UHD4 容器，再启动新 Compose 项目：
+Do not use `docker compose down -v`; the external volume is operator-owned and
+must survive project replacement. 禁止将删卷作为普通升级或回滚步骤。
+
+## 5. Build, start, and publish / 构建、启动与发布
+
+After the Windows `-Build` flow, run the no-RF image fixture first, then deploy
+the already-built immutable tag:
 
 ```bash
-docker stop --time 90 "$old"
-docker rename "$old" "$old-pre-$stamp"   # stopped rollback container / 停止态回滚容器
 cd ~/gsm-system
+revision=$(cat .release-revision)
+scripts/tests/test_image.sh "gsm-system:2.1.0-$revision"
 ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
 ```
 
-The UHD4 compose file pins `${GSM_DATA_VOLUME:-docker_gsm-data}`, so the new
-project uses the migrated volume while Compose does not adopt/delete the renamed
-old-project container. Do not delete the timestamped `/data/backups/` directory,
-old image, or stopped old container until full RF acceptance. UHD4 Compose 使用固定卷名，
-新项目能读取迁移数据，又不会接管/删除旧项目容器；完整射频验收前保留备份目录、旧镜像
-和停止态旧容器。
+The image test has no USB/RF access and checks OCI/Go identity, vendor manifest,
+`/dev/log`, native DB/CDR persistence across recreation, and actual Asterisk
+ODBC/CDR-module/dialplan loading. 隔离镜像测试不接 USB、不发射。
 
-The data volume is declared `external: true`: Compose neither creates nor deletes
-it. On a new installation, run `docker volume create "${GSM_DATA_VOLUME:-docker_gsm-data}"`
-once before startup. Existing installations reuse their current volume unchanged.
-数据卷声明为外部卷，由运维管理；新安装需先显式创建，现有安装原样复用。此设置也避免卷被
-`compose down -v` 随项目删除；仍应保留“不在常规升级中删除卷”的操作纪律。
-
-## Start and verify / 启动与验证 (server / 服务器)
-
-Starting/replacing a container is an explicit server-side step and may interrupt
-the live cell. The default project is `gsm-system-live`; the default compose file
-is UHD4. 启动或替换容器必须在服务器明确执行，可能中断当前小区；默认项目为
-`gsm-system-live`，默认配置为 UHD4。
+For a server-side integrated prefetch/build/deploy flow:
 
 ```bash
 cd ~/gsm-system
-# UHD4 default: build, compose up -d, then make up to 30 readiness attempts.
-# 默认 UHD4：构建、启动，然后最多重试就绪检查 30 次。
-./scripts/deploy_to_ubuntu.sh
-
-# Select the project explicitly / 明确选择 Compose 项目：
-./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live
-
-# Archival Xenial compose (not this clone board) / 归档 Xenial 配置（不适用当前克隆板）：
-./scripts/deploy_to_ubuntu.sh --compose-file deploy/docker/docker-compose.yml
-
-# Reuse an existing image or deliberately omit HTTP verification:
-# 复用已有镜像，或明确跳过 HTTP 验证：
-./scripts/deploy_to_ubuntu.sh --skip-build
-./scripts/deploy_to_ubuntu.sh --skip-health
+./scripts/prefetch_vendor.sh
+./scripts/deploy_to_ubuntu.sh \
+  --compose-file deploy/docker/docker-compose.yml \
+  --project-name gsm-system-live
 ```
 
-The readiness probe polls non-hardware endpoint `/api/v1/cell` with a 30-second
-per-request timeout. `HEALTH_RETRIES` and `HEALTH_URL` may be set in the
-environment; `--health-url` overrides the URL. Set `GSM_API_TOKEN` to send an
-`Authorization: Bearer` header; leave it empty for backward-compatible no-token
-deployment. Build, start, and final readiness failures return non-zero.
-The script also verifies that this Compose project's containers are running the
-expected image IDs before and after HTTP readiness; a different API returning
-200 on the host port is not sufficient. 脚本在 HTTP 检查前后验证本项目容器的运行状态
-及预期镜像 ID，不以宿主机上其它 API 返回 200 作为发布成功依据。
-就绪探针轮询不触发硬件探测的 `/api/v1/cell`，单次超时 30 秒。可通过环境变量设置
-重试次数和地址，`--health-url` 覆盖地址；设置 `GSM_API_TOKEN` 会发送 Bearer 头，
-留空则保持旧版无令牌行为。构建、启动或最终就绪检查失败均返回非零。
+The script resolves `VERSION` and the 12-character source revision, builds the
+immutable tag, verifies OCI labels and `gsm-system --version`, verifies that the
+Compose containers use the expected image ID, starts the project, and polls the
+non-RF `/api/v1/cell` endpoint. Only after build + container + HTTP validation
+does it tag the same image ID as `gsm-system:2.1.0`.
 
-## Full verification / 完整验证 (on server / 服务器)
+脚本先验证不可变镜像、容器与 HTTP，再更新版本别名；失败不会把候选镜像标成已验证版本。
+When `GSM_API_TOKEN` is configured, export it on the host so the health probe can
+send the Bearer token. Do not commit it.
+
+`--skip-build` selects an already-built explicitly supplied `GSM_IMAGE`;
+`--skip-health` deliberately omits HTTP validation and therefore does not
+publish the moving release alias. 跳过健康检查不构成发布成功。
+
+## 6. Acceptance / 验收顺序
+
+1. Development: `go test ./...`, `go vet ./...`, Linux cross-build.
+2. Server: isolated image smoke test with no USB, privilege, network, or RF.
+3. Verify image labels/version, Compose image ID, `/health`, `/cell`, `/profile`.
+4. Confirm `/data/state` databases and `/data/log` ownership/modes.
+5. Start one permitted single-ARFCN cell; check process state without treating
+   `ready` as RF acceptance.
+6. Attach dedicated test SIMs; compare `/connections` and `/subscribers`.
+7. Bind a unique test number; submit safe-ASCII SMS and independently confirm
+   receipt; place a two-way call and inspect real CDR history.
+8. Stop the cell; recreate the container; verify profile/database/log/CDR
+   persistence and that no cell auto-transmits.
+
+Record exact image ID/tag, revision, timestamps, API request IDs, and native
+logs. Local tests or a successful HTTP probe alone do not prove RF readiness.
+当前 2.1 仍为候选版，服务器构建和真机结果完成前不得写成“已发布/已验收”。
+
+Offline build/deploy contract checks / 离线构建与部署契约检查：
 
 ```bash
-curl -fsS --max-time 30 http://127.0.0.1:8082/api/v1/health; echo # uhd_b210 true when SDR is idle
-docker exec gsmsystem-uhd4 timeout 90 uhd_usrp_probe 2>&1 | grep -E 'loopback|Error|compat'
-# RF full chain 全链路：cell start → ue → sms → voice (see QUICKSTART), then stop.
+sh deploy/docker/test-persistent-state.sh
+sh scripts/tests/test_prefetch_vendor.sh
+sh scripts/tests/test_deploy_to_ubuntu.sh
+sh scripts/tests/test_build_contract.sh
 ```
-
-Run the exclusive `uhd_usrp_probe` only while the cell/transceiver is stopped.
-When the live transceiver owns the SDR, `uhd_b210: false` or a busy probe does not
-prove that hardware is absent. 独占式 `uhd_usrp_probe` 仅在小区/收发器停止时执行；
-在线收发器占用 SDR 时出现 `uhd_b210: false` 或 busy，不代表设备不存在。
-
-## Offline script tests / 离线脚本测试
-
-These tests replace `git`, `scp`, `ssh`, `docker`, `curl`, and `sleep` with local
-fakes. They require neither network nor Docker and never contact `vm-sdr`.
-测试会用本地假命令替换上述工具，无需网络或 Docker，也不会连接 `vm-sdr`。
 
 ```powershell
-pwsh -NoProfile -File .\scripts\tests\deploy_from_windows.Tests.ps1
+pwsh -NoProfile -File scripts/tests/deploy_from_windows.Tests.ps1
 ```
+
+## 7. Logs and persistence / 日志与持久化
+
+- `/data/last_start.json`: `0600`, atomic write + fsync;
+- `/data/log/smqueue.log`, `openbts-syslog.log`, `system.log`: `0600`, 16 MiB,
+  one `.1` backup via the Go `/dev/log` collector;
+- `/data/log/openbts.log`: OpenBTS startup stdout/readiness evidence;
+- `/data/log/asterisk/cdr-csv/Master.csv`: persisted Asterisk CDR path;
+- `/data/state/OpenBTS/` and `/data/state/asterisk/`: native databases.
+
+The collector owns `/dev/log` only when safe; it never overwrites an active
+socket or regular file. 日志接收器仅在安全时创建 `/dev/log`，不会覆盖现有端点。
+
+## 8. Rollback / 回滚
+
+Choose a retained immutable tag and deploy without rebuilding:
 
 ```bash
-sh ./scripts/tests/test_deploy_to_ubuntu.sh
+export GSM_IMAGE=gsm-system:2.1.0-OLD12SHA
+export GSM_REVISION=OLD12SHA
+./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
 ```
 
-On the SDR server, smoke-test a built image in a random isolated container and
-volume before any live rollout. It uses `--network none`, no USB/privileged/RF
-access, never starts the cell, verifies API/auth/body limits, SQLite persistence,
-and ODBC loading, then removes only its labelled fixtures. 在服务器上线前，可用随机隔离
-容器和数据卷检查镜像；测试无网络、无 USB/特权/射频权限，绝不启动小区，只清理自身标签资源。
-
-```bash
-sh ./scripts/tests/test_image.sh                      # gsmsystem-uhd4:test
-sh ./scripts/tests/test_image.sh IMAGE_TAG            # explicit image / 指定镜像
-```
-
-Failures print the isolated container and Asterisk logs before cleanup. Run this
-only on the server with Docker available. 失败时会先输出隔离容器和 Asterisk 日志再清理；
-本测试仅在装有 Docker 的服务器执行。
-
-## Rollback / 回滚
-
-Prefer the retained same-UHD4 container and image; do not substitute the Xenial
-image on this Artix-7 clone board. 首选保留的同版 UHD4 旧容器/镜像；Artix-7 克隆板
-不可用 Xenial 镜像作为回滚。
-
-```bash
-docker compose -p gsm-system-live -f deploy/docker/docker-compose.uhd4.yml down
-docker rename "gsmsystem-uhd4-pre-$stamp" gsmsystem-uhd4
-docker start gsmsystem-uhd4
-i=0
-until curl -fsS --max-time 2 http://127.0.0.1:8082/api/v1/cell >/dev/null; do
-  i=$((i + 1)); [ "$i" -lt 30 ] || exit 1; sleep 1
-done
-```
-
-The legacy entrypoint can overwrite at least Asterisk `sqlite3.db` when it starts,
-so starting the old container alone is **not** a data rollback. After its API is
-up, keep management writes paused and, before any manual RF start, restore all
-four verified snapshots and check them again. 旧入口启动时至少会覆盖 Asterisk
-`sqlite3.db`，所以仅启动旧容器不等于数据回滚。旧 API 启动后继续暂停管理写入，手工
-启动射频前恢复并复检四份快照：
-
-```bash
-docker exec gsmsystem-uhd4 sh -ceu '
-backup=/data/backups/pre-persistence-$1
-items="OpenBTS/OpenBTS.db:/etc/OpenBTS/OpenBTS.db
-OpenBTS/sipauthserve.db:/etc/OpenBTS/sipauthserve.db
-OpenBTS/smqueue.db:/etc/OpenBTS/smqueue.db
-asterisk/sqlite3.db:/var/lib/asterisk/sqlite3dir/sqlite3.db"
-for item in $items; do
-  rel=${item%%:*}; dst=${item#*:}; src=$backup/$rel
-  [ -f "$src" ] || { echo "missing rollback backup: $src" >&2; exit 1; }
-  sqlite3 "$dst" ".restore '\''$src'\''"
-  [ "$(sqlite3 "$dst" "PRAGMA quick_check;")" = ok ]
-done
-' sh "$stamp"
-```
-
-Never add `-v` to `compose down`; it would delete project-managed volumes. The
-explicit `docker_gsm-data` volume, timestamped backups, old UHD4 image, and old
-container must remain until RF chain acceptance. `compose down` 禁止添加 `-v`；完成
-射频全链路验收前，必须保留数据卷、时间戳备份、旧 UHD4 镜像和旧容器。
-
-`gsmsystem-dep:2.0` remains an archival Xenial fallback for a genuine Spartan-6
-B210 only; it cannot drive the current clone board. `gsmsystem-dep:2.0` 仅供原装
-Spartan-6 B210 的归档回滚，不能驱动当前克隆板。
+If native data changed after cutover, stop writes and restore the matching
+timestamped database/CDR set before RF restart. Revalidate image ID, HTTP,
+database quick checks, persistence, and then the RF chain. Restoring an image
+without its compatible data set is not a complete rollback. 回滚必须同时考虑镜像与数据集。

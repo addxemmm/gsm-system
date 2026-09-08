@@ -1,291 +1,266 @@
 {
-	"info": {
-		"_postman_id": "gsm-system-bilingual-v1",
-		"name": "gsm-system API (legacy + v1) / 新旧接口全集",
-		"description": "GSM lab-cell toolkit: 10 frozen legacy routes (HTTP 200 always, status/message_id/message) + /api/v1 standard REST (proper status codes, code/message/data/request_id envelope, OpenAPI: docs/api/openapi.yaml).\n\nVariables 变量: baseUrl defaults to http://127.0.0.1:8082 (live uhd4 stack; the retired xenial line used the same port).\nAuth 鉴权: only when the server sets GSM_API_TOKEN; then add header Authorization: Bearer <token> to every request, else 401.\n\nTypical flow 典型流程: health -> cell start ({}) -> ue -> subscribers set number -> sms send -> sms list -> cell delete(stop).\nRF note: /start actually transmits. IMSI/number values below are lab-test placeholders, replace with yours.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"variable": [
-		{
-			"key": "baseUrl",
-			"value": "http://127.0.0.1:8082",
-			"description": "Main line :8082. folk/uhd4 stack uses :8083."
-		}
-	],
-	"item": [
-		{
-			"name": "legacy 旧版冻结接口 (POST, HTTP always 200)",
-			"description": "Frozen verbatim compat routes from gsmsystem/run.py. success/failure is in JSON status/message_id, NOT the HTTP code. See docs/API_LEGACY.md.",
-			"item": [
-				{
-					"name": "POST /start 启动",
-					"request": {
-						"description": "No required args. Empty body reuses saved profile/defaults (id=0 equivalent). Responses: 1 Start successfully / 2 is running / 3 device not connected / 0 Start Failed.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/start", "host": ["{{baseUrl}}"], "path": ["start"] },
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /stop 停止",
-					"request": {
-						"description": "Responses: 1 Stop successfully. / 2 Not running. / 0 Stop failed.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/stop", "host": ["{{baseUrl}}"], "path": ["stop"] },
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /config 预设配置 (id 0-4)",
-					"request": {
-						"description": "Preset ids: 0 test 1800 / 1 CMCC 900 / 2 CMCC 1800 / 3 CU 900 / 4 CU 1800. Stops the cell first. 1 Success,please start manually / 2 stop failed / 3 no db / 4 bad id.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/config", "host": ["{{baseUrl}}"], "path": ["config"] },
-						"body": { "mode": "raw", "raw": "{\n    \"id\": 0\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /getconfig 读全量配置",
-					"request": {
-						"description": "Returns data:[[KEY,VALUE]...] from /etc/OpenBTS/OpenBTS.db CONFIG table.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/getconfig", "host": ["{{baseUrl}}"], "path": ["getconfig"] },
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /allconfig 改单项配置",
-					"request": {
-						"description": "Stops the cell first. Example renames the network short name.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/allconfig", "host": ["{{baseUrl}}"], "path": ["allconfig"] },
-						"body": { "mode": "raw", "raw": "{\n    \"name\": \"GSM.Identity.ShortName\",\n    \"value\": \"test\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /iptables 出口转发",
-					"request": {
-						"description": "iface = uplink interface name (ip route get 8.8.8.8 -> dev). Adds MASQUERADE for 192.168.99.0/24. Run once per boot (or when uplink changes).",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/iptables", "host": ["{{baseUrl}}"], "path": ["iptables"] },
-						"body": { "mode": "raw", "raw": "{\n    \"iface\": \"eth0\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /smsinfo 查短信",
-					"request": {
-						"description": "infos:[[time,text,from_num,from_imsi,to_num,to_imsi]], null when missing. 3 = no SMS yet. Chinese content is NOT retrievable (OpenBTS limitation).",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/smsinfo", "host": ["{{baseUrl}}"], "path": ["smsinfo"] },
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /ueinfo 查终端",
-					"request": {
-						"description": "infos:[[imsi,imei,number,ip]]. 2 = cell not running. 3 = no UE attached. ip may be none/null before PDP.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/ueinfo", "host": ["{{baseUrl}}"], "path": ["ueinfo"] },
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /setphonenumber 配号码",
-					"request": {
-						"description": "Binds number to an attached IMSI (TMSITable + asterisk dbs). 3 = imsi unknown (attach UE first). 4 = not in asterisk registry.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/setphonenumber", "host": ["{{baseUrl}}"], "path": ["setphonenumber"] },
-						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"number\": \"10000001\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /sendsms 发短信",
-					"request": {
-						"description": "ASCII only (Chinese unsupported, will fail opaquely). 1 Send successfully. / 2 Not running. / 0 Send failed.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/sendsms", "host": ["{{baseUrl}}"], "path": ["sendsms"] },
-						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"sender\": \"101\",\n    \"smsmessage\": \"hello\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				}
-			]
-		},
-		{
-			"name": "v1 小区 cell",
-			"description": "Standard REST. Proper HTTP codes + code/message/data/request_id envelope. See docs/API.md.",
-			"item": [
-				{
-					"name": "POST /api/v1/cell 启动(显式参数)",
-					"request": {
-						"description": "Explicit GSM params, strict validation (band 900/1800 only, mcc 3 digits...). Unknown JSON fields are rejected (400). 200 started / 422 validation (data.errors) / 409 already running / 503 no SDR.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] },
-						"body": { "mode": "raw", "raw": "{\n    \"arfcns\": \"1\",\n    \"c0\": \"540\",\n    \"band\": \"1800\",\n    \"mcc\": \"001\",\n    \"mnc\": \"01\",\n    \"lac\": \"4420\",\n    \"ci\": \"41240\",\n    \"short_name\": \"test\",\n    \"network\": \"eth0\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /api/v1/cell 启动(复用存档)",
-					"request": {
-						"description": "Empty body reuses /data/last_start.json (same as lte-system). First boot without profile -> 422.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] },
-						"body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "GET /api/v1/cell 状态",
-					"request": {
-						"description": "{running,openbts,transceiver,sipauthserve,smqueue,asterisk,started_at?,band?,short_name?}",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] }
-					}
-				},
-				{
-					"name": "DELETE /api/v1/cell 停止(幂等)",
-					"request": {
-						"description": "Idempotent: stopping an idle cell still returns 200 stopped:false (legacy returned failure).",
-						"method": "DELETE",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/cell", "host": ["{{baseUrl}}"], "path": ["api", "v1", "cell"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "v1 终端短信签约 ue/sms/subscribers",
-			"description": "UE snapshot, SMS list/send, explicit subscriber registry (no implicit writes).",
-			"item": [
-				{
-					"name": "GET /api/v1/ue 终端列表",
-					"request": {
-						"description": "{ues:[{imsi,imei,number,ip}],count}. 412 cell not running. 404 no UE attached.",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/ue", "host": ["{{baseUrl}}"], "path": ["api", "v1", "ue"] }
-					}
-				},
-				{
-					"name": "GET /api/v1/sms 短信列表",
-					"request": {
-						"description": "{sms:[{time,text,sender_number,sender_imsi,receiver_number,receiver_imsi}],count}. 404 no SMS yet.",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/sms", "host": ["{{baseUrl}}"], "path": ["api", "v1", "sms"] }
-					}
-				},
-				{
-					"name": "POST /api/v1/sms 发短信",
-					"request": {
-						"description": "Non-GSM7 (e.g. Chinese) is rejected with explicit 422 (legacy failed opaquely). smsmessage is accepted as alias for text.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/v1/sms", "host": ["{{baseUrl}}"], "path": ["api", "v1", "sms"] },
-						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"sender\": \"101\",\n    \"text\": \"hello\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "GET /api/v1/subscribers 查签约",
-					"request": {
-						"description": "Explicit registry read: {subscribers:[{imsi,number}]}. SIMs are provisioned externally; no writer API by design (see docs/SIM.md).",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/subscribers", "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscribers"] }
-					}
-				},
-				{
-					"name": "POST /api/v1/subscribers 设号码",
-					"request": {
-						"description": "Explicit upsert (imsi 15 digits, number 2-15 digits). 200 updated / 404 imsi not found (attach UE first) / 412 not in asterisk registry.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/v1/subscribers", "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscribers"] },
-						"body": { "mode": "raw", "raw": "{\n    \"imsi\": \"001010123456780\",\n    \"number\": \"10000001\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				}
-			]
-		},
-		{
-			"name": "v1 配置运维 config/network/profile/health",
-			"description": "Config, uplink NAT, saved profile, health/SDR detection, plus legacy GET status endpoints.",
-			"item": [
-				{
-					"name": "GET /api/v1/config 读配置",
-					"request": {
-						"description": "{config:[{key,value}]} from OpenBTS.db CONFIG. 404 db not found.",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/config", "host": ["{{baseUrl}}"], "path": ["api", "v1", "config"] }
-					}
-				},
-				{
-					"name": "PATCH /api/v1/config 改单项",
-					"request": {
-						"description": "Cell must be stopped first (else 409). Invalid name/value -> 422.",
-						"method": "PATCH",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/v1/config", "host": ["{{baseUrl}}"], "path": ["api", "v1", "config"] },
-						"body": { "mode": "raw", "raw": "{\n    \"name\": \"GSM.Identity.ShortName\",\n    \"value\": \"lab\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "POST /api/v1/network 配出口网卡",
-					"request": {
-						"description": "MASQUERADE for 192.168.99.0/24 via uplink iface. Shell metachars rejected.",
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/v1/network", "host": ["{{baseUrl}}"], "path": ["api", "v1", "network"] },
-						"body": { "mode": "raw", "raw": "{\n    \"iface\": \"eth0\"\n}", "options": { "raw": { "language": "json" } } }
-					}
-				},
-				{
-					"name": "GET /api/v1/profile 存档",
-					"request": {
-						"description": "{has_profile,profile?,ues[]} — no secrets. Backs the empty-body restart flow (RULES.md).",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/profile", "host": ["{{baseUrl}}"], "path": ["api", "v1", "profile"] }
-					}
-				},
-				{
-					"name": "GET /api/v1/health 健康+SDR",
-					"request": {
-						"description": "{ok,running,cell,sdr,time}. Check sdr.uhd_b210 before /start (false -> 503).",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/api/v1/health", "host": ["{{baseUrl}}"], "path": ["api", "v1", "health"] }
-					}
-				},
-				{
-					"name": "GET /healthz (legacy)",
-					"request": {
-						"description": "Legacy plain-JSON health (no envelope): {ok,running,sdr,time}.",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/healthz", "host": ["{{baseUrl}}"], "path": ["healthz"] }
-					}
-				},
-				{
-					"name": "GET /status (legacy)",
-					"request": {
-						"description": "Legacy cell status object (same shape as v1 cell data).",
-						"method": "GET",
-						"header": [],
-						"url": { "raw": "{{baseUrl}}/status", "host": ["{{baseUrl}}"], "path": ["status"] }
-					}
-				}
-			]
-		}
-	]
+  "info": {
+    "_postman_id": "gsm-system-2-1-contract",
+    "name": "gsm-system 2.1 / 2.1 API",
+    "description": "The /api/v1-only contract. Read requests run by default. Every cell/config/number/SMS/network mutation calls pm.execution.skipRequest() unless enable_mutations is exactly true. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts in the collection.\n\n仅包含 /api/v1。默认执行只读请求；所有发射、配置、号码、短信与网络写请求仅在 enable_mutations=true 时运行。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8082", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "enable_mutations", "value": "false", "type": "string" },
+    { "key": "imsi", "value": "001010000000000", "type": "string" },
+    { "key": "number", "value": "10000", "type": "string" },
+    { "key": "iface", "value": "IFACE", "type": "string" },
+    { "key": "c0", "value": "540", "type": "string" },
+    { "key": "mcc", "value": "001", "type": "string" },
+    { "key": "mnc", "value": "01", "type": "string" },
+    { "key": "lac", "value": "1", "type": "string" },
+    { "key": "ci", "value": "1", "type": "string" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const token = String(pm.environment.get('token') || pm.collectionVariables.get('token') || '').trim();",
+          "pm.request.headers.remove('Authorization');",
+          "if (token) pm.request.headers.add({key: 'Authorization', value: 'Bearer ' + token});"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('response is a JSON envelope / JSON 包络', function () {",
+          "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "  const body = pm.response.json();",
+          "  pm.expect(body).to.have.property('code').that.is.a('number');",
+          "  pm.expect(body).to.have.property('message').that.is.a('string');",
+          "  pm.expect(body).to.have.property('request_id').that.is.a('string').and.not.empty;",
+          "  pm.expect(pm.response.headers.get('X-Request-ID')).to.eql(body.request_id);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Read-only / 默认只读",
+      "item": [
+        {
+          "name": "GET /api/v1/health",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/health", "description": "Control-plane health, version/revision, cell state; not RF acceptance. / 管理面健康，不是射频验收。" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200 stopped health', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.ok).to.eql(true); pm.expect(d.version).to.eql('2.1.0'); pm.expect(d.cell.state).to.eql('stopped'); pm.expect(d.cell.ready).to.eql(false); });"] } }]
+        },
+        {
+          "name": "GET /api/v1/cell",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/cell", "description": "state=stopped|transitioning|degraded|running; ready means five processes only." },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200 stopped process snapshot', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.state).to.eql('stopped'); pm.expect(d.ready).to.eql(false); pm.expect(d.sms_ready).to.eql(false); pm.expect(d.voice_ready).to.eql(false); pm.expect(d.running).to.eql(false); });"] } }]
+        },
+        {
+          "name": "GET /api/v1/profile",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/profile" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200 no saved profile', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.has_profile).to.eql(false); pm.expect(d).not.to.have.property('profile'); });"] } }]
+        },
+        {
+          "name": "GET /api/v1/config",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/config" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200: seeded OpenBTS DB exists', () => pm.response.to.have.status(200));", "pm.test('config is a non-empty key/value array', function () { const a=pm.response.json().data.config; pm.expect(a).to.be.an('array').that.is.not.empty; pm.expect(a[0].key).to.be.a('string'); pm.expect(a[0].value).to.be.a('string'); });" ] } }]
+        },
+        {
+          "name": "GET /api/v1/connections",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/connections?limit=100&offset=0", "description": "Volatile observation, not an online assertion. / 易失观察，不是在线判定。" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 412: cell is intentionally stopped', () => pm.response.to.have.status(412));", "pm.test('precondition code', () => pm.expect(pm.response.json().code).to.eql(41201));" ] } }]
+        },
+        {
+          "name": "GET /api/v1/subscribers",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscribers?limit=100&offset=0" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200: seeded registry DB exists', () => pm.response.to.have.status(200));", "pm.test('clean registry is an empty paginated snapshot', function () { const d=pm.response.json().data; pm.expect(d.subscribers).to.eql([]); pm.expect(d.count).to.eql(0); pm.expect(d.total).to.eql(0); pm.expect(d.limit).to.eql(100); pm.expect(d.offset).to.eql(0); pm.expect(d.source).to.eql('asterisk_registry'); pm.expect(d.window).to.eql('full'); pm.expect(d.truncated).to.eql(false); });" ] } }]
+        },
+        {
+          "name": "GET /api/v1/subscribers/{imsi}",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}", "description": "Replace IMSI placeholder with a 15-digit dedicated test IMSI." },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 404: example IMSI is absent from clean seed', () => pm.response.to.have.status(404));", "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));" ] } }]
+        },
+        {
+          "name": "GET /api/v1/sms",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/sms?limit=100&offset=0" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 404: no smqueue log before cell activity', () => pm.response.to.have.status(404));", "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));" ] } }]
+        },
+        {
+          "name": "GET /api/v1/calls",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/calls?limit=100&offset=0", "description": "Active Asterisk channels, not a lifetime call count. bridge_id is a bridge UUID, not a channel name." },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 412: Asterisk is intentionally stopped', () => pm.response.to.have.status(412));", "pm.test('precondition code', () => pm.expect(pm.response.json().code).to.eql(41201));" ] } }]
+        },
+        {
+          "name": "GET /api/v1/calls/history",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/calls/history?limit=100&offset=0", "description": "Real 18-column Asterisk CSV CDR with RFC3339 UTC timestamps; no synthetic history." },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 404: no CDR before calls', () => pm.response.to.have.status(404));", "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));" ] } }]
+        },
+        {
+          "name": "GET /api/v1/network",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/network?iface={{iface}}" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 503: isolated container has no iptables capability', () => pm.response.to.have.status(503));", "pm.test('native dependency code', () => pm.expect(pm.response.json().code).to.eql(50301));" ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Mutations (guarded) / 写操作（默认跳过）",
+      "description": "Every request in this folder skips unless enable_mutations is exactly true. / 每个请求均有独立保护。",
+      "item": [
+        {
+          "name": "POST /api/v1/cell",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 cell started', () => pm.response.to.have.status(200));", "pm.test('start acknowledgement', () => pm.expect(pm.response.json().message).to.eql('cell started'));" ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"arfcns\": \"1\",\n  \"c0\": \"{{c0}}\",\n  \"band\": \"1800\",\n  \"mcc\": \"{{mcc}}\",\n  \"mnc\": \"{{mnc}}\",\n  \"lac\": \"{{lac}}\",\n  \"ci\": \"{{ci}}\",\n  \"short_name\": \"LAB\",\n  \"network\": \"{{iface}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/cell",
+            "description": "Starts RF. Exact single ARFCN constraints are documented in docs/API.md. / 启动射频。"
+          }
+        },
+        {
+          "name": "DELETE /api/v1/cell",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 idempotent stop', () => pm.response.to.have.status(200));", "pm.test('boolean stopped marker', () => pm.expect(pm.response.json().data.stopped).to.be.a('boolean'));" ] } }
+          ],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/cell", "description": "Idempotent stop; TERM before KILL." }
+        },
+        {
+          "name": "PATCH /api/v1/config",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 config updated', () => pm.response.to.have.status(200));", "pm.test('updated keys array', () => pm.expect(pm.response.json().data.updated).to.be.an('array').that.includes('GSM.Identity.ShortName'));" ] } }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"values\": {\n    \"GSM.Identity.ShortName\": \"LAB\"\n  }\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/config"
+          }
+        },
+        {
+          "name": "PUT /api/v1/subscribers/{imsi}/number",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 number bound', () => pm.response.to.have.status(200));", "pm.test('authoritative binding consistent', function () { const d=pm.response.json().data; pm.expect(d.subscriber.number).to.eql(pm.variables.replaceIn('{{number}}')); pm.expect(d.subscriber.binding_consistent).to.eql(true); pm.expect(['updated','not_present','unavailable','failed']).to.include(d.tmsi_projection); });" ] } }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"number\": \"{{number}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}/number",
+            "description": "Authoritative Asterisk transaction; TMSI projection is best effort."
+          }
+        },
+        {
+          "name": "DELETE /api/v1/subscribers/{imsi}/number",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 number unbound', () => pm.response.to.have.status(200));", "pm.test('number is null', () => pm.expect(pm.response.json().data.subscriber.number).to.eql(null));" ] } }
+          ],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}/number" }
+        },
+        {
+          "name": "POST /api/v1/sms",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 202 submitted', function () { pm.response.to.have.status(202); pm.expect(pm.response.json().data.status).to.eql('submitted'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"imsi\": \"{{imsi}}\",\n  \"sender\": \"{{number}}\",\n  \"text\": \"hello\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/sms",
+            "description": "Maximum 159 bytes from safe ASCII/basic GSM intersection. 202 is submitted, not delivered."
+          }
+        },
+        {
+          "name": "PUT /api/v1/network",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 network rule ready', () => pm.response.to.have.status(200));", "pm.test('runtime-only rule', function () { const d=pm.response.json().data; pm.expect(d.rule_present).to.eql(true); pm.expect(d.persisted).to.eql(false); pm.expect(d.changed).to.be.a('boolean'); pm.expect([true,false,null]).to.include(d.ipv4_forwarding); });"] } }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"iface\": \"{{iface}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/network"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Negative cases / 负例",
+      "item": [
+        {
+          "name": "Subscribers rejects repeated pagination query",
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 422 repeated query', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors[0].field).to.eql('limit'); });"] } }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscribers?limit=1&limit=2", "description": "Read-only negative case; repeated and unknown list query keys are rejected." }
+        },
+        {
+          "name": "SMS rejects Chinese/UCS-2",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 422 validation', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors).to.be.an('array').that.is.not.empty; });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"imsi\": \"{{imsi}}\",\n  \"sender\": \"{{number}}\",\n  \"text\": \"中文\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/sms"
+          }
+        },
+        {
+          "name": "Number binding rejects reserved service number",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 422 reserved number', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors[0]).to.include({field:'number', reason:'reserved service number'}); });"] } }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"number\": \"112\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}/number"
+          }
+        },
+        {
+          "name": "Config rejects old name/value shape",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 400 malformed shape', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql(40001); });"] } }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"GSM.Identity.ShortName\",\n  \"value\": \"LAB\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/config"
+          }
+        },
+        {
+          "name": "Network rejects wrong media type",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('HTTP 415 media type', function () { pm.response.to.have.status(415); pm.expect(pm.response.json().code).to.eql(41501); });"] } }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "text/plain" }],
+            "body": { "mode": "raw", "raw": "{\"iface\":\"{{iface}}\"}" },
+            "url": "{{baseUrl}}/api/v1/network"
+          }
+        }
+      ]
+    }
+  ]
 }

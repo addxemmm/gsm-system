@@ -25,14 +25,16 @@
   docs edit, `git`. May NOT 不可：`docker build/run`, resident `./bin/gsm-system`,
   conclusive `uhd_find_devices` (no hardware here).
 - Read→Grep/Glob→Edit(minimal diff)→Bash(`workdir`=repo root, no `cd`).
-- API change must sync API改必同步 `docs/API.md` + `docs/api/openapi.yaml` + `*_test.go`.
-- New endpoints only under `/api/v1` (envelope+status); root legacy frozen.
+- API change must sync API改必同步 `docs/API.md` + `docs/api/openapi.yaml` +
+  `postman/` + `internal/contract/*_test.go`.
+- Public endpoints live only under `/api/v1` (envelope + HTTP status). Retired
+  root routes must stay unregistered and return `404`; do not restore them.
 - Secrets out of git: real IMSIs/Ki/volumes/IPs → `.example` only.
 -瘦身：never commit `*.log/*.pcap/bin/__pycache__/crash/*_run.conf`; samples only `docs/samples/`.
 
 ## 5. Submit & release 提交与发布
 
-- Message 信息：`<scope>: <what> / <中文说明>` (e.g. `api: freeze legacy sendsms / 冻结旧sendsms语义`), one thing per commit.
+- Message 信息：`<scope>: <what> / <中文说明>` (e.g. `api: retire root routes / 移除根路径旧接口`), one thing per commit.
 - Before push 推前必跑：`go test ./...` green 全绿 + `go vet ./...` + `git status` clean.
 - Release via `scripts/deploy_from_windows.ps1` (sync) then server `docker compose up -d --build`;
   rollback = previous image tag + kept old container `gsmsystem`.

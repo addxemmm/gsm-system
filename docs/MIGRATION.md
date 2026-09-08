@@ -1,61 +1,112 @@
-# Architecture: v1.x (Python) → v2.x (Go + OpenBTS) 架构说明
+# Migration to 2.1 / 迁移到 2.1
 
-v1.x lives read-only in `gsmsystem/` + `gsmsystem_v1.3/` (HTTP + `run.sh`/`stop.sh`).
-v1.x 只读存档于 `gsmsystem/` + `gsmsystem_v1.3/`。Mapping对照：
+## 1. What changed / 变更内容
 
-| v1.x | v2.x (this repo 本仓) | Notes 说明 |
+| Before / 之前 | 2.1 | Required action / 操作 |
 |---|---|---|
-| Python Flask `:8082` (`run.py` 671 lines) | `cmd/server` + `internal/api` (stdlib) | 10 routes + `message_id` frozen 冻结保留 |
-| `os.popen` shell concat 拼接 | `exec.Command` argv + validation 校验 | injection-safe 防注入 (iface/IMSI/config) |
-| `ps -aux \| grep OpenBTS` | `internal/sysop` pgrep + `Z` exclusion + `Wait()` reap | no self-match/zombie 不再误杀/僵尸误判 |
-| `systemctl start` in container | direct binaries (no systemd) | container-safe 容器可用 |
-| fixed `run_c.py` id crash | `gsm.Presets` bounds-checked | `run_c` int-concat bug fixed |
-| index-based SMS/UE parse 下标解析 | `internal/parser` regex parse 正则解析 | tolerates log drift 容忍日志漂移 |
-| `smqueue.db` ambiguous | start-clean + documented 启动重置文档化 | history from log, not DB |
-| implicit subscriber writes 隐式写卡库 | explicit `POST /api/v1/subscribers` 显式API | `TMSITable` volatile vs `sqlite3.db` persistent documented |
-| `192.168.99.0/24` MASQUERADE ad-hoc | same rule, validated iface | behavior kept, iface checked |
-| Chinese SMS silently missing | v1 explicit 422 non-GSM7 | documented, not silent 不再静默 |
+| project-owned Flask/Python management | one Go binary / 单一 Go 二进制 | remove old runtime and wrappers / 移除旧运行时与包装 |
+| root `/start`, `/stop`, `/ueinfo`, etc. | `/api/v1` resources | update every client / 更新全部客户端 |
+| mixed “UE/subscriber” semantics | `/connections` + `/subscribers` | choose volatile vs persistent resource / 区分连接与签约 |
+| set-number action endpoint | `PUT/DELETE .../{imsi}/number` | model number as a resource / 将号码作为资源 |
+| SMS success looked final | HTTP `202`, `sms submitted` | track delivery outside this acknowledgement / 不将提交当送达 |
+| appended iptables rules | `GET/PUT /network`, idempotent | use PUT and reapply after host reset / 改用 PUT |
+| multiple Docker definitions/tags | one Dockerfile/Compose; versioned tags | use release script / 使用发布脚本 |
+| numeric carrier presets/default fields | explicit cell profile only / 仅显式小区参数 | remove deprecated YAML keys and send all first-start fields / 删除弃用配置并显式首启 |
 
-Legacy assets 旧资产：`gsmsystem/` (v1 Flask + OpenBTS dumps + asterisk confs +
-`smqueue_5.0_amd64.deb`), `gsmsystem_v1.3/` (manual-start scripts + DB-reset
-`stop.sh`), `TempFile/` (DB copies), `docs/legacy/README.v1.md` (520-line
-Chinese manual, moved from root).
+UHD still uses Python/Mako as an upstream **build-time** dependency. OpenBTS,
+Asterisk, and UHD are not rewritten in Go. Only the project-owned control plane
+is Go-only. UHD 上游构建依赖仍可能包含 Python/Mako；Go 重构范围是自研管理面。
 
-## folk/uhd4: Xenial+UHD3.9 → 22.04+UHD4.1 (clone-board line, current live)
+## 2. API client migration / API 客户端迁移
 
-The GSM-VM board is an Artix-7 BlackSDR mini clone (s/n 2548123): the stock
-Spartan-6 FPGA image loads 100% but the FX3 reports config failure
-(`fx3 is in state 5`, proven with old image 1.0 too — same driver, same file,
-same failure). Only the 4.x-era clone image configures it, so the radio
-stack moved to UHD 4.1.0.0 on Ubuntu 22.04:
+| Removed / 已移除 | Replacement / 替代 |
+|---|---|
+| `POST /start` | `POST /api/v1/cell` |
+| `POST /stop` | `DELETE /api/v1/cell` |
+| `POST /ueinfo` | `GET /api/v1/connections` |
+| `POST /smsinfo` | `GET /api/v1/sms` |
+| `POST /sendsms` | `POST /api/v1/sms` |
+| `POST /setphonenumber` | `PUT /api/v1/subscribers/{imsi}/number` |
+| `POST /getconfig` | `GET /api/v1/config` |
+| `POST /allconfig` | `PATCH /api/v1/config` |
+| `POST /iptables` | `PUT /api/v1/network` |
+| `GET /healthz`, `/status`, `/profile` | versioned `/api/v1/health`, `/cell`, `/profile` |
 
-| Xenial line 主线 (`Dockerfile`) | uhd4 line (`Dockerfile.uhd4`, live) | Notes 说明 |
-|---|---|---|
-| `ubuntu:16.04`, gcc-5 | `ubuntu:22.04`, gcc-11, `-std=gnu++14 -w -fpermissive` | era-correct standard; `-Werror` off for 2019 code |
-| UHD `release_003_009_000` | UHD `v4.1.0.0` (host-prefetched, hermetic) | xenial TLS can't handshake github |
-| stock `usrp_b210_fpga.bin` | clone `usrp_b210_fpga.blacksdr.bin` + `usrp_b200_fw.hex`/`.bl.img` (`firmware/uhd/`) | FX3 firmware required by UHD 4.x |
-| `uhd::msg` as upstream | `compat/uhd/utils/msg.hpp` shim | removed in UHD 4.0; one call site |
-| glibc-era `gettid` fallback | `compat/patches/0001` (+ loop over all 4 vendored copies) | glibc ≥ 2.30 provides it |
-| ortp 1.x API | `compat/patches/0002` (bctbx log hook) + `-DORTP_NEW_API=1` | upstream already branched for it |
-| ostringstream streaming | 6× `.str()` (L3StateMachine/MSInfo/Sgsn) | illegal since C++11 |
-| `liba53` deb / coredumper deb | plain `make install` / manual deb steps | 2007-era debian/ rejected by debhelper ≥ 7; glibc dropped `sys/sysctl.h` |
-| image 6.25GB (legacy) / 484MB | image ~410MB, zero Python | multi-stage, sources stay in builder |
+Do not retry old methods on `405`; update the client. Root paths intentionally
+return `404`. 旧方法收到 `405` 时不要降级重试；根路径返回 `404` 是预期行为。
 
-`gsmsystem-dep:2.0` (xenial line) stays on host as rollback; it needs a
-genuine Spartan-6 B210 (verified: cannot drive the clone board).
+`PATCH /api/v1/config` now updates a map atomically at the API boundary:
 
-## Reliability migration (2026-09) / 可靠性迁移
+```json
+{"values":{"GSM.Identity.ShortName":"LAB","Control.LUR.OpenRegistration":"REGEX"}}
+```
 
-Native database persistence is now implemented rather than only documented:
-`/etc/OpenBTS` links to `/data/state/OpenBTS`, and
-`/var/lib/asterisk/sqlite3dir` links to `/data/state/asterisk`. Existing databases
-win over image seeds and are checked before boot; TMSI remains volatile.
-原生数据库持久化现已落地：上述原生目录链接到 `/data/state`；已有数据库优先于镜像种子，
-启动前检查完整性，TMSI 仍保持易失。首次切换前须在旧容器中用 SQLite `.backup` 迁出数据库，
-详见 [DEPLOY](DEPLOY.md)。不要先删除或重建旧容器。
+The old `{name,value}` body is rejected. 旧单键请求体不再接受。
 
-The Go image builder is pinned to 1.26.8 while the source still targets Go 1.22
-compatibility. Go supports the two newest major releases; the old Go 1.22
-runtime is outside that window. 镜像构建器升级到 1.26.8，源码仍测试 1.22 兼容性；
-旧 1.22 运行时已超出上游维护窗口。
-Source / 来源：[Go release history and support policy](https://go.dev/doc/devel/release).
+## 3. Configuration migration / 配置迁移
+
+The 2.1 YAML loader rejects unknown keys and multiple YAML documents. Before
+deployment, remove these retired fields from copied/custom configuration:
+
+- `default_arfcns`, `default_c0`, `default_band`, `default_mcc`, `default_mnc`,
+  `default_lac`, `default_ci`, `default_short_name`, `default_network`;
+- `smqueue_seed_path`;
+- `max_upload_bytes`.
+
+Use `max_history_bytes` for bounded SMS/CDR log reads. Its default is `8388608`
+(8 MiB) and accepted range is `65536..67108864`. The removed `default_*` fields
+were tied to pre-2.1 preset/fallback behavior; the first `POST /api/v1/cell`
+must now contain a complete valid profile. 2.1 严格拒绝未知配置项与多文档 YAML；旧字段
+不会被静默忽略，首次启动必须显式提交完整参数。
+
+## 4. Back up native state / 备份原生状态
+
+Before recreating an older container, stop the cell and pause management writes.
+Use SQLite `.backup` for OpenBTS, sipauthserve, smqueue, and Asterisk; also copy
+`Master.csv` if present. Verify each database with `PRAGMA quick_check`.
+重建旧容器前先停止小区、暂停写入，使用 SQLite `.backup` 备份四个数据库并复制 CDR，
+随后执行 `PRAGMA quick_check`。完整命令见 [`DEPLOY.md`](DEPLOY.md)。
+
+Never delete `docker_gsm-data` during migration. 迁移期间严禁删除数据卷。
+
+## 5. Deploy immutable image / 部署不可变镜像
+
+```bash
+cd ~/gsm-system
+docker volume inspect docker_gsm-data >/dev/null
+./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live
+```
+
+The script builds `gsm-system:2.1.0-<12sha>`. Only after container/HTTP
+validation does it tag the same image as `gsm-system:2.1.0`. Keep the previous
+SHA tag for rollback. 脚本先构建 SHA 标签，验证通过后再更新发布标签；旧 SHA 必须保留。
+
+## 6. Validate in order / 按顺序验收
+
+1. `go test ./...` and `go vet ./...` on the development checkout.
+2. Server-side isolated image smoke test without RF.
+3. `GET /api/v1/health`, `/cell`, `/profile`, `/network`.
+4. Start one legal test cell and check `state`, `ready`, `sms_ready`,
+   `voice_ready`.
+5. Attach a dedicated test SIM; compare `/connections` and `/subscribers`.
+6. Bind a test number; submit safe-ASCII SMS; verify reception separately.
+7. Place a two-way call; compare active channels and `/calls/history` CDR.
+8. Stop the cell and verify log/CDR/database persistence after recreation.
+
+服务器 SSH 在本次工作中超时，因此步骤 2–8 仍为待办，不能据此标记生产完成。
+
+## 7. Rollback / 回滚
+
+Select the retained immutable tag and skip build:
+
+```bash
+GSM_IMAGE=gsm-system:2.1.0-OLD12SHA \
+  ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
+```
+
+If a data schema/native configuration change was made after upgrade, stop writes
+and restore the matching verified database snapshots as one rollback set.
+回滚镜像时如数据已变化，应暂停写入并将同批验证快照整体恢复，不能混用不同时间的数据库。
+
+The former audit remains as historical context only: [`AUDIT-2026-09.md`](AUDIT-2026-09.md).
+旧审计仅作历史上下文，不是 2.1 当前契约。
