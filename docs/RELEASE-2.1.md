@@ -565,3 +565,73 @@ reattach the test handsets, call in both directions and inspect incoming numbers
 then verify PDP address, bidirectional TUN/NAT traffic, DNS and handset HTTP.
 待真机验收：通过预设或自定义请求启动小区，手机重新接入后双向互拨检查来电号码；
 再验证 PDP 地址、TUN/NAT 双向流量、DNS 与手机 HTTP。当前并未自动重新开启射频。
+
+## Current-start SMS scope and project timezone, 2026-09-08 17:19 HKT / 本次启动短信范围与项目时区
+
+Deployed at 17:19 HKT and verified healthy after cleanup at 17:23 HKT.
+2026-09-08 17:19 部署，17:23 清理后确认管理容器健康。
+
+- Runtime revision `9512d5e4d850`; image `gsm-system:2.1.0-9512d5e4d850`,
+  alias `gsm-system:2.1.0`; image ID
+  `sha256:812aff2ed12b545b803d02a819364611e52347ca1bb54322a913ca1317cf04aa`.
+  Container `gsmsystem-uhd4`, ID
+  `203e23b6503024faa20e7baaee7f683ea68476545443602eb8628197f6119867`.
+- The reported 16 observations included 12 from earlier runs and four from the
+  latest previous start. GET /sms now reads only log bytes observed within the
+  current accepted cell-start window, not all persisted history. Stop freezes
+  the window; the next start establishes a new one. Manager/container restart
+  does not adopt a previous run. Rejected parameters or duplicate running starts
+  preserve the existing window. / 原 16 条混入 12 条旧记录；现在按本次小区启动的
+  日志边界读取，停止后冻结，下一次启动新建范围，管理程序重启不继承旧范围。
+  参数拒绝及重复启动不破坏现有范围。
+- Responses expose `scope=current_start`, `timezone` and a nullable `session`
+  with ID, start/end times and state. Event deduplication and current-binding
+  identity provenance remain. Single log rotation and partial lines are covered;
+  an unverifiable boundary returns an empty, explicitly truncated result rather
+  than mixing old logs. Persistent queue messages processed during this start
+  may still appear: the scope is observation time, not original submission time.
+  / 新增范围、时区及会话元数据，保留事件去重与绑定来源；支持单次轮转与半行处理，
+  边界丢失明确报告，不混入旧日志。旧队列若本次被处理，属于本次观察，不等于新提交。
+- Default project zone is `Asia/Shanghai`; startup `TZ` overrides YAML `timezone`.
+  Container local time, native logging and API timestamps now agree, with explicit
+  RFC3339 offsets in API results. CDR storage remains UTC and only display is
+  converted. Invalid zones fail startup. Set `TZ` in the project-root `.env` and
+  recreate the container; no host clock is changed. Production verified
+  `2026-09-08T17:19:50+08:00` and `/etc/timezone=Asia/Shanghai`.
+  / 默认东八区，启动环境变量优先于 YAML；日志与接口统一，接口携带时区偏移；
+  CDR 保持 UTC 存储。根目录 .env 修改 TZ 后重建容器生效，不修改宿主机时钟。
+- Windows full Go test/vet and Linux race/vet passed, together with timezone,
+  persistence, deployment/build contracts, OpenAPI and Postman checks. All four
+  server-side image suites passed: general persistence/Asterisk/ODBC/CDR/timezone,
+  preset/custom start, current-start SMS/identity semantics, and caller-ID.
+  SMS lifecycle tests used inert native-process fixtures without RF, USB access,
+  network access or production volumes. / 跨平台测试、契约和四套镜像测试通过；短信
+  生命周期测试使用无射频的惰性进程样本，不访问 USB、网络或生产卷。
+- Implementation CI passed:
+  [GitHub Actions run 34208517698](https://github.com/addxemmm/gsm-system/actions/runs/34208517698).
+  OpenAPI, bilingual API/deployment docs and Postman JSON were updated together.
+  / 实现 CI 通过，OpenAPI、中英双语文档与 Postman 同步更新。
+- Zero active calls before replacement; DELETE /cell stopped remaining services.
+  Subscriber SQL-dump and SMS-log digests matched before/after deployment;
+  quick_check=ok, three subscribers and three number bindings were retained.
+  API Token remains blank/disabled. Bridge networking and LAN-only TCP 8082
+  remain; eth0 forwarding/NAT returned changed=true then false on repeat.
+  / 停机前无通话；升级前后签约与原始短信日志摘要一致，三条签约及号码绑定保留。
+  Token 留空、bridge 与局域网管理端口保持不变，NAT 幂等验证通过。
+- Production GET /sms returned count=0, scope=current_start, session=null and
+  timezone=Asia/Shanghai because no cell has been started in the new manager.
+  All five native cell processes are stopped and RF remains off. This is expected,
+  not loss of the persisted historical log. / 新容器尚未启动小区，短信为空、session
+  为 null 是预期结果；原始历史日志未删除，小区及射频保持停止。
+- Removed obsolete `5eff87bfa9be` GSM image; the replaced container and all isolated
+  test resources are gone. Builder pruning reclaimed 3.528 GB; final cache is 0 B.
+  Only the current GSM image ID/two tags, LTE image, Go/Ubuntu bases, two business
+  containers and two business volumes remain. LTE ID, image, stopped state and
+  timestamps were unchanged. / 旧 GSM 镜像、旧容器及测试资源已清理，构建缓存回收
+  3.528 GB 后为零；LTE 与两个业务卷保留。
+
+The earlier UHD receive-timeout/degraded fault is not repaired by this change;
+handset caller-ID and packet-data Internet still need separate live acceptance.
+此前 UHD 接收超时导致 degraded 的问题不属于本次已修复范围，真机来电显示及上网
+仍需独立验收。Documentation-only commits after this record do not change the
+runtime implementation or `.release-revision` / 后续纯文档提交不改变运行实现版本。
