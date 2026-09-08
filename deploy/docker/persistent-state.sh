@@ -72,8 +72,11 @@ initialize_sqlite() {
       return 1
     fi
     temporary="$database.init-$$"
-    if [ "$seed_type" = sql ]; then
+    if [ "$seed_type" = sql ] || [ "$seed_type" = openbts ]; then
       sqlite3 -bail "$temporary" < "$seed" || return 1
+      if [ "$seed_type" = openbts ]; then
+        seed_gprs_defaults "$temporary" || return 1
+      fi
     else
       cp "$seed" "$temporary" || return 1
     fi
@@ -84,6 +87,28 @@ initialize_sqlite() {
     mv "$temporary" "$database" || return 1
   fi
   check_sqlite "$database"
+}
+
+# Called only on the unpublished fresh OpenBTS database. Existing operator
+# settings (including explicitly disabled GPRS) are never overwritten.
+# 仅对尚未发布的新 OpenBTS 库应用默认值，不覆盖旧卷的自定义或关闭设置。
+seed_gprs_defaults() {
+  dns=${GSM_GPRS_DNS:-1.1.1.1}
+  case "$dns" in ''|*[!0-9.]*) echo 'GSM_GPRS_DNS must be an upstream IPv4 address' >&2; return 1 ;; esac
+  if ! printf '%s\n' "$dns" | awk -F. '
+    NF != 4 { exit 1 }
+    { for (i=1; i<=4; i++) if ($i !~ /^[0-9]+$/ || $i > 255 || (length($i)>1 && substr($i,1,1)=="0")) exit 1 }
+    $1==0 || $1==127 || $1>=224 || ($1==169 && $2==254) { exit 1 }
+  '; then
+    echo 'GSM_GPRS_DNS must be a non-loopback unicast upstream IPv4 address' >&2
+    return 1
+  fi
+  sqlite3 -bail "$1" "BEGIN IMMEDIATE;
+UPDATE CONFIG SET VALUESTRING='1' WHERE KEYSTRING='GPRS.Enable';
+UPDATE CONFIG SET VALUESTRING='2' WHERE KEYSTRING='GPRS.Channels.Min.C0';
+UPDATE CONFIG SET VALUESTRING='0' WHERE KEYSTRING='GPRS.Channels.Min.CN';
+UPDATE CONFIG SET VALUESTRING='$dns' WHERE KEYSTRING='GGSN.DNS';
+COMMIT;"
 }
 
 check_sqlite() {

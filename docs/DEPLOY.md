@@ -47,6 +47,16 @@ still retained. 当前策略只保留在用 GSM 镜像 ID 及两个标签，不�
 
 ## 2. Vendor inputs / 上游源码缓存
 
+Fresh data volumes seed `GPRS.Enable=1`, two C0 packet-data channels and
+`GGSN.DNS=${GSM_GPRS_DNS:-1.1.1.1}`. The DNS must be a reachable upstream IPv4
+resolver, not a container/host loopback stub. Existing OpenBTS database settings,
+including an explicitly disabled GPRS service, are preserved on recreation.
+This initializes packet-data configuration; it does not start the cell or prove
+handset Internet connectivity. See [SIM and GPRS acceptance](SIM.md).
+新数据卷默认开启 GPRS、设置两个 C0 分组信道，并使用上述 DNS 环境参数；DNS 须是
+可达上游 IPv4 地址，不使用回环解析器。重建保留旧卷设置（包括主动关闭 GPRS）。
+默认配置不会自动启动小区，亦不代表真机已能上网，验收步骤见链接。
+
 The multi-stage Dockerfile builds upstream UHD/OpenBTS components from the
 pinned, server-side `third_party/` cache. Initialize or verify it on the server:
 

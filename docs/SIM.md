@@ -114,8 +114,56 @@ This implementation processes IPCP DNS options, not PAP/CHAP credentials. Verify
 resolver `127.0.0.11` or host loopback stub. The address must also pass the native
 GGSN firewall policy. 当前实现处理 IPCP DNS，不做 PAP/CHAP 凭据校验。DNS 必须是
 手机可达且符合 GGSN 防火墙策略的上游服务器，不下发 Docker 或宿主机回环解析地址。
-Implementation references / 实现依据：pinned `GPRS/GPRSL3Messages.cpp`,
+Implementation references / 实现依据：pinned `SGSNGGSN/GPRSL3Messages.cpp`,
 `SGSNGGSN/Ggsn.cpp`, `SGSNGGSN/miniggsn.cpp`.
+
+### Fresh-volume packet-data defaults / 新卷分组数据默认值
+
+Only when creating a new OpenBTS database, startup sets `GPRS.Enable=1`,
+`GPRS.Channels.Min.C0=2`, `GPRS.Channels.Min.CN=0`, and initializes `GGSN.DNS`
+from `GSM_GPRS_DNS` (default `1.1.1.1`). Set that environment value to a reachable
+upstream IPv4 DNS server before the first initialization. Loopback and non-unicast
+values are rejected. Existing volumes retain their entire GPRS/DNS configuration,
+including an intentional `GPRS.Enable=0`; changing the environment later does not
+overwrite that database. Enabling these defaults does not prove successful PDP,
+DNS or Internet traffic; container forwarding/NAT and handset acceptance are
+separate checks.
+
+仅创建全新 OpenBTS 数据库时初始化上述 GPRS 开关、最小信道数与 DNS；首次启动前
+可通过 `GSM_GPRS_DNS` 指定实际可达的上游 IPv4 DNS，默认 `1.1.1.1`，拒绝回环及
+非单播地址。已有卷完整保留原配置，包括主动关闭 GPRS；后续更改环境变量不覆盖
+持久库。默认开启不等于 PDP、DNS 或互联网业务验收完成，仍须核验转发/NAT 和真机。
+
+### Modern GMM attach compatibility / 现代手机 GMM 附着兼容
+
+The image applies `0004-gmm-optional-tv-ies.patch` to the pinned
+`SGSNGGSN/GPRSL3Messages.cpp`. The optional-IE parser now consumes the one-octet
+`C-`, `D-`, `E-`, and `F-` TV fields without reading a nonexistent TLV length;
+it also stops MBMS context status from falling through into classmark parsing.
+Truncated TLVs remain errors, with diagnostic metadata instead of a complete
+identity-bearing frame. These field formats are specified in
+[TS 24.008, table 9.4.1](https://www.etsi.org/deliver/etsi_ts/124000_124099/124008/19.05.00_60/ts_124008v190500p.pdf)
+and the compatibility issue was reported in
+[upstream PR 9](https://github.com/RangeNetworks/openbts/pull/9).
+
+镜像对固定原生源码应用兼容补丁，正确消费 `C-/D-/E-/F-` 单字节 TV 字段，
+避免把下一字段或报文结尾误读为 TLV 长度；同时修正 MBMS 分支误落入 classmark
+解析。截断 TLV 仍按错误处理，诊断只记录类型、位置及长度，不记录含身份的完整帧。
+
+The 2026-09-08 read-only inspection found repeated `Premature end of GPRS GMM
+message type 1 AttachRequest` errors while GPRS, the TUN route, forwarding and
+NAT were already enabled. This source defect matches that failure mode, but the
+specific handset IE was not captured; it is not a confirmed explanation for
+every observed failure. The builder compiles and runs the actual optional-IE
+method in isolation with a checked frame adapter. That regression is not a full
+GMM attach or handset Internet test. After deployment, verify a fresh packet
+attach, PDP-assigned IP, bidirectional TUN/NAT counters, DNS and handset HTTP.
+
+2026-09-08 只读检查发现反复 AttachRequest 解析截断错误，而 GPRS、TUN 路由、
+转发和 NAT 已开启。此源码缺陷符合该错误模式，但尚未捕获本次手机的具体 IE，
+故不将全部现场失败归因于此。构建器以有界帧适配器编译运行生产可选 IE 方法；
+该隔离回归不等于完整附着或手机上网验收。部署后须重新核验分组附着、PDP 地址、
+TUN/NAT 双向计数、DNS 及手机 HTTP。
 
 1. With the cell stopped, verify the persisted registration/GPRS settings and
    apply `PUT /api/v1/network` with `{"iface":"eth0"}` after container recreation.
@@ -152,11 +200,11 @@ inspect USB passthrough/UHD logs. A healthy management container does not resolv
 that radio failure. 若出现 UHD 接收超时退出，停止小区并检查 USB 直通和 UHD 日志；
 管理容器健康不代表射频故障已消失。
 
-The current image/configuration still requires an end-to-end handset run for
-welcome/manual SMS transmit and receive plus packet-data/DNS/Internet traffic.
-Management, database, parser, and container-health checks do not close those
-acceptance items. / 当前镜像与配置仍须真机端到端验收欢迎/手动短信收发，以及分组
-数据、DNS 和互联网流量；管理面、数据库、解析器与容器健康检查不等同于业务验收。
+On 2026-09-08 the operator confirmed handset registration and SMS transmit/receive.
+Caller-number display and packet-data/DNS/Internet traffic remain separate live
+acceptance items. Management, database, parser and container-health checks alone
+do not close them. / 2026-09-08 用户已确认手机接入及短信收发正常；主叫号码显示、
+分组数据、DNS 和互联网流量仍须独立真机验收，管理面及解析器测试不等同于业务验收。
 
 ## Bind a number / 绑定号码
 

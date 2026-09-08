@@ -45,6 +45,9 @@ services:
       # Optional Bearer auth from repository-root .env: blank disables it.
       # 可选 Bearer 鉴权来自项目根 .env：留空关闭，非空启用；不要提交密钥。
       GSM_API_TOKEN: "${GSM_API_TOKEN:-}"
+      # Fresh-volume packet-data DNS; existing native settings are preserved.
+      # 仅新卷首次初始化采用，旧卷 GPRS 配置保留。
+      GSM_GPRS_DNS: "${GSM_GPRS_DNS:-1.1.1.1}"
       UHD_IMAGES_DIR: /usr/share/uhd/images
     logging:
       driver: json-file

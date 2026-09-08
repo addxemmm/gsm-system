@@ -1,0 +1,48 @@
+From: gsm-system compatibility maintainers
+Subject: Parse modern one-octet GMM optional IEs without reading a TLV length
+
+TS 24.008 table 9.4.1 identifies C-/D-/E-/F- as one-octet TV IEs.
+The pinned parser handles only 9- and otherwise reads a nonexistent length
+at the end of a valid Attach Request. Also stop MBMS falling into classmark 2.
+Keep malformed TLVs exceptional and avoid logging complete identity-bearing frames.
+Reference: https://github.com/RangeNetworks/openbts/pull/9
+
+--- a/SGSNGGSN/GPRSL3Messages.cpp
++++ b/SGSNGGSN/GPRSL3Messages.cpp
+@@ -367,6 +367,15 @@ void GMMAttach::gmParseIEs(L3GmmFrame &src, size_t &rp, const char *culprit)
+ 			mTmsiStatus = iei & 1;
+ 			continue;
+ 		}
++		// TS 24.008 9.4.1: these TV IEs occupy one octet, already consumed.
++		// 单字节 TV 已由 readIEI 消费，不把后续字节误当作长度。
++		switch (iei & 0xf0) {
++		case 0xc0: // MS network feature support.
++		case 0xd0: // Device properties.
++		case 0xe0: // P-TMSI type.
++		case 0xf0: // Additional update type.
++			continue;
++		}
+ 		switch (iei) {
+ 		case 0x19:	// TV Old P-TMSI signature.
+ 			// Dont have a 3 byte 'read' function so use getField then advance rp by 3.
+@@ -388,8 +397,10 @@ void GMMAttach::gmParseIEs(L3GmmFrame &src, size_t &rp, const char *culprit)
+ 		int len = src.getByte(rp);
+ 		size_t nextrp = rp + len + 1;
+ 		if (nextrp > src.size()) {	// last one will have nextrp == src.size()
+-			SGSNERROR("invalid message size in "<<culprit <<" bytes="<<src.hexstr());
+-			return;
++			// Reject truncation without exposing the complete mobile identity frame.
++			SGSNERROR("invalid message size in "<<culprit <<" iei="<<iei
++				<<" offset="<<rp<<" size="<<src.size());
++			throw ByteVectorError();
+ 		}
+ 		switch (iei) {
+ 		default:
+@@ -412,6 +423,7 @@ void GMMAttach::gmParseIEs(L3GmmFrame &src, size_t &rp, const char *culprit)
+ 			break;
+ 		case 0x35:	// MBMS context status in RAUpdateRequest
+ 			src.skipLV(rp,3,3,"MBMS context status");
++			break;
+ 		case 0x11:
+ 			src.skipLV(rp,3,3,"Mobile station classmark 2");
+ 			break;

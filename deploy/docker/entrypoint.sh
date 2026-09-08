@@ -12,7 +12,7 @@ persist_directory /var/lib/asterisk/sqlite3dir "$data_dir/state/asterisk"
 persist_directory /var/log/asterisk "$data_dir/log/asterisk"
 # smqueue writes CDRs here; missing dir kills it at boot (seen live).
 mkdir -p /var/lib/OpenBTS
-initialize_sqlite /etc/OpenBTS/OpenBTS.db /app/seeds/OpenBTS.example.sql sql
+initialize_sqlite /etc/OpenBTS/OpenBTS.db /app/seeds/OpenBTS.example.sql openbts
 migrate_welcome_defaults /etc/OpenBTS/OpenBTS.db
 initialize_sqlite /var/lib/asterisk/sqlite3dir/sqlite3.db /OpenBTS/sqlite3_init.db db
 for database in /etc/OpenBTS/sipauthserve.db /etc/OpenBTS/smqueue.db; do

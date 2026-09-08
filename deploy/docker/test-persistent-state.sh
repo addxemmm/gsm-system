@@ -88,3 +88,28 @@ sqlite3 "$welcome" "UPDATE CONFIG SET VALUESTRING='Operator custom text';"
 migrate_welcome_defaults "$welcome"
 test "$(sqlite3 "$welcome" "SELECT count(*) FROM CONFIG WHERE VALUESTRING='Operator custom text';")" = 2
 echo 'PASS: welcome defaults migrate once, custom and disabled messages preserved / 欢迎默认迁移且保留自定义与禁用设置'
+
+# Fresh GPRS defaults are atomic; recreation preserves custom/disabled state.
+gprs_seed="$workspace/gprs-seed.sql"
+cat >"$gprs_seed" <<'SQL'
+CREATE TABLE CONFIG(KEYSTRING TEXT PRIMARY KEY, VALUESTRING TEXT);
+INSERT INTO CONFIG VALUES('GPRS.Enable','0');
+INSERT INTO CONFIG VALUES('GPRS.Channels.Min.C0','2');
+INSERT INTO CONFIG VALUES('GPRS.Channels.Min.CN','0');
+INSERT INTO CONFIG VALUES('GGSN.DNS','');
+SQL
+GSM_GPRS_DNS=192.0.2.53 initialize_sqlite "$workspace/gprs.db" "$gprs_seed" openbts
+test "$(sqlite3 "$workspace/gprs.db" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='GPRS.Enable';")" = 1
+test "$(sqlite3 "$workspace/gprs.db" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='GGSN.DNS';")" = 192.0.2.53
+sqlite3 "$workspace/gprs.db" "UPDATE CONFIG SET VALUESTRING='0' WHERE KEYSTRING='GPRS.Enable';"
+GSM_GPRS_DNS=1.1.1.1 initialize_sqlite "$workspace/gprs.db" "$gprs_seed" openbts
+test "$(sqlite3 "$workspace/gprs.db" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='GPRS.Enable';")" = 0
+test "$(sqlite3 "$workspace/gprs.db" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='GGSN.DNS';")" = 192.0.2.53
+for invalid in 127.0.0.11 0.0.0.0 224.0.0.1 256.1.1.1 1.2.3 1.2.3.04 '1.1.1.1;DROP'; do
+  if (GSM_GPRS_DNS=$invalid initialize_sqlite "$workspace/rejected.db" "$gprs_seed" openbts); then
+    echo 'invalid fresh GPRS DNS was accepted' >&2; exit 1
+  fi
+  test ! -e "$workspace/rejected.db"
+  rm -f "$workspace/rejected.db.init-$$"
+done
+echo 'PASS fresh GPRS defaults and existing-state preservation / 新卷GPRS默认开启且旧配置保留'
