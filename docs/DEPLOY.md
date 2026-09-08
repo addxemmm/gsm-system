@@ -26,8 +26,18 @@ docker --version
 docker compose version
 lsusb | grep 2500
 ss -tlnp | grep 8082 || echo '8082 is free'
+ip route
+docker network ls
 docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_gsm-data
 ```
+
+The production service uses its own Docker bridge, by default
+`172.31.240.0/24`. Confirm that this subnet does not overlap any host, LAN,
+VPN, LTE, container, or routed network before `compose up`; set a different
+non-overlapping `GSM_BRIDGE_SUBNET` in `.env` when needed. It must also remain
+separate from the OpenBTS handset/GPRS pool `192.168.99.0/24`. 生产容器使用
+独立 bridge；启动前必须检查与宿主机、LAN、VPN、LTE、其他容器及
+GPRS 网段均不重叠。
 
 The operator must have Docker access without interactive sudo. The current
 operator policy retains only the active GSM image ID and its two tags, not an
@@ -156,6 +166,31 @@ Never commit `.env` or print its value.
 填写非空值则启用。部署脚本不 `source`/`eval` 该文件，而在新容器内执行 HTTP
 探针，因此只配置 `.env` 也能正确验收；不要提交 `.env` 或打印令牌值。
 
+`GSM_BIND_ADDRESS` selects the host address for the sole published port,
+TCP 8082. Its example value `0.0.0.0` listens on every host interface; use the
+SDR host's LAN address to bind only that interface. Do not publish SIP 5060,
+OpenBTS 5062, smqueue 5063, sipauthserve 5064, CLI 49300, TRX 5700, or either
+RTP range: these native components communicate inside one container. Continue
+to enforce the intended LAN access policy in the host firewall; do not disable
+or replace Docker's global firewall rules. `GSM_BIND_ADDRESS` 只控制管理面
+TCP 8082 的宿主机绑定；所有 SIP/RTP/CLI/TRX 端口仍仅在容器内使用。
+
+### Host-network profile migration / host 网络存档迁移
+
+The `network` field remains required, but under bridge networking it names an
+interface **inside** the GSM container. With this single-network Compose file,
+that interface is `eth0`. Before recreating an older host-network deployment,
+keep the cell stopped and atomically change `/data/last_start.json` from a host
+NIC such as `ens33` to `eth0`. Update every saved user preset the same way and
+record the before/after configuration diff. Do not start RF merely to rewrite
+or validate the file; the migration changes only `network`.
+
+`network` 仍为必填字段，但现在表示 GSM 容器内的出口网卡；本 Compose
+的固定值为 `eth0`。从 host 网络升级前，保持小区停止，将
+`/data/last_start.json` 和所有用户预设中的宿主机网卡名原子替换为
+`eth0`，记录修改前后配置差异；仅修改 `network`，迁移和检查过程不得
+启动射频。
+
 After changing only the token, recreate the service container without rebuilding
 the image / 仅修改令牌后重建服务容器即可，无需重构镜像：
 
@@ -173,7 +208,8 @@ publish the moving release alias. 跳过健康检查不构成发布成功。
 
 1. Development: `go test ./...`, `go vet ./...`, Linux cross-build.
 2. Server: isolated image smoke test with no USB, privilege, network, or RF.
-3. Verify image labels/version, Compose image ID, `/health`, `/cell`, `/profile`.
+3. Verify image labels/version, Compose image ID, `/health`, `/cell`, `/profile`;
+   confirm only host TCP 8082 is published and the container has `eth0`.
 4. Confirm `/data/state` databases and `/data/log` ownership/modes.
 5. Start one permitted single-ARFCN cell; check process state without treating
    `ready` as RF acceptance.

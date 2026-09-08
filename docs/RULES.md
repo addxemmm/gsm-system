@@ -11,6 +11,7 @@ Go，不维护账号数据库或任务队列；OpenBTS/Asterisk 继续使用各�
 | State / 状态 | Location / 位置 | Persistence / 持久性 |
 |---|---|---|
 | last cell profile / 上次小区参数 | `/data/last_start.json` | persistent, mode `0600` |
+| user presets / 用户预设 | `/data/presets.json` | persistent, initially empty, mode `0600` / 持久、初始为空 |
 | OpenBTS databases | `/data/state/OpenBTS/` | persistent external volume |
 | Asterisk registry | `/data/state/asterisk/sqlite3.db` | persistent external volume |
 | current TMSI table / 当前连接表 | `/var/run/TMSITable.db` | volatile / 易失 |
@@ -48,16 +49,30 @@ allowed 64 KiB..64 MiB). YAML 配置严格拒绝未知项和多个文档；迁�
 - Release 2.1 supports exactly one ARFCN: `arfcns="1"`.
 - GSM 900: `c0=0..124` or `975..1023`; DCS 1800: `512..885`.
 - `lac=1..65279` is the software-compatible range; `ci=0..65535`.
-- First start must submit all required parameters. Empty `{}` may reuse a valid
-  saved profile; it is not a hidden preset.
+- First start may submit all required parameters or reference a user-created
+  preset with `{"preset_id":"lab-900"}`. Empty `{}` may reuse a valid saved
+  profile. A new volume has no preset seeds. `preset_id` and explicit fields
+  are mutually exclusive. / 首次启动可显式提交完整参数，或引用用户已创建预设；
+  新数据卷无种子预设，`preset_id` 与显式字段互斥。
 - `DELETE /api/v1/cell` is idempotent. Shutdown sends TERM before KILL so
   Asterisk can flush CDR data.
 - `ready` means the five managed services are alive; it does **not** prove RF,
   handset attach, SMS delivery, or voice quality.
 - `state` is `stopped`, `transitioning`, `degraded`, or `running`.
 
-首次启动必须显式提供完整参数；之后空对象只能复用有效存档。`ready` 仅表示五个托管
-进程存活，不代表射频、入网、短信送达或语音质量通过。停止流程先 TERM 后 KILL。
+首次启动可显式提供完整参数，或引用用户已创建预设；之后空对象可复用有效
+上次存档。`ready` 仅表示五个托管进程存活，不代表射频、入网、短信送达或语音质量通过。
+停止流程先 TERM 后 KILL。
+
+Preset IDs match `^[a-z0-9][a-z0-9_-]{0,63}$`. Create requires `id`, `name`,
+and complete valid `params`; `description` is optional and omission stores an
+empty string. Update replaces `name`, optional `description`, and complete
+`params` while the path ID remains immutable.
+Preset CRUD only changes `/data/presets.json`: it never changes, starts, stops,
+or restarts the current cell, and deleting a used preset leaves the running
+cell and last profile intact. 创建时 `id`、`name` 和完整 `params` 必填，
+`description` 可选且省略时存为空串；更新不改变路径 ID。预设 CRUD 仅修改
+预设文件，没有自动启动或运行态副作用。
 
 ## 4. Connections, subscribers, and numbers / 连接、签约与号码
 
@@ -102,8 +117,10 @@ parses the real Asterisk CSV CDR; it does not synthesize calls. `/calls` 的计�
 
 ## 6. Network configuration / 网络配置
 
-- `GET /api/v1/network?iface=IFACE` inspects the managed MASQUERADE rule.
-- `PUT /api/v1/network {"iface":"IFACE"}` applies it idempotently.
+- `GET /api/v1/network?iface=eth0` inspects the managed MASQUERADE rule.
+- `PUT /api/v1/network {"iface":"eth0"}` applies it idempotently.
+- `network`/`iface` names the interface inside the container. Under the default
+  Compose bridge this is `eth0`, not a host NIC such as `ens33`.
 - A success payload reports `persisted:false`: the rule is runtime state and
   must be applied again after host firewall/network reset.
 - `ipv4_forwarding` is a read-only `true|false|null` observation. The API does
@@ -130,6 +147,9 @@ at 16 MiB with one `.1` backup. OpenBTS startup stdout/readiness remains in
   on the SDR host.
 - The Postman environment defaults `enable_mutations=false`; set it to `true`
   only for an isolated test window, then restore it.
+- Postman cell starts require the additional `enable_rf_start=true` switch and
+  contain no automated RF assertions. / Postman 启动小区还需二次显式开关，
+  不包含自动 RF 验收。
 - Never commit real IMSIs, numbers, tokens, IPs, PCAPs, logs, or databases.
 
 API、OpenAPI、Postman 与契约测试必须同步修改。Docker/RF 仅在服务器执行，仓库不得

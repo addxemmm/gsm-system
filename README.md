@@ -32,9 +32,10 @@ management code.
 - Go standard-library HTTP control plane with a uniform
   `code/message/data/request_id` envelope and `X-Request-ID`.
   Go 标准库 HTTP 管理面，统一响应包络与请求 ID。
-- Explicit resources for cell, configuration, connections, subscribers,
-  number binding, SMS, calls/history, network state, profile, and health.
-  小区、配置、连接、签约、号码绑定、短信、通话/历史、网络、存档与健康资源。
+- Explicit resources for cell, user-managed presets, configuration,
+  connections, subscribers, number binding, SMS, calls/history, network state,
+  profile, and health. 小区、用户管理预设、配置、连接、签约、号码绑定、
+  短信、通话/历史、网络、存档与健康资源。
 - Idempotent network configuration and explicit number bind/unbind semantics.
   出口 NAT 幂等配置，号码绑定/解绑语义明确。
 - OpenAPI 3.0 and a mutation-gated Postman collection.
@@ -54,6 +55,8 @@ Base URL: `http://HOST:8082/api/v1`
 | Resource / 资源 | Methods / 方法 | Purpose / 用途 |
 |---|---|---|
 | `/cell` | `GET POST DELETE` | status, start, idempotent stop / 状态、启动、幂等停止 |
+| `/presets` | `GET POST` | list/create user presets / 列出/创建用户预设 |
+| `/presets/{id}` | `GET PUT DELETE` | read/replace/delete a preset / 读取/替换/删除预设 |
 | `/config` | `GET PATCH` | OpenBTS settings / OpenBTS 配置 |
 | `/profile`, `/health` | `GET` | saved profile and health / 存档与健康 |
 | `/connections` | `GET` | volatile connection observations, not online status / 易失连接观察，非在线判定 |
@@ -67,6 +70,12 @@ Base URL: `http://HOST:8082/api/v1`
 Root paths such as `/start`, `/stop`, `/ueinfo`, `/sendsms`, and `/iptables`
 are retired and return `404`. Removed methods such as `POST /api/v1/subscribers`
 and `POST /api/v1/network` return `405`. 旧根路径已下线；已替换的方法不再兼容。
+
+Preset storage starts empty and contains no legacy operator/carrier seeds.
+Presets persist in `/data/presets.json`; `POST /cell` accepts either complete
+explicit fields, `{"preset_id":"lab-900"}`, or `{}` to reuse the last profile.
+Preset CRUD never changes a running cell and never autostarts one. 预设库初始为空，
+不恢复旧 ID 或运营商种子；预设 CRUD 不影响运行中小区，也不会自启动。
 
 Full contract / 完整契约：
 

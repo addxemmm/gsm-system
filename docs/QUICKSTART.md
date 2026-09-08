@@ -36,22 +36,49 @@ curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/profile"; echo
 means all five managed processes are alive; neither value proves RF, attach,
 SMS delivery, or voice quality. 健康与进程就绪均不等于射频/真机验收。
 
+After every container recreation, while the cell is still stopped, inspect and
+idempotently apply the runtime NAT rule to the container bridge interface:
+
+```bash
+curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/network?iface=eth0"; echo
+curl -fsS -X PUT "$BASE/network" ${AUTH:+-H "$AUTH"} \
+  -H 'Content-Type: application/json' -d '{"iface":"eth0"}'
+```
+
+`persisted:false` is expected: repeat this stopped-state `PUT` after each
+recreation/firewall reset before any preset or explicit cell start. 容器重建后、
+任何预设或显式启动前，必须在小区停止态对 `eth0` 执行此幂等 PUT。
+
 ## 2. Start one legal test cell / 启动合法测试小区
 
-Confirm the antenna, permitted band/channel, RF kill path, and uplink interface.
-The first start requires a complete profile:
+Confirm the antenna, permitted band/channel, RF kill path, and container
+interface. With the default Compose bridge, required `network` is `eth0` (not a
+host NIC such as `ens33`). The first start can use a complete profile:
 
 ```bash
 curl -fsS -X POST "$BASE/cell" ${AUTH:+-H "$AUTH"} \
   -H 'Content-Type: application/json' \
-  -d '{"arfcns":"1","c0":"C0","band":"1800","mcc":"MCC","mnc":"MNC","lac":"LAC","ci":"CI","short_name":"LAB","network":"IFACE"}'
+  -d '{"arfcns":"1","c0":"C0","band":"1800","mcc":"MCC","mnc":"MNC","lac":"LAC","ci":"CI","short_name":"LAB","network":"eth0"}'
 ```
 
 - `arfcns` is exactly `"1"`.
 - GSM 900 `c0`: `0..124` or `975..1023`; DCS 1800: `512..885`.
 - `lac`: `1..65279`; `ci`: `0..65535`.
-- A later `POST /cell` with `{}` reuses the saved profile; it does not select a
-  preset. 后续 `{}` 仅复用已有有效存档。
+- Or create a user preset while stopped, then start it explicitly:
+
+```bash
+curl -fsS -X POST "$BASE/presets" ${AUTH:+-H "$AUTH"} \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"lab-900","name":"Lab 900","description":"Indoor fixture","params":{"arfcns":"1","c0":"55","band":"900","mcc":"001","mnc":"01","lac":"1","ci":"1","short_name":"LAB","network":"eth0"}}'
+curl -fsS -X POST "$BASE/cell" ${AUTH:+-H "$AUTH"} \
+  -H 'Content-Type: application/json' -d '{"preset_id":"lab-900"}'
+```
+
+  Preset CRUD alone never starts/reconfigures the cell; only the second command
+  above starts it. A new data volume has no built-in/operator presets. / 预设 CRUD
+  本身不启动小区，仅第二条命令启动；新数据卷无内置预设。
+- A later `POST /cell` with `{}` reuses the saved last profile.
+  后续 `{}` 仅复用已有有效的上次存档。
 
 Poll `GET /cell`; expect `state=running`, `ready=true`, and inspect
 `sms_ready`/`voice_ready` separately.
@@ -107,17 +134,19 @@ synthetic calls. 语音状态与历史均来自 Asterisk 真实数据。
 ## 5. Network and stop / 网络与停止
 
 ```bash
-curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/network?iface=IFACE"; echo
-curl -fsS -X PUT "$BASE/network" ${AUTH:+-H "$AUTH"} \
-  -H 'Content-Type: application/json' -d '{"iface":"IFACE"}'
 curl -fsS -X DELETE "$BASE/cell" ${AUTH:+-H "$AUTH"}; echo
+curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/network?iface=eth0"; echo
+curl -fsS -X PUT "$BASE/network" ${AUTH:+-H "$AUTH"} \
+  -H 'Content-Type: application/json' -d '{"iface":"eth0"}'
 ```
 
-Network `PUT` is idempotent and requires a stopped cell. `persisted:false` means
+Stop is idempotent and sends TERM before KILL, allowing Asterisk time to flush
+CDR data. Only after stop, network `PUT` is idempotent and valid;
+`persisted:false` means
 the managed iptables rule must be reapplied after a host/firewall reset.
 `ipv4_forwarding` is read-only (`true|false|null`); the API does not change
-sysctl, and `rule_present` alone is not proof of forwarding. Stop is
-idempotent and sends TERM before KILL, allowing Asterisk time to flush CDR data.
+sysctl, and `rule_present` alone is not proof of forwarding. 运行中小区必须先
+DELETE 停止，再执行网络 GET/PUT；否则 PUT 返回 `409`。
 
 ## Troubleshooting / 故障排查
 
@@ -133,4 +162,32 @@ idempotent and sends TERM before KILL, allowing Asterisk time to flush CDR data.
 | no CDR | verify `/data/log/asterisk/cdr-csv/Master.csv`, CDR modules, and a completed call |
 
 Use the Postman example environment with `enable_mutations=false` for default
-read-only inspection. 将其临时设为 `true` 才会执行发射、配置、短信、号码或网络写操作。
+read-only inspection. Preset CRUD requires `enable_mutations=true`; cell-start
+requests additionally require the explicit `enable_rf_start=true` switch and
+have no automated RF assertions. 预设 CRUD 需开启 `enable_mutations`；启动小区
+还需显式开启 `enable_rf_start`，且不包含自动 RF 验收。
+
+For a management-plane-only preset CRUD/error smoke test (no valid cell start
+and no RF), run from the development checkout. The script reads the optional
+token from `GSM_API_TOKEN` and cleans up its unique fixture in `finally`:
+
+```powershell
+.\scripts\tests\presets_smoke.ps1 -BaseUrl http://HOST:8082/api/v1
+```
+
+该脚本仅验证预设 CRUD、`409/404/422`，不发送有效小区启动，可从
+`GSM_API_TOKEN` 读取令牌，并在 `finally` 中清理唯一测试预设。
+
+On the Ubuntu SDR server only, an already-built image can be checked without
+RF hardware or host exposure:
+
+```bash
+./scripts/tests/test_presets_image.sh IMAGE
+```
+
+The script uses an isolated temporary volume, publishes no port, grants no USB
+or privileged access, and mocks the UHD detector with `/bin/false`. It covers
+optional-description CRUD, restart persistence, and both preset/explicit start
+paths ending at expected `503 no hardware`, then cleans up. 此 Docker 脚本仅在
+Ubuntu SDR 服务器执行；使用独立临时卷、不映射端口、不授予 USB/特权，
+两种启动路径都在无硬件阶段停止，不发射。

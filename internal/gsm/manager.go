@@ -54,6 +54,7 @@ type Manager struct {
 	cfg       config.Config
 	mu        sync.Mutex
 	profileMu sync.Mutex
+	presets   *PresetStore
 
 	openbts       *managedProcess
 	ownedChildren []*managedProcess
@@ -62,7 +63,13 @@ type Manager struct {
 }
 
 // New creates a Manager.
-func New(cfg config.Config) *Manager { return &Manager{cfg: cfg} }
+func New(cfg config.Config) *Manager { return &Manager{cfg: cfg, presets: NewPresetStore(cfg.DataDir)} }
+
+func (m *Manager) ListPresets() ([]Preset, error)         { return m.presets.List() }
+func (m *Manager) GetPreset(id string) (Preset, error)    { return m.presets.Get(id) }
+func (m *Manager) CreatePreset(p Preset) error            { return m.presets.Create(p) }
+func (m *Manager) UpdatePreset(id string, p Preset) error { return m.presets.Update(id, p) }
+func (m *Manager) DeletePreset(id string) error           { return m.presets.Delete(id) }
 
 // Status is the machine-readable state for /api/v1/cell and /health.
 type Status struct {

@@ -2,21 +2,85 @@
   "info": {
     "_postman_id": "gsm-system-2-1-contract",
     "name": "gsm-system 2.1 / 2.1 API",
-    "description": "The /api/v1-only contract. Read requests run by default. Every cell/config/number/SMS/network mutation calls pm.execution.skipRequest() unless enable_mutations is exactly true. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts in the collection.\n\n仅包含 /api/v1。默认执行只读请求；所有发射、配置、号码、短信与网络写请求仅在 enable_mutations=true 时运行。",
+    "description": "The /api/v1-only contract. Read requests run by default. Preset CRUD persists data but never starts a cell. Every mutation is guarded by enable_mutations; cell starts additionally require enable_rf_start=true and have no automatic RF tests. HTTP 202 for SMS means submitted, never delivered. Replace placeholders; do not save real IMSIs, numbers, tokens, or hosts. network names the container interface (default bridge: eth0), not a host NIC.\n\n仅包含 /api/v1。默认执行只读请求；预设 CRUD 不启动小区。所有写操作需 enable_mutations；启动小区还需 enable_rf_start=true，且不自动执行 RF 测试。network 是容器内网卡（默认 eth0）。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://127.0.0.1:8082", "type": "string" },
-    { "key": "token", "value": "", "type": "string" },
-    { "key": "enable_mutations", "value": "false", "type": "string" },
-    { "key": "imsi", "value": "001010000000000", "type": "string" },
-    { "key": "number", "value": "10000", "type": "string" },
-    { "key": "iface", "value": "IFACE", "type": "string" },
-    { "key": "c0", "value": "540", "type": "string" },
-    { "key": "mcc", "value": "001", "type": "string" },
-    { "key": "mnc", "value": "01", "type": "string" },
-    { "key": "lac", "value": "1", "type": "string" },
-    { "key": "ci", "value": "1", "type": "string" }
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8082",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "enable_mutations",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "imsi",
+      "value": "001010000000000",
+      "type": "string"
+    },
+    {
+      "key": "number",
+      "value": "10000",
+      "type": "string"
+    },
+    {
+      "key": "iface",
+      "value": "eth0",
+      "type": "string"
+    },
+    {
+      "key": "c0",
+      "value": "540",
+      "type": "string"
+    },
+    {
+      "key": "mcc",
+      "value": "001",
+      "type": "string"
+    },
+    {
+      "key": "mnc",
+      "value": "01",
+      "type": "string"
+    },
+    {
+      "key": "lac",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "ci",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "preset_id",
+      "value": "lab-900",
+      "type": "string"
+    },
+    {
+      "key": "preset_name",
+      "value": "Lab 900",
+      "type": "string"
+    },
+    {
+      "key": "preset_description",
+      "value": "Indoor fixture",
+      "type": "string"
+    },
+    {
+      "key": "enable_rf_start",
+      "value": "false",
+      "type": "string"
+    }
   ],
   "event": [
     {
@@ -53,58 +117,242 @@
       "item": [
         {
           "name": "GET /api/v1/health",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/health", "description": "Control-plane health, version/revision, cell state; not RF acceptance. / 管理面健康，不是射频验收。" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200 stopped health', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.ok).to.eql(true); pm.expect(d.version).to.eql('2.1.0'); pm.expect(d.cell.state).to.eql('stopped'); pm.expect(d.cell.ready).to.eql(false); });"] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/health",
+            "description": "Control-plane health, version/revision, cell state; not RF acceptance. / 管理面健康，不是射频验收。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 stopped health', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.ok).to.eql(true); pm.expect(d.version).to.eql('2.1.0'); pm.expect(d.cell.state).to.eql('stopped'); pm.expect(d.cell.ready).to.eql(false); });"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/cell",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/cell", "description": "state=stopped|transitioning|degraded|running; ready means five processes only." },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200 stopped process snapshot', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.state).to.eql('stopped'); pm.expect(d.ready).to.eql(false); pm.expect(d.sms_ready).to.eql(false); pm.expect(d.voice_ready).to.eql(false); pm.expect(d.running).to.eql(false); });"] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/cell",
+            "description": "state=stopped|transitioning|degraded|running; ready means five processes only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 stopped process snapshot', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.state).to.eql('stopped'); pm.expect(d.ready).to.eql(false); pm.expect(d.sms_ready).to.eql(false); pm.expect(d.voice_ready).to.eql(false); pm.expect(d.running).to.eql(false); });"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/profile",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/profile" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200 no saved profile', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.has_profile).to.eql(false); pm.expect(d).not.to.have.property('profile'); });"] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 no saved profile', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.has_profile).to.eql(false); pm.expect(d).not.to.have.property('profile'); });"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/config",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/config" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200: seeded OpenBTS DB exists', () => pm.response.to.have.status(200));", "pm.test('config is a non-empty key/value array', function () { const a=pm.response.json().data.config; pm.expect(a).to.be.an('array').that.is.not.empty; pm.expect(a[0].key).to.be.a('string'); pm.expect(a[0].value).to.be.a('string'); });" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200: seeded OpenBTS DB exists', () => pm.response.to.have.status(200));",
+                  "pm.test('config is a non-empty key/value array', function () { const a=pm.response.json().data.config; pm.expect(a).to.be.an('array').that.is.not.empty; pm.expect(a[0].key).to.be.a('string'); pm.expect(a[0].value).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/connections",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/connections?limit=100&offset=0", "description": "Volatile observation, not an online assertion. / 易失观察，不是在线判定。" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 412: cell is intentionally stopped', () => pm.response.to.have.status(412));", "pm.test('precondition code', () => pm.expect(pm.response.json().code).to.eql(41201));" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/connections?limit=100&offset=0",
+            "description": "Volatile observation, not an online assertion. / 易失观察，不是在线判定。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 412: cell is intentionally stopped', () => pm.response.to.have.status(412));",
+                  "pm.test('precondition code', () => pm.expect(pm.response.json().code).to.eql(41201));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/subscribers",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscribers?limit=100&offset=0" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 200: seeded registry DB exists', () => pm.response.to.have.status(200));", "pm.test('clean registry is an empty paginated snapshot', function () { const d=pm.response.json().data; pm.expect(d.subscribers).to.eql([]); pm.expect(d.count).to.eql(0); pm.expect(d.total).to.eql(0); pm.expect(d.limit).to.eql(100); pm.expect(d.offset).to.eql(0); pm.expect(d.source).to.eql('asterisk_registry'); pm.expect(d.window).to.eql('full'); pm.expect(d.truncated).to.eql(false); });" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/subscribers?limit=100&offset=0"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200: seeded registry DB exists', () => pm.response.to.have.status(200));",
+                  "pm.test('clean registry is an empty paginated snapshot', function () { const d=pm.response.json().data; pm.expect(d.subscribers).to.eql([]); pm.expect(d.count).to.eql(0); pm.expect(d.total).to.eql(0); pm.expect(d.limit).to.eql(100); pm.expect(d.offset).to.eql(0); pm.expect(d.source).to.eql('asterisk_registry'); pm.expect(d.window).to.eql('full'); pm.expect(d.truncated).to.eql(false); });"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/subscribers/{imsi}",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}", "description": "Replace IMSI placeholder with a 15-digit dedicated test IMSI." },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 404: example IMSI is absent from clean seed', () => pm.response.to.have.status(404));", "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}",
+            "description": "Replace IMSI placeholder with a 15-digit dedicated test IMSI."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 404: example IMSI is absent from clean seed', () => pm.response.to.have.status(404));",
+                  "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/sms",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/sms?limit=100&offset=0" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 404: no smqueue log before cell activity', () => pm.response.to.have.status(404));", "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/sms?limit=100&offset=0"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 404: no smqueue log before cell activity', () => pm.response.to.have.status(404));",
+                  "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/calls",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/calls?limit=100&offset=0", "description": "Active Asterisk channels, not a lifetime call count. bridge_id is a bridge UUID, not a channel name." },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 412: Asterisk is intentionally stopped', () => pm.response.to.have.status(412));", "pm.test('precondition code', () => pm.expect(pm.response.json().code).to.eql(41201));" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/calls?limit=100&offset=0",
+            "description": "Active Asterisk channels, not a lifetime call count. bridge_id is a bridge UUID, not a channel name."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 412: Asterisk is intentionally stopped', () => pm.response.to.have.status(412));",
+                  "pm.test('precondition code', () => pm.expect(pm.response.json().code).to.eql(41201));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/calls/history",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/calls/history?limit=100&offset=0", "description": "Real 18-column Asterisk CSV CDR with RFC3339 UTC timestamps; no synthetic history." },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 404: no CDR before calls', () => pm.response.to.have.status(404));", "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/calls/history?limit=100&offset=0",
+            "description": "Real 18-column Asterisk CSV CDR with RFC3339 UTC timestamps; no synthetic history."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 404: no CDR before calls', () => pm.response.to.have.status(404));",
+                  "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "GET /api/v1/network",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/network?iface={{iface}}" },
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('HTTP 503: isolated container has no iptables capability', () => pm.response.to.have.status(503));", "pm.test('native dependency code', () => pm.expect(pm.response.json().code).to.eql(50301));" ] } }]
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/network?iface={{iface}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 503: isolated container has no iptables capability', () => pm.response.to.have.status(503));",
+                  "pm.test('native dependency code', () => pm.expect(pm.response.json().code).to.eql(50301));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/presets",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/presets",
+            "description": "A new data volume has no built-in/operator presets. / 新数据卷没有内置或运营商预设。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 preset collection', () => pm.response.to.have.status(200));",
+                  "pm.test('fresh fixture is empty', () => pm.expect(pm.response.json().data.items).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/presets/{id}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/presets/{{preset_id}}",
+            "description": "Before the guarded create fixture, the placeholder preset is absent. / 运行创建夹具前预设不存在。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 404 before fixture creation', () => pm.response.to.have.status(404));",
+                  "pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -115,48 +363,288 @@
         {
           "name": "POST /api/v1/cell",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 cell started', () => pm.response.to.have.status(200));", "pm.test('start acknowledgement', () => pm.expect(pm.response.json().message).to.eql('cell started'));" ] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();",
+                  "if (String(pm.environment.get('enable_rf_start') || pm.collectionVariables.get('enable_rf_start')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"arfcns\": \"1\",\n  \"c0\": \"{{c0}}\",\n  \"band\": \"1800\",\n  \"mcc\": \"{{mcc}}\",\n  \"mnc\": \"{{mnc}}\",\n  \"lac\": \"{{lac}}\",\n  \"ci\": \"{{ci}}\",\n  \"short_name\": \"LAB\",\n  \"network\": \"{{iface}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"arfcns\": \"1\",\n  \"c0\": \"{{c0}}\",\n  \"band\": \"1800\",\n  \"mcc\": \"{{mcc}}\",\n  \"mnc\": \"{{mnc}}\",\n  \"lac\": \"{{lac}}\",\n  \"ci\": \"{{ci}}\",\n  \"short_name\": \"LAB\",\n  \"network\": \"{{iface}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/cell",
-            "description": "Starts RF. Exact single ARFCN constraints are documented in docs/API.md. / 启动射频。"
+            "description": "WARNING: starts the radio/cell stack. Run manually only after setting both enable_mutations=true and enable_rf_start=true; the collection performs no automatic RF assertion. network is the container interface (default bridge: eth0), not a host NIC. / 警告：会启动射频；需双重显式开关，集合不自动执行 RF 验收。network 是容器内网卡。"
+          }
+        },
+        {
+          "name": "POST /api/v1/presets",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 201 preset created', () => pm.response.to.have.status(201));",
+                  "pm.test('Location and object', function () { const id=pm.variables.replaceIn('{{preset_id}}'); pm.expect(pm.response.headers.get('Location')).to.eql('/api/v1/presets/'+id); pm.expect(pm.response.json().data.id).to.eql(id); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{preset_id}}\",\n  \"name\": \"{{preset_name}}\",\n  \"description\": \"{{preset_description}}\",\n  \"params\": {\n    \"arfcns\": \"1\",\n    \"c0\": \"55\",\n    \"band\": \"900\",\n    \"mcc\": \"001\",\n    \"mnc\": \"01\",\n    \"lac\": \"1\",\n    \"ci\": \"1\",\n    \"short_name\": \"LAB\",\n    \"network\": \"{{iface}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/presets",
+            "description": "Persists data only; does not start or reconfigure the cell. / 仅持久化，不启动或重配小区。"
+          }
+        },
+        {
+          "name": "PUT /api/v1/presets/{id}",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 preset updated', () => pm.response.to.have.status(200));",
+                  "pm.test('path ID remains stable', () => pm.expect(pm.response.json().data.id).to.eql(pm.variables.replaceIn('{{preset_id}}')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{preset_name}} updated\",\n  \"description\": \"{{preset_description}} updated\",\n  \"params\": {\n    \"arfcns\": \"1\",\n    \"c0\": \"60\",\n    \"band\": \"900\",\n    \"mcc\": \"001\",\n    \"mnc\": \"01\",\n    \"lac\": \"1\",\n    \"ci\": \"1\",\n    \"short_name\": \"LAB\",\n    \"network\": \"{{iface}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/presets/{{preset_id}}",
+            "description": "Replaces name, description, and complete params only; body id is not accepted. / 仅替换名称、说明和完整参数。"
+          }
+        },
+        {
+          "name": "POST /api/v1/cell from preset (manual RF side effect)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();",
+                  "if (String(pm.environment.get('enable_rf_start') || pm.collectionVariables.get('enable_rf_start')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preset_id\": \"{{preset_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/cell",
+            "description": "WARNING: starts the radio/cell stack from the preset. Run manually only after setting enable_mutations=true and enable_rf_start=true. There are deliberately no automatic RF tests. / 警告：会按预设启动射频，必须手动开启双重开关；不包含自动 RF 测试。"
+          }
+        },
+        {
+          "name": "DELETE /api/v1/presets/{id}",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 preset deleted', () => pm.response.to.have.status(200));",
+                  "pm.test('deleted marker', () => pm.expect(pm.response.json().data.deleted).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/presets/{{preset_id}}",
+            "description": "Deletes stored preset only; never changes a running cell or last profile. / 仅删除预设，不影响运行小区或上次存档。"
           }
         },
         {
           "name": "DELETE /api/v1/cell",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 idempotent stop', () => pm.response.to.have.status(200));", "pm.test('boolean stopped marker', () => pm.expect(pm.response.json().data.stopped).to.be.a('boolean'));" ] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 idempotent stop', () => pm.response.to.have.status(200));",
+                  "pm.test('boolean stopped marker', () => pm.expect(pm.response.json().data.stopped).to.be.a('boolean'));"
+                ]
+              }
+            }
           ],
-          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/cell", "description": "Idempotent stop; TERM before KILL." }
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/cell",
+            "description": "Idempotent stop; TERM before KILL."
+          }
         },
         {
           "name": "PATCH /api/v1/config",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 config updated', () => pm.response.to.have.status(200));", "pm.test('updated keys array', () => pm.expect(pm.response.json().data.updated).to.be.an('array').that.includes('GSM.Identity.ShortName'));" ] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 config updated', () => pm.response.to.have.status(200));",
+                  "pm.test('updated keys array', () => pm.expect(pm.response.json().data.updated).to.be.an('array').that.includes('GSM.Identity.ShortName'));"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"values\": {\n    \"GSM.Identity.ShortName\": \"LAB\"\n  }\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"values\": {\n    \"GSM.Identity.ShortName\": \"LAB\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/config"
           }
         },
         {
           "name": "PUT /api/v1/subscribers/{imsi}/number",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 number bound', () => pm.response.to.have.status(200));", "pm.test('authoritative binding consistent', function () { const d=pm.response.json().data; pm.expect(d.subscriber.number).to.eql(pm.variables.replaceIn('{{number}}')); pm.expect(d.subscriber.binding_consistent).to.eql(true); pm.expect(['updated','not_present','unavailable','failed']).to.include(d.tmsi_projection); });" ] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 number bound', () => pm.response.to.have.status(200));",
+                  "pm.test('authoritative binding consistent', function () { const d=pm.response.json().data; pm.expect(d.subscriber.number).to.eql(pm.variables.replaceIn('{{number}}')); pm.expect(d.subscriber.binding_consistent).to.eql(true); pm.expect(['updated','not_present','unavailable','failed']).to.include(d.tmsi_projection); });"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"number\": \"{{number}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"number\": \"{{number}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}/number",
             "description": "Authoritative Asterisk transaction; TMSI projection is best effort."
           }
@@ -164,21 +652,66 @@
         {
           "name": "DELETE /api/v1/subscribers/{imsi}/number",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 number unbound', () => pm.response.to.have.status(200));", "pm.test('number is null', () => pm.expect(pm.response.json().data.subscriber.number).to.eql(null));" ] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 number unbound', () => pm.response.to.have.status(200));",
+                  "pm.test('number is null', () => pm.expect(pm.response.json().data.subscriber.number).to.eql(null));"
+                ]
+              }
+            }
           ],
-          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}/number" }
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}/number"
+          }
         },
         {
           "name": "POST /api/v1/sms",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 202 submitted', function () { pm.response.to.have.status(202); pm.expect(pm.response.json().data.status).to.eql('submitted'); });"] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 202 submitted', function () { pm.response.to.have.status(202); pm.expect(pm.response.json().data.status).to.eql('submitted'); });"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"imsi\": \"{{imsi}}\",\n  \"sender\": \"{{number}}\",\n  \"text\": \"hello\"\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imsi\": \"{{imsi}}\",\n  \"sender\": \"{{number}}\",\n  \"text\": \"hello\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/sms",
             "description": "Maximum 159 bytes from safe ASCII/basic GSM intersection. 202 is submitted, not delivered."
           }
@@ -186,13 +719,41 @@
         {
           "name": "PUT /api/v1/network",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 200 network rule ready', () => pm.response.to.have.status(200));", "pm.test('runtime-only rule', function () { const d=pm.response.json().data; pm.expect(d.rule_present).to.eql(true); pm.expect(d.persisted).to.eql(false); pm.expect(d.changed).to.be.a('boolean'); pm.expect([true,false,null]).to.include(d.ipv4_forwarding); });"] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 200 network rule ready', () => pm.response.to.have.status(200));",
+                  "pm.test('runtime-only rule', function () { const d=pm.response.json().data; pm.expect(d.rule_present).to.eql(true); pm.expect(d.persisted).to.eql(false); pm.expect(d.changed).to.be.a('boolean'); pm.expect([true,false,null]).to.include(d.ipv4_forwarding); });"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"iface\": \"{{iface}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iface\": \"{{iface}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/network"
           }
         }
@@ -204,59 +765,173 @@
         {
           "name": "Subscribers rejects repeated pagination query",
           "event": [
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 422 repeated query', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors[0].field).to.eql('limit'); });"] } }
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 422 repeated query', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors[0].field).to.eql('limit'); });"
+                ]
+              }
+            }
           ],
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscribers?limit=1&limit=2", "description": "Read-only negative case; repeated and unknown list query keys are rejected." }
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/subscribers?limit=1&limit=2",
+            "description": "Read-only negative case; repeated and unknown list query keys are rejected."
+          }
         },
         {
           "name": "SMS rejects Chinese/UCS-2",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 422 validation', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors).to.be.an('array').that.is.not.empty; });"] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 422 validation', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors).to.be.an('array').that.is.not.empty; });"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"imsi\": \"{{imsi}}\",\n  \"sender\": \"{{number}}\",\n  \"text\": \"中文\"\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imsi\": \"{{imsi}}\",\n  \"sender\": \"{{number}}\",\n  \"text\": \"中文\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/sms"
           }
         },
         {
           "name": "Number binding rejects reserved service number",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 422 reserved number', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors[0]).to.include({field:'number', reason:'reserved service number'}); });"] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 422 reserved number', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors[0]).to.include({field:'number', reason:'reserved service number'}); });"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"number\": \"112\"\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"number\": \"112\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/subscribers/{{imsi}}/number"
           }
         },
         {
           "name": "Config rejects old name/value shape",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 400 malformed shape', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql(40001); });"] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 400 malformed shape', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql(40001); });"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"GSM.Identity.ShortName\",\n  \"value\": \"LAB\"\n}", "options": { "raw": { "language": "json" } } },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"GSM.Identity.ShortName\",\n  \"value\": \"LAB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": "{{baseUrl}}/api/v1/config"
           }
         },
         {
           "name": "Network rejects wrong media type",
           "event": [
-            { "listen": "prerequest", "script": { "exec": ["if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"] } },
-            { "listen": "test", "script": { "exec": ["pm.test('HTTP 415 media type', function () { pm.response.to.have.status(415); pm.expect(pm.response.json().code).to.eql(41501); });"] } }
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (String(pm.environment.get('enable_mutations') || pm.collectionVariables.get('enable_mutations')).toLowerCase() !== 'true') pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 415 media type', function () { pm.response.to.have.status(415); pm.expect(pm.response.json().code).to.eql(41501); });"
+                ]
+              }
+            }
           ],
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "text/plain" }],
-            "body": { "mode": "raw", "raw": "{\"iface\":\"{{iface}}\"}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"iface\":\"{{iface}}\"}"
+            },
             "url": "{{baseUrl}}/api/v1/network"
           }
         }

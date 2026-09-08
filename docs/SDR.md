@@ -2,8 +2,8 @@
 
 ## Supported line / 支持范围
 
-- Hardware: USRP B210-compatible USB3 device; Compose passes `/dev/bus/usb` and
-  uses host networking with required privileges.
+- Hardware: USRP B210-compatible USB3 device; Compose passes `/dev/bus/usb`
+  with required privileges and uses an isolated Docker bridge.
 - Runtime: Ubuntu 22.04, UHD 4.1, native OpenBTS 5.0 and Asterisk.
 - The project-owned management plane is Go. OpenBTS/UHD remain C/C++, and
   upstream UHD uses Python/Mako in the Docker builder stage only.
@@ -45,17 +45,34 @@ not evidence that the device disappeared. 就绪状态只描述进程，不是�
 ## Network path / 数据网络
 
 ```http
-GET /api/v1/network?iface=IFACE
+GET /api/v1/network?iface=eth0
 PUT /api/v1/network
 Content-Type: application/json
 
-{"iface":"IFACE"}
+{"iface":"eth0"}
 ```
 
 `PUT` validates the interface and applies the managed MASQUERADE rule
-idempotently while the cell is stopped. `persisted:false` means it is runtime
-firewall state and must be reapplied after a firewall/host reset. 接口名作为 argv 传递，
-不会拼入 shell；规则不会重复追加，也不会被误称为持久配置。
+idempotently while the cell is stopped. `eth0` is the container's bridge
+uplink, not a host NIC. OpenBTS assigns handset data from `192.168.99.0/24`;
+the rule translates that source to the GSM container address, after which
+Docker's bridge performs normal outbound translation on the host. Container
+IPv4 forwarding is enabled explicitly by Compose.
+
+`persisted:false` means the managed rule is runtime state in the **container
+network namespace** and must be reapplied after container recreation. The Go
+process neither edits the host's global Docker firewall nor accepts an
+arbitrary shell fragment: the validated interface is one argv value. 当前固定
+出口为容器内 `eth0`，而非宿主机网卡；MASQUERADE 规则属于容器网络
+命名空间，容器重建后需重新应用，不会改写宿主机 Docker 全局防火墙。
+
+Only the Go management API is published as host TCP 8082. The native
+loopback/intra-container paths remain private: Asterisk SIP 5060, OpenBTS SIP
+5062 and RTP 16484–16581, smqueue 5063, sipauthserve 5064, OpenBTS CLI 49300,
+TRX 5700, and Asterisk RTP 20000–22000. External trunks, handover peers, or
+remote RTP require a separate reviewed deployment profile; they are not part
+of the default single-container contract. 默认部署不向宿主机发布任何
+SIP、RTP、CLI 或 TRX 端口。
 
 ## Board-specific historical note / 板卡历史记录
 

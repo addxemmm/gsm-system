@@ -15,6 +15,7 @@ security:
   - {}
 tags:
   - { name: cell, description: Cell lifecycle / 小区生命周期 }
+  - { name: presets, description: Operator-managed cell presets / 操作员管理的小区预设 }
   - { name: config, description: Configuration and profile / 配置与存档 }
   - { name: subscribers, description: Connections and subscribers / 连接与签约 }
   - { name: messaging, description: SMS submission and observation / 短信提交与观察 }
@@ -34,7 +35,7 @@ paths:
     post:
       tags: [cell]
       operationId: startCell
-      summary: Start a cell; empty object reuses a valid profile / 启动小区
+      summary: Start explicitly, from a preset, or by reusing the last profile / 启动小区
       requestBody:
         required: true
         content:
@@ -43,6 +44,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
         '415': { $ref: '#/components/responses/Error' }
@@ -56,6 +58,78 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /api/v1/presets:
+    get:
+      tags: [presets]
+      operationId: listPresets
+      summary: List every user-created preset; initially empty / 列出用户创建的预设，初始为空
+      responses:
+        '200': { $ref: '#/components/responses/PresetListOK' }
+        '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [presets]
+      operationId: createPreset
+      summary: Persist a complete named cell preset; does not start a cell / 创建预设，不启动小区
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PresetCreate' }
+      responses:
+        '201':
+          $ref: '#/components/responses/PresetCreated'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/Error' }
+
+  /api/v1/presets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PresetID'
+    get:
+      tags: [presets]
+      operationId: getPreset
+      summary: Read one preset / 读取单个预设
+      responses:
+        '200': { $ref: '#/components/responses/PresetOK' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/Error' }
+    put:
+      tags: [presets]
+      operationId: updatePreset
+      summary: Replace preset metadata and params; path ID is immutable / 替换预设，路径 ID 不可变
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PresetUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/PresetOK' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '500': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [presets]
+      operationId: deletePreset
+      summary: Delete one preset without changing the running cell / 删除预设，不影响运行中小区
+      responses:
+        '200': { $ref: '#/components/responses/PresetDeleted' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
 
   /api/v1/config:
@@ -251,7 +325,7 @@ paths:
           in: query
           required: false
           description: Required when no saved profile exists / 无存档时必填
-          schema: { type: string, example: IFACE }
+          schema: { type: string, example: eth0 }
       responses:
         '200': { $ref: '#/components/responses/NetworkOK' }
         '422': { $ref: '#/components/responses/ValidationError' }
@@ -282,6 +356,12 @@ components:
       bearerFormat: opaque
       description: Optional; required only when GSM_API_TOKEN is configured / 可选 Bearer 令牌
   parameters:
+    PresetID:
+      name: id
+      in: path
+      required: true
+      description: Stable lowercase preset slug / 稳定的小写预设 slug
+      schema: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: lab-900 }
     IMSI:
       name: imsi
       in: path
@@ -323,10 +403,10 @@ components:
           type: array
           minItems: 1
           items: { $ref: '#/components/schemas/FieldError' }
-    CellStart:
+    CellParams:
       type: object
+      required: [arfcns, c0, band, mcc, mnc, lac, ci, short_name, network]
       additionalProperties: false
-      description: Empty object reuses a complete valid profile / 空对象复用完整有效存档
       properties:
         arfcns: { type: string, enum: ['1'] }
         c0: { type: string, pattern: '^[0-9]+$', example: '540' }
@@ -336,7 +416,65 @@ components:
         lac: { type: string, pattern: '^[0-9]+$', example: '1' }
         ci: { type: string, pattern: '^[0-9]+$', example: '1' }
         short_name: { type: string, example: LAB }
-        network: { type: string, example: IFACE }
+        network:
+          type: string
+          example: eth0
+          description: Required interface inside the container; the default bridge uses eth0 / 容器内部必填网卡，默认 bridge 使用 eth0
+    CellStartFromPreset:
+      type: object
+      required: [preset_id]
+      additionalProperties: false
+      properties:
+        preset_id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: lab-900 }
+    EmptyCellStart:
+      type: object
+      maxProperties: 0
+      additionalProperties: false
+      description: Reuse the existing complete valid last profile / 复用已有完整有效的上次存档
+    CellStart:
+      description: Exactly one mode; preset_id cannot be mixed with explicit fields / 三种模式三选一
+      oneOf:
+        - $ref: '#/components/schemas/CellParams'
+        - $ref: '#/components/schemas/CellStartFromPreset'
+        - $ref: '#/components/schemas/EmptyCellStart'
+    Preset:
+      type: object
+      required: [id, name, description, params]
+      additionalProperties: false
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: lab-900 }
+        name: { type: string, minLength: 1, example: Lab 900 }
+        description: { type: string, example: Indoor fixture }
+        params: { $ref: '#/components/schemas/CellParams' }
+    PresetCreate:
+      type: object
+      required: [id, name, params]
+      additionalProperties: false
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', example: lab-900 }
+        name: { type: string, minLength: 1, example: Lab 900, description: 1..128 UTF-8 bytes / UTF-8 1..128 字节 }
+        description: { type: string, example: Indoor fixture, description: Optional; at most 2048 UTF-8 bytes / 可选，UTF-8 最多 2048 字节 }
+        params: { $ref: '#/components/schemas/CellParams' }
+    PresetUpdate:
+      type: object
+      required: [name, params]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, example: Lab 900 updated, description: 1..128 UTF-8 bytes / UTF-8 1..128 字节 }
+        description: { type: string, example: Updated fixture, description: Optional; omitted means empty; at most 2048 UTF-8 bytes / 可选，省略即空，最多 2048 字节 }
+        params: { $ref: '#/components/schemas/CellParams' }
+    PresetList:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Preset' } }
+    PresetDeleted:
+      type: object
+      required: [deleted]
+      additionalProperties: false
+      properties:
+        deleted: { type: boolean, enum: [true] }
     ConfigPatch:
       type: object
       required: [values]
@@ -375,7 +513,7 @@ components:
       required: [iface]
       additionalProperties: false
       properties:
-        iface: { type: string, example: IFACE }
+        iface: { type: string, example: eth0 }
     HistoryWindow:
       type: object
       required: [bytes, max_bytes, truncated]
@@ -472,6 +610,58 @@ components:
         band: { type: string }
         short_name: { type: string }
   responses:
+    PresetListOK:
+      description: Complete preset collection; empty on a new data volume / 完整预设列表，新数据卷为空
+      headers:
+        X-Request-ID: { schema: { type: string } }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PresetList' }
+          example: { code: 0, message: ok, data: { items: [] }, request_id: REQUEST_ID }
+    PresetOK:
+      description: Preset object / 预设对象
+      headers:
+        X-Request-ID: { schema: { type: string } }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Preset' }
+    PresetCreated:
+      description: Preset created; no cell is started / 预设已创建，不启动小区
+      headers:
+        Location:
+          description: Canonical preset resource path / 预设资源路径
+          schema: { type: string, example: /api/v1/presets/lab-900 }
+        X-Request-ID: { schema: { type: string } }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Preset' }
+    PresetDeleted:
+      description: Preset deleted; running cell and last profile are unchanged / 预设已删除，运行小区与上次存档不变
+      headers:
+        X-Request-ID: { schema: { type: string } }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PresetDeleted' }
     Success:
       description: Successful JSON envelope / 成功包络
       headers:

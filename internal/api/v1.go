@@ -32,6 +32,8 @@ func (s *Server) serveV1(w http.ResponseWriter, r *http.Request) {
 		case http.MethodDelete:
 			s.handleCellStop(w, r)
 		}
+	case "/api/v1/presets":
+		s.handlePresets(w, r)
 	case "/api/v1/config":
 		if !allow(w, r, http.MethodGet, http.MethodPatch) || !requireNoQuery(w, r) {
 			return
@@ -84,6 +86,9 @@ func (s *Server) serveV1(w http.ResponseWriter, r *http.Request) {
 			s.handleNetworkPut(w, r)
 		}
 	default:
+		if strings.HasPrefix(r.URL.Path, "/api/v1/presets/") && s.routePreset(w, r) {
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/v1/subscribers/") && s.routeSubscriber(w, r) {
 			return
 		}
@@ -103,13 +108,31 @@ func allow(w http.ResponseWriter, r *http.Request, methods ...string) bool {
 }
 
 func (s *Server) handleCellStart(w http.ResponseWriter, r *http.Request) {
-	var params gsm.StartParams
-	if code := decodeV1JSON(w, r, &params, 1<<20, true); code != CodeOK {
+	var body cellStartRequest
+	if code := decodeV1JSON(w, r, &body, 1<<20, true); code != CodeOK {
 		writeV1DecodeError(w, r, code)
 		return
 	}
-	if params == (gsm.StartParams{}) {
+	if body.PresetID.Set && body.hasExplicitParams() {
+		writeValidation(w, r, []FieldError{{Field: "preset_id", Reason: "must not be combined with explicit cell fields"}})
+		return
+	}
+	var params gsm.StartParams
+	if body.PresetID.Set {
+		if !gsm.ValidPresetID(body.PresetID.Value) {
+			writeValidation(w, r, []FieldError{{Field: "preset_id", Reason: "must match [a-z0-9][a-z0-9_-]{0,63}"}})
+			return
+		}
+		preset, err := s.mgr.GetPreset(body.PresetID.Value)
+		if err != nil {
+			s.writePresetReadError(w, r, "resolve cell start", err)
+			return
+		}
+		params = preset.Params
+	} else if !body.hasExplicitParams() {
 		s.mgr.OverlayProfile(&params)
+	} else {
+		params = body.params()
 	}
 	if issues := params.ValidateDetailed(); len(issues) > 0 {
 		fieldErrors := make([]FieldError, 0, len(issues))

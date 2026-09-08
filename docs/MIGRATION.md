@@ -11,7 +11,7 @@
 | SMS success looked final | HTTP `202`, `sms submitted` | track delivery outside this acknowledgement / 不将提交当送达 |
 | appended iptables rules | `GET/PUT /network`, idempotent | use PUT and reapply after host reset / 改用 PUT |
 | multiple Docker definitions/tags | one Dockerfile/Compose; versioned tags | use release script / 使用发布脚本 |
-| numeric carrier presets/default fields | explicit cell profile only / 仅显式小区参数 | remove deprecated YAML keys and send all first-start fields / 删除弃用配置并显式首启 |
+| numeric carrier presets/default fields | user-managed `/api/v1/presets` / 用户管理预设 | remove deprecated YAML keys; explicitly create required presets / 删除弃用配置并显式创建预设 |
 
 UHD still uses Python/Mako as an upstream **build-time** dependency. OpenBTS,
 Asterisk, and UHD are not rewritten in Go. Only the project-owned control plane
@@ -31,6 +31,7 @@ is Go-only. UHD 上游构建依赖仍可能包含 Python/Mako；Go 重构范围�
 | `POST /allconfig` | `PATCH /api/v1/config` |
 | `POST /iptables` | `PUT /api/v1/network` |
 | `GET /healthz`, `/status`, `/profile` | versioned `/api/v1/health`, `/cell`, `/profile` |
+| legacy preset IDs/root preset routes | `GET/POST /api/v1/presets`, `GET/PUT/DELETE /api/v1/presets/{id}` |
 
 Do not retry old methods on `405`; update the client. Root paths intentionally
 return `404`. 旧方法收到 `405` 时不要降级重试；根路径返回 `404` 是预期行为。
@@ -55,9 +56,18 @@ deployment, remove these retired fields from copied/custom configuration:
 
 Use `max_history_bytes` for bounded SMS/CDR log reads. Its default is `8388608`
 (8 MiB) and accepted range is `65536..67108864`. The removed `default_*` fields
-were tied to pre-2.1 preset/fallback behavior; the first `POST /api/v1/cell`
-must now contain a complete valid profile. 2.1 严格拒绝未知配置项与多文档 YAML；旧字段
-不会被静默忽略，首次启动必须显式提交完整参数。
+were tied to pre-2.1 preset/fallback behavior. They do not recreate old IDs.
+Create every needed preset explicitly through `/api/v1/presets`, or submit a
+complete valid profile on the first `POST /api/v1/cell`. A new data volume has
+no operator/carrier preset seeds. 2.1 严格拒绝未知配置项与多文档 YAML；旧字段不会
+恢复旧 ID，新数据卷不包含操作员/运营商种子；请显式创建新预设或完整提交首启参数。
+
+User presets are stored in `/data/presets.json`; the independent last-start
+profile remains `/data/last_start.json`. Existing saved profiles or manually
+migrated presets must set required `network` to the **container** interface
+`eth0`, not a host NIC such as `ens33`. Stop RF first and update the persisted
+JSON atomically. 预设与上次启动存档分别持久化；迁移时将 `network` 改为容器内
+`eth0`，而非宿主机网卡，并在停止 RF 后原子更新。
 
 ## 4. Back up native state / 备份原生状态
 

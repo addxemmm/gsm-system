@@ -8,10 +8,21 @@ services:
         VERSION: "${GSM_VERSION:-2.1.0}"
         REVISION: "${GSM_REVISION:-unknown}"
     image: "${GSM_IMAGE:-gsm-system:2.1.0}"
-    # Retain the proven UHD4 container name so the rollback container
-    # `gsmsystem` can remain stopped on the host without a name collision.
+    # Stable production identity retained across release recreations.
+    # 发布重建时保持稳定的生产容器名。
     container_name: gsmsystem-uhd4
-    network_mode: host
+    # One explicit bridge gives the runtime one stable uplink name: eth0.
+    # The Go `network` field and MASQUERADE endpoint refer to this container
+    # interface, never to a host NIC such as ens33.
+    networks:
+      - gsm-bridge
+    ports:
+      # Only the management API crosses the container boundary. OpenBTS,
+      # Asterisk, smqueue, sipauthserve, RTP, TRX and CLI stay intra-container.
+      - "${GSM_BIND_ADDRESS:-0.0.0.0}:8082:8082/tcp"
+    sysctls:
+      # GPRS packets enter via sgsntun and leave via eth0 in this namespace.
+      net.ipv4.ip_forward: "1"
     privileged: true
     restart: unless-stopped
     init: true
@@ -49,3 +60,12 @@ volumes:
     # Lifecycle is operator-owned, not tied to compose down -v.
     # 数据卷由运维显式管理，避免随 Compose 项目删除。
     external: true
+
+networks:
+  gsm-bridge:
+    driver: bridge
+    ipam:
+      config:
+        # Separate from GPRS 192.168.99.0/24 and the deployed LTE bridge.
+        # Override only after checking every host/container route for overlap.
+        - subnet: "${GSM_BRIDGE_SUBNET:-172.31.240.0/24}"

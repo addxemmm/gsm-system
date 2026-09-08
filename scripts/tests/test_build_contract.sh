@@ -24,6 +24,25 @@ grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1.0}"' deploy/docker/docker-compose.y
 grep -F 'container_name: gsmsystem-uhd4' deploy/docker/docker-compose.yml >/dev/null || fail 'collision-free container name missing'
 grep -F 'external: true' deploy/docker/docker-compose.yml >/dev/null || fail 'data volume is not external'
 grep -F 'docker_gsm-data' deploy/docker/docker-compose.yml >/dev/null || fail 'existing data volume name missing'
+if grep -F 'network_mode: host' deploy/docker/docker-compose.yml >/dev/null; then
+  fail 'host networking remains enabled'
+fi
+grep -F '${GSM_BIND_ADDRESS:-0.0.0.0}:8082:8082/tcp' deploy/docker/docker-compose.yml >/dev/null || \
+  fail 'management API publication missing'
+published_ports=$(awk '
+  /^    ports:$/ { in_ports=1; next }
+  in_ports && /^    [A-Za-z_][A-Za-z0-9_-]*:/ { in_ports=0 }
+  in_ports && /^      - / { count++ }
+  END { print count + 0 }
+' deploy/docker/docker-compose.yml)
+[ "$published_ports" -eq 1 ] || fail "expected exactly one published port, got $published_ports"
+grep -F 'net.ipv4.ip_forward: "1"' deploy/docker/docker-compose.yml >/dev/null || \
+  fail 'container IPv4 forwarding is not explicit'
+grep -F '${GSM_BRIDGE_SUBNET:-172.31.240.0/24}' deploy/docker/docker-compose.yml >/dev/null || \
+  fail 'dedicated non-overlapping bridge subnet missing'
+if grep -Eq '(^|[^0-9])(506[0-4]|49300|16484|16581|20000|22000)([^0-9]|$).*:' deploy/docker/docker-compose.yml; then
+  fail 'internal SIP/RTP/CLI port is published'
+fi
 
 if rg -n --glob '!test_build_contract.sh' 'docker-compose\.uhd4|Dockerfile\.uhd4|gsmsystem-uhd4:test' \
   Makefile .github/workflows/ci.yml deploy/docker scripts >/dev/null; then

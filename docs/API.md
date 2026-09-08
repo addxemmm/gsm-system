@@ -29,9 +29,10 @@ use `HTTP*100+1` (for example `42201`). Error details use
 `data.errors`，无结构化详情时可省略 `data`。
 
 JSON bodies must contain exactly one object. Unknown fields, `null`, arrays, and
-trailing JSON are rejected. Cell start permits 1 MiB; every other JSON mutation
-permits 64 KiB. JSON 请求体必须且只能是一个对象；拒绝未知字段、`null`、数组与尾随 JSON；
-小区启动上限 1 MiB，其余写接口上限 64 KiB。
+trailing JSON are rejected. Cell start permits 1 MiB, preset create/update
+permits 16 KiB, and every other JSON mutation permits 64 KiB. JSON 请求体必须且只能
+是一个对象；拒绝未知字段、`null`、数组与尾随 JSON；小区启动上限 1 MiB，
+预设创建/更新上限 16 KiB，其余写接口上限 64 KiB。
 
 List endpoints (`/connections`, `/subscribers`, `/sms`, `/calls`, and
 `/calls/history`) accept `limit` (default `100`, range `1..500`) and `offset`
@@ -58,7 +59,8 @@ Common errors / 通用错误：
 
 Retired root routes (`/start`, `/stop`, `/ueinfo`, `/smsinfo`, `/sendsms`,
 `/setphonenumber`, `/config`, `/getconfig`, `/allconfig`, `/iptables`,
-`/healthz`, `/status`, `/profile`) are not registered and return `404` envelopes.
+`/healthz`, `/status`, `/profile`, `/preset`, `/presets`) are not registered and
+return `404` envelopes.
 旧根路径全部移除并返回标准 `404` 包络。
 
 ## 2. Cell / 小区
@@ -105,12 +107,22 @@ managed processes are alive, not RF/handset acceptance. `started_at` is optional
   "lac": "LAC",
   "ci": "CI",
   "short_name": "LAB",
-  "network": "IFACE"
+  "network": "eth0"
 }
 ```
 
-An empty `{}` reuses an existing valid profile. It does not select a hidden
-preset. `{}` 仅复用已有有效存档。
+Exactly one of the following forms is accepted / 仅接受以下三种形式之一：
+
+1. the complete explicit object above / 上述完整显式参数；
+2. `{"preset_id":"lab-900"}` to resolve a stored preset / 按 ID 使用存储预设；
+3. `{}` to reuse the existing valid last profile / 复用已有有效的上次存档。
+
+`preset_id` is mutually exclusive with every explicit cell field. A missing
+preset returns `404`; mixed or invalid input returns `422`. Starting from a
+preset copies its `params` into the normal start path and last-profile storage.
+It does not modify the preset. `preset_id` 与所有显式小区字段互斥；预设不存在
+返回 `404`，混合或无效输入返回 `422`。通过预设启动只解析其 `params`，
+不改写预设。
 
 Validation / 校验：
 
@@ -119,12 +131,15 @@ Validation / 校验：
 - band `"1800"`: `c0=512..885`;
 - `mcc`: exactly 3 digits; `mnc`: 2 or 3 digits;
 - `lac=1..65279`; `ci=0..65535`;
-- `network` is a safe Linux interface name; existence is not a schema-level check.
+- `network` is required and names an interface **inside the container**, not a
+  host NIC. The default Compose bridge interface is `eth0`; existence is not a
+  schema-level check. `network` 必填，它指定容器内网卡（默认 `eth0`），
+  而非宿主机网卡。
 
 Success: HTTP `200`, message `cell started`,
 `data:{"band":"...","mcc":"...","mnc":"...","short_name":"..."}`.
 Important failures: `409` running/transitioning, `422` invalid profile,
-`503` SDR unavailable, `500` process startup failure.
+`404` missing preset, `503` SDR unavailable, `500` process startup failure.
 
 ### `DELETE /cell`
 
@@ -132,7 +147,111 @@ Idempotent / 幂等：HTTP `200`,
 `data:{"stopped":true}` when a running stack was stopped, or `false` when it was
 already stopped. TERM precedes KILL to allow CDR flush. 若已停止仍返回成功。
 
-## 3. Configuration and profile / 配置与存档
+## 3. Presets / 预设
+
+Presets are operator-created, non-secret named cell profiles. The collection is
+empty on a new data volume: there are no built-in, legacy, carrier, or operator
+seeds. They persist at `/data/presets.json` using the same private, atomic-file
+discipline as the last profile. 预设由操作员显式创建；新数据卷初始为空，
+不包含内置、历史、运营商或操作员种子。数据持久化于 `/data/presets.json`。
+
+Preset IDs are stable slugs matching `^[a-z0-9][a-z0-9_-]{0,63}$`.
+预设 ID 是稳定 slug，仅允许小写字母、数字、下划线和连字符，最长 64 字符。
+
+### `GET /presets`
+
+HTTP `200`; no pagination or query parameters / 不分页，不接受查询参数：
+
+```json
+{"items":[]}
+```
+
+Each item is a full preset object. A fresh installation returns an empty array.
+每项都是完整预设对象；新安装返回空数组。
+
+### `POST /presets`
+
+```json
+{
+  "id": "lab-900",
+  "name": "Lab 900",
+  "description": "Indoor fixture",
+  "params": {
+    "arfcns": "1", "c0": "55", "band": "900",
+    "mcc": "001", "mnc": "01", "lac": "1", "ci": "1",
+    "short_name": "LAB", "network": "eth0"
+  }
+}
+```
+
+`id`, `name`, and `params` are required; omitted `description` is stored as an
+empty string. `name` is 1..128 UTF-8 bytes, `description` is at most 2048 UTF-8
+bytes, and `params` must contain every valid explicit `CellStart` field.
+Success is HTTP `201`, returns the created preset object in
+`data`, and sets `Location: /api/v1/presets/lab-900`. Duplicate ID: `409`;
+invalid ID, metadata, or params: `422`. `id`、`name` 和完整 `params` 必填；创建成功返回
+`201` 及 `Location`；`description` 可省略并存为空字符串；名称最长 128 UTF-8
+字节、说明最长 2048 UTF-8 字节；ID 重复返回 `409`，校验失败返回 `422`。
+
+### `GET /presets/{id}`
+
+HTTP `200` returns `data` as the preset object itself (not a nested `preset`
+property). Missing ID: `404`; invalid slug: `422`. HTTP `200` 的 `data` 直接是
+预设对象；不存在返回 `404`，ID 格式错误返回 `422`。
+
+### `PUT /presets/{id}`
+
+```json
+{
+  "name": "Lab 900 updated",
+  "description": "Updated fixture",
+  "params": {
+    "arfcns": "1", "c0": "60", "band": "900",
+    "mcc": "001", "mnc": "01", "lac": "1", "ci": "1",
+    "short_name": "LAB", "network": "eth0"
+  }
+}
+```
+
+The path ID is immutable: the body accepts only `name`, optional `description`,
+and a complete `params` object; a body `id` is rejected. Omitted `description`
+becomes empty because PUT replaces the resource. HTTP `200` returns the
+updated preset object. Missing ID: `404`; invalid input: `422`. 路径 ID 不可变，
+请求体不接受 `id`；更新成功返回完整预设。
+
+### `DELETE /presets/{id}`
+
+HTTP `200`, `data:{"deleted":true}`. A missing preset returns `404`.
+删除成功返回 `{"deleted":true}`；不存在返回 `404`。
+
+Creating, editing, or deleting a preset never starts, stops, or reconfigures a
+running cell. Deleting the preset used for a previous start does not change the
+running cell or `/data/last_start.json`. There is no autostart. 预设 CRUD 不会
+启动、停止或重配当前小区；删除曾用预设也不影响正在运行的小区或
+上次启动存档，且不存在自动启动。
+
+The store accepts at most 256 presets. Its versioned on-disk document is capped
+at 1 MiB and kept sorted; corruption or I/O failure returns `50001` rather than
+silently resetting data. 预设最多 256 条，版本化磁盘文件上限 1 MiB 并按 ID 排序；
+文件损坏或 I/O 错误返回 `50001`，不会静默重置。
+
+Management-plane smoke test (CRUD plus duplicate/missing/invalid cases, no
+valid cell start and no RF) / 管理面预设冒烟测试（不启动 RF）：
+
+```powershell
+$env:GSM_API_TOKEN = "TOKEN" # omit when authentication is disabled / 未开鉴权时省略
+.\scripts\tests\presets_smoke.ps1 -BaseUrl http://HOST:8082/api/v1
+```
+
+The script always removes its unique fixture in `finally`. 脚本会在 `finally` 中清理唯一测试预设。
+
+An isolated image-level persistence/start-routing check is available on the
+Ubuntu SDR server only: `./scripts/tests/test_presets_image.sh IMAGE`. It uses a
+temporary volume, no published port/USB/privilege, and a failing mock UHD probe,
+so both start modes stop at `503` before RF. / 镜像级测试仅在 Ubuntu SDR
+服务器执行，不发射。
+
+## 4. Configuration and profile / 配置与存档
 
 ### `GET /config`
 
@@ -157,7 +276,7 @@ HTTP `200`: `data:{"has_profile":false}` or
 `data:{"has_profile":true,"profile":{...CellStart fields...}}`. Subscriber and
 connection data are not embedded. 不内嵌连接或签约列表。
 
-## 4. Connections and subscribers / 连接与签约
+## 5. Connections and subscribers / 连接与签约
 
 ### `GET /connections`
 
@@ -242,7 +361,7 @@ Invalid IMSI `422`; missing subscriber `404`; native transaction failure `500`.
 
 `POST /subscribers` is removed and returns `405` with `Allow: GET`.
 
-## 5. SMS / 短信
+## 6. SMS / 短信
 
 ### `GET /sms`
 
@@ -294,7 +413,7 @@ Cell/SMS service not ready: `412`; upstream rejection/CLI failure: `500`.
 `202` 仅表示上游接受提交，不代表送达。仅安全 ASCII/GSM 默认基本表交集，最长 159
 字节；拒绝中文/UCS-2、扩展表、单双引号与反引号。
 
-## 6. Calls / 通话
+## 7. Calls / 通话
 
 ### `GET /calls`
 
@@ -369,15 +488,15 @@ nullable. Missing CDR: `404`; non-18-column/malformed/time/read failure: `500`.
 No records are synthesized. 每项映射真实 CDR 的 18 列，时间统一为 RFC3339 UTC；
 不生成虚假记录。
 
-## 7. Network / 网络
+## 8. Network / 网络
 
-### `GET /network[?iface=IFACE]`
+### `GET /network[?iface=eth0]`
 
 With no query, uses the saved profile interface; without either, returns a
 precondition/validation error. HTTP `200`:
 
 ```json
-{"iface":"IFACE","rule_present":true,"ipv4_forwarding":true,"persisted":false}
+{"iface":"eth0","rule_present":true,"ipv4_forwarding":true,"persisted":false}
 ```
 
 Invalid interface: `422`; iptables inspection unavailable: `503`.
@@ -389,7 +508,7 @@ itself prove forwarding works. 接口只读转发开关，不修改 sysctl；规
 ### `PUT /network`
 
 ```json
-{"iface":"IFACE"}
+{"iface":"eth0"}
 ```
 
 `iface` is required on `PUT`; only `GET` may fall back to the saved profile.
@@ -398,7 +517,7 @@ Checks before adding the managed `192.168.99.0/24` MASQUERADE rule, so repeated
 requests do not append duplicates. The cell must be stopped. HTTP `200`:
 
 ```json
-{"iface":"IFACE","rule_present":true,"changed":false,"ipv4_forwarding":true,"persisted":false}
+{"iface":"eth0","rule_present":true,"changed":false,"ipv4_forwarding":true,"persisted":false}
 ```
 
 `persisted:false` means host firewall resets/reboots may require reapplication.
@@ -406,7 +525,7 @@ Running/transitioning cell: `409`; invalid interface: `422`; iptables unavailabl
 or command failure: `503`. `POST /network` is removed and returns `405` with
 `Allow: GET, PUT`.
 
-## 8. Health / 健康
+## 9. Health / 健康
 
 ### `GET /health`
 

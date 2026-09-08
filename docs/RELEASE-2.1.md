@@ -125,3 +125,20 @@ were removed, and the live container was unchanged.
 随后以无射频、无 USB、非特权的独立 Compose 样本验证可选令牌：宿主 shell 未导出令牌；
 `.env` 非空时无令牌/错误令牌返回 401、正确令牌返回 200；留空或缺少 `.env` 时鉴权关闭并
 返回 200。三种模式的部署健康检查均通过，采集日志未出现令牌，样本资源已清理，线上容器未变。
+
+## Named presets and bridge networking / 命名预设与桥接网络
+
+- Add user-owned `/api/v1/presets` CRUD and `POST /api/v1/cell` with
+  `preset_id`; retain explicit starts and `{}` last-profile reuse. There are no
+  built-in carrier presets and no restored legacy root routes.
+  新增用户预设增删改查及按 ID 启动，保留显式启动与上次存档复用；不恢复旧运营商预设和旧接口。
+- Persist complete presets atomically in `/data/presets.json`, mode `0600`,
+  with bounded input/storage and fail-closed corruption handling. Preset edits
+  never implicitly change or start a cell. 预设限量、原子持久化；损坏时拒绝覆盖，编辑不触发小区变更。
+- Use one Docker bridge and the stable container uplink `eth0`, publish only
+  TCP 8082, and keep the native SIP/RTP/CLI/TRX traffic inside the container.
+  改为单 bridge、固定容器出口 `eth0`，仅映射管理面端口；原生协议端口不对外发布。
+- Update bilingual API/operational documentation, OpenAPI and guarded Postman
+  requests together. Add management-only PowerShell smoke tests and an isolated
+  image test with a disabled hardware detector. 同步中英双语文档、接口契约和测试文件；
+  测试区分真实管理 API 验收与尚未执行的手机/射频全链路验收。

@@ -15,10 +15,10 @@ The pre-2.1 API used action-style root routes, HTTP-200-only signaling, and a
 |---|---|
 | `POST /start` | `POST /api/v1/cell` |
 | `POST /stop` | `DELETE /api/v1/cell` |
-| `POST /config` preset action | no replacement; send explicit cell parameters / 无预设替代，显式提交小区参数 |
+| `POST /config` preset action | create via `POST /api/v1/presets`, then `POST /api/v1/cell {"preset_id":"ID"}` / 先创建用户预设，再按 ID 启动 |
 | `POST /getconfig` | `GET /api/v1/config` |
 | `POST /allconfig` | `PATCH /api/v1/config` with `{"values":{"KEY":"VALUE"}}` |
-| `POST /iptables` | `GET /api/v1/network?iface=IFACE`, `PUT /api/v1/network` |
+| `POST /iptables` | `GET /api/v1/network?iface=eth0`, `PUT /api/v1/network {"iface":"eth0"}` |
 | `POST /smsinfo` | `GET /api/v1/sms` |
 | `POST /ueinfo` | `GET /api/v1/connections` |
 | `POST /setphonenumber` | `PUT` or `DELETE /api/v1/subscribers/{imsi}/number` |
@@ -46,6 +46,10 @@ supported methods. Do not retry them against the old root routes. 过渡期 v1 P
   `persisted:false`.
 - Root-path response wording and legacy numeric `message_id` values are not
   preserved.
+- Legacy numeric/operator preset IDs are not restored or seeded. A fresh store
+  is empty; clients explicitly create slug IDs matching
+  `^[a-z0-9][a-z0-9_-]{0,63}$` under `/api/v1/presets`. 旧数字/运营商预设 ID
+  不恢复也不预置，客户端需显式创建新 slug ID。
 
 完整 2.1 契约见 [`API.md`](API.md)、[`api/openapi.yaml`](api/openapi.yaml) 与
 [`MIGRATION.md`](MIGRATION.md)。A snapshot of older prose remains under

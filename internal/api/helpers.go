@@ -171,8 +171,9 @@ func validateIface(iface string) error {
 	return nil
 }
 
-// ipv4Forwarding reports host state without changing the shared sysctl. nil
-// means the platform does not expose the Linux procfs value or it was unreadable.
+// ipv4Forwarding reports this process's network-namespace state without
+// changing it. Under the production Docker bridge, Compose enables this
+// namespaced sysctl; nil means procfs is absent or unreadable.
 func ipv4Forwarding() *bool {
 	b, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward")
 	if err != nil {

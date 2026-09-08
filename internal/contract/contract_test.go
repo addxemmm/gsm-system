@@ -22,6 +22,8 @@ import (
 
 var routes = map[string][]string{
 	"/api/v1/cell":                      {http.MethodDelete, http.MethodGet, http.MethodPost},
+	"/api/v1/presets":                   {http.MethodGet, http.MethodPost},
+	"/api/v1/presets/{id}":              {http.MethodDelete, http.MethodGet, http.MethodPut},
 	"/api/v1/config":                    {http.MethodGet, http.MethodPatch},
 	"/api/v1/profile":                   {http.MethodGet},
 	"/api/v1/health":                    {http.MethodGet},
@@ -40,6 +42,7 @@ func TestRouterExposesOnlyRelease21Routes(t *testing.T) {
 	h := api.New(config.Default(), gsm.New(config.Default())).Handler()
 	for path, methods := range routes {
 		probe := strings.ReplaceAll(path, "{imsi}", "001010000000000")
+		probe = strings.ReplaceAll(probe, "{id}", "lab-900")
 		req := httptest.NewRequest(http.MethodOptions, probe, nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -56,7 +59,7 @@ func TestRouterExposesOnlyRelease21Routes(t *testing.T) {
 	retired := []string{
 		"/start", "/stop", "/ueinfo", "/smsinfo", "/sendsms",
 		"/setphonenumber", "/config", "/getconfig", "/allconfig",
-		"/iptables", "/healthz", "/status", "/profile", "/api/v1/ue",
+		"/iptables", "/healthz", "/status", "/profile", "/presets", "/preset", "/api/v1/ue",
 	}
 	for _, path := range retired {
 		req := httptest.NewRequest(http.MethodOptions, path, nil)
@@ -78,6 +81,7 @@ func TestOpenAPIAndPostmanMatchRouter(t *testing.T) {
 		t.Fatalf("Postman route drift\n got: %#v\nwant: %#v", got, want)
 	}
 	assertMutationGuards(t, collection.Item)
+	assertCellStartsRequireExplicitRFAck(t, collection.Item)
 }
 
 func TestPostmanExampleIsReadOnlyAndPlaceholderOnly(t *testing.T) {
@@ -99,11 +103,46 @@ func TestPostmanExampleIsReadOnlyAndPlaceholderOnly(t *testing.T) {
 		t.Fatalf("example environment must default to read-only, got %q", values["enable_mutations"])
 	}
 	for key, want := range map[string]string{
-		"imsi": "001010000000000", "number": "10000", "iface": "IFACE", "token": "",
+		"imsi": "001010000000000", "number": "10000", "iface": "eth0", "preset_id": "lab-900", "token": "",
 	} {
 		if values[key] != want {
 			t.Errorf("example %s=%q, want placeholder %q", key, values[key], want)
 		}
+	}
+}
+
+func TestPresetContractArtifacts(t *testing.T) {
+	openapi := string(mustRead(t, filepath.Join(root(t), "docs", "api", "openapi.yaml")))
+	for _, marker := range []string{
+		"pattern: '^[a-z0-9][a-z0-9_-]{0,63}$'",
+		"required: [arfcns, c0, band, mcc, mnc, lac, ci, short_name, network]",
+		"required: [id, name, params]",
+		"required: [name, params]",
+		"preset_id:",
+		"Location:",
+		"items:",
+		"deleted:",
+	} {
+		if !strings.Contains(openapi, marker) {
+			t.Errorf("OpenAPI preset contract is missing %q", marker)
+		}
+	}
+
+	collection := string(mustRead(t, filepath.Join(root(t), "postman", "gsm-system.postman_collection.json")))
+	for _, marker := range []string{
+		`"preset_id"`,
+		`"method": "POST"`,
+		`{{baseUrl}}/api/v1/presets`,
+		`{{baseUrl}}/api/v1/presets/{{preset_id}}`,
+		`\"preset_id\": \"{{preset_id}}\"`,
+		`enable_rf_start`,
+	} {
+		if !strings.Contains(collection, marker) {
+			t.Errorf("Postman preset fixture is missing %q", marker)
+		}
+	}
+	if strings.Contains(collection, `\"network\": \"IFACE\"`) {
+		t.Error("Postman cell examples must use the container interface variable, not a host-interface placeholder")
 	}
 }
 
@@ -171,6 +210,7 @@ func readPostman(t *testing.T) (postmanCollection, map[string][]string) {
 			}
 			path := strings.TrimPrefix(strings.SplitN(raw, "?", 2)[0], "{{baseUrl}}")
 			path = strings.ReplaceAll(path, "{{imsi}}", "{imsi}")
+			path = strings.ReplaceAll(path, "{{preset_id}}", "{id}")
 			out[path] = append(out[path], strings.ToUpper(item.Request.Method))
 		}
 	}
@@ -194,6 +234,32 @@ func assertMutationGuards(t *testing.T, items []postmanItem) {
 		joined := strings.Join(scripts, "\n")
 		if !strings.Contains(joined, "enable_mutations") || !strings.Contains(joined, "pm.execution.skipRequest") {
 			t.Errorf("Postman mutation %q has no independent enable_mutations skip guard", item.Name)
+		}
+	}
+}
+
+func assertCellStartsRequireExplicitRFAck(t *testing.T, items []postmanItem) {
+	t.Helper()
+	for _, item := range items {
+		assertCellStartsRequireExplicitRFAck(t, item.Item)
+		if item.Request == nil || !strings.EqualFold(item.Request.Method, http.MethodPost) {
+			continue
+		}
+		var rawURL string
+		if err := json.Unmarshal(item.Request.URL, &rawURL); err != nil || rawURL != "{{baseUrl}}/api/v1/cell" {
+			continue
+		}
+		var pre []string
+		for _, event := range item.Event {
+			if event.Listen == "test" {
+				t.Errorf("Postman cell start %q must not contain automatic RF tests", item.Name)
+			}
+			if event.Listen == "prerequest" {
+				pre = append(pre, event.Script.Exec...)
+			}
+		}
+		if !strings.Contains(strings.Join(pre, "\n"), "enable_rf_start") {
+			t.Errorf("Postman cell start %q requires an explicit enable_rf_start guard", item.Name)
 		}
 	}
 }
