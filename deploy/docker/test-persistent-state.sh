@@ -110,6 +110,12 @@ for invalid in 127.0.0.11 0.0.0.0 224.0.0.1 256.1.1.1 1.2.3 1.2.3.04 '1.1.1.1;DR
     echo 'invalid fresh GPRS DNS was accepted' >&2; exit 1
   fi
   test ! -e "$workspace/rejected.db"
-  rm -f "$workspace/rejected.db.init-$$"
+  test ! -e "$workspace/rejected.db.init-$$"
 done
+GSM_GPRS_DNS=1.1.1.1 initialize_sqlite "$workspace/rejected.db" "$gprs_seed" openbts
+test "$(sqlite3 "$workspace/rejected.db" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='GGSN.DNS';")" = 1.1.1.1
+# Simulate interruption before the old seed was published, with PID reuse.
+sqlite3 "$workspace/interrupted.db.init-$$" < "$gprs_seed"
+GSM_GPRS_DNS=1.1.1.1 initialize_sqlite "$workspace/interrupted.db" "$gprs_seed" openbts
+test "$(sqlite3 "$workspace/interrupted.db" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='GPRS.Enable';")" = 1
 echo 'PASS fresh GPRS defaults and existing-state preservation / 新卷GPRS默认开启且旧配置保留'

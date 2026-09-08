@@ -72,21 +72,30 @@ initialize_sqlite() {
       return 1
     fi
     temporary="$database.init-$$"
+    # A restarted container reuses PID 1. Discard only this unpublished seed
+    # bundle so correcting an invalid setting can recover without manual cleanup.
+    # 容器重启可能复用 PID；仅清理该未发布种子及旁文件，修正配置即可重试。
+    clear_sqlite_seed "$temporary" || return 1
     if [ "$seed_type" = sql ] || [ "$seed_type" = openbts ]; then
-      sqlite3 -bail "$temporary" < "$seed" || return 1
+      sqlite3 -bail "$temporary" < "$seed" || { clear_sqlite_seed "$temporary"; return 1; }
       if [ "$seed_type" = openbts ]; then
-        seed_gprs_defaults "$temporary" || return 1
+        seed_gprs_defaults "$temporary" || { clear_sqlite_seed "$temporary"; return 1; }
       fi
     else
-      cp "$seed" "$temporary" || return 1
+      cp "$seed" "$temporary" || { clear_sqlite_seed "$temporary"; return 1; }
     fi
     if [ "$(sqlite3 -bail "$temporary" 'PRAGMA quick_check;')" != ok ]; then
       echo "Database seed integrity check failed: $seed" >&2
+      clear_sqlite_seed "$temporary"
       return 1
     fi
     mv "$temporary" "$database" || return 1
   fi
   check_sqlite "$database"
+}
+
+clear_sqlite_seed() {
+  rm -f -- "$1" "$1-journal" "$1-wal" "$1-shm"
 }
 
 # Called only on the unpublished fresh OpenBTS database. Existing operator
