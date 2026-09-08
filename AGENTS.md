@@ -36,7 +36,8 @@
 
 - Message 信息：`<scope>: <what> / <中文说明>` (e.g. `api: retire root routes / 移除根路径旧接口`), one thing per commit.
 - Before push 推前必跑：`go test ./...` green 全绿 + `go vet ./...` + `git status` clean.
-- Release via `scripts/deploy_from_windows.ps1` (sync) then server `docker compose up -d --build`;
-  rollback = previous image tag + kept old container
-  `gsmsystem-rollback-pre21-20260908` (do not assume a generic `gsmsystem` name).
+- Release via `scripts/deploy_from_windows.ps1` (sync) then server `docker compose up -d --build`.
+  Current server policy keeps only the active GSM image ID and its validated
+  aliases; no old image or stopped rollback container is retained.
+  当前服务器仅保留在用 GSM 镜像 ID 及其已验证别名，不保留旧镜像或停止的回滚容器。
 - Docs and commits are bilingual 文档与提交均为中英双语. GitHub repo is private 仓库私有。

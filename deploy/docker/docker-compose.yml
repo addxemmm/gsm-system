@@ -31,8 +31,8 @@ services:
       GSM_CONFIG: /app/configs/app.yaml
       # Canonical GSM API port (v2 retired, :8082 is free).
       GSM_LISTEN: "${GSM_LISTEN:-:8082}"
-      # Optional bearer authentication; set via a host-only --env-file.
-      # 可选 Bearer 鉴权：通过服务器专用 --env-file 注入，不提交密钥。
+      # Optional Bearer auth from repository-root .env: blank disables it.
+      # 可选 Bearer 鉴权来自项目根 .env：留空关闭，非空启用；不要提交密钥。
       GSM_API_TOKEN: "${GSM_API_TOKEN:-}"
       UHD_IMAGES_DIR: /usr/share/uhd/images
     logging:

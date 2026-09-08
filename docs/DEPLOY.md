@@ -9,8 +9,7 @@ Release 2.1 uses exactly:
 - `deploy/docker/Dockerfile`;
 - `deploy/docker/docker-compose.yml`;
 - Compose project `gsm-system-live`;
-- Compose service `gsm-system`, container `gsmsystem-uhd4`; retained pre-2.1
-  rollback container `gsmsystem-rollback-pre21-20260908`;
+- Compose service `gsm-system`, container `gsmsystem-uhd4`;
 - external volume `docker_gsm-data`;
 - immutable image `gsm-system:2.1.0-<12sha>` and validated release alias
   `gsm-system:2.1.0`.
@@ -30,10 +29,11 @@ ss -tlnp | grep 8082 || echo '8082 is free'
 docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_gsm-data
 ```
 
-The operator must have Docker access without interactive sudo. Keep a verified
-old immutable image, a stopped rollback container, and state backups until full
-RF acceptance. Docker Hub/network failures may be retried after connectivity is
-restored; cached native build layers should be retained.
+The operator must have Docker access without interactive sudo. The current
+operator policy retains only the active GSM image ID and its two tags, not an
+old image or stopped rollback container. The external business-data volume is
+still retained. 当前策略只保留在用 GSM 镜像 ID 及两个标签，不保留旧镜像或停止的
+回滚容器；外部业务数据卷继续保留。
 
 ## 2. Vendor inputs / 上游源码缓存
 
@@ -143,8 +143,27 @@ non-RF `/api/v1/cell` endpoint. Only after build + container + HTTP validation
 does it tag the same image ID as `gsm-system:2.1.0`.
 
 脚本先验证不可变镜像、容器与 HTTP，再更新版本别名；失败不会把候选镜像标成已验证版本。
-When `GSM_API_TOKEN` is configured, export it on the host so the health probe can
-send the Bearer token. Do not commit it.
+
+### API authentication / API 鉴权
+
+Copy `.env.example` to the repository-root `.env`. `GSM_API_TOKEN=` disables
+Bearer authentication; a non-empty value enables it. The deploy script passes
+the file to Compose without `source`/`eval`, and runs its HTTP probe inside the
+new container so a token configured only in `.env` works without a shell export.
+Never commit `.env` or print its value.
+
+将 `.env.example` 复制为项目根 `.env`。`GSM_API_TOKEN=` 留空关闭 Bearer 鉴权，
+填写非空值则启用。部署脚本不 `source`/`eval` 该文件，而在新容器内执行 HTTP
+探针，因此只配置 `.env` 也能正确验收；不要提交 `.env` 或打印令牌值。
+
+After changing only the token, recreate the service container without rebuilding
+the image / 仅修改令牌后重建服务容器即可，无需重构镜像：
+
+```bash
+docker compose --env-file .env -p gsm-system-live \
+  -f deploy/docker/docker-compose.yml \
+  up -d --no-build --force-recreate gsm-system
+```
 
 `--skip-build` selects an already-built explicitly supplied `GSM_IMAGE`;
 `--skip-health` deliberately omits HTTP validation and therefore does not
@@ -199,17 +218,14 @@ pwsh -NoProfile -File scripts/tests/deploy_from_windows.Tests.ps1
 The collector owns `/dev/log` only when safe; it never overwrites an active
 socket or regular file. 日志接收器仅在安全时创建 `/dev/log`，不会覆盖现有端点。
 
-## 8. Rollback / 回滚
+## 8. Current-version recovery / 当前版本恢复
 
-Choose a retained immutable tag and deploy without rebuilding:
+No previous GSM image or stopped rollback container is retained on the server.
+Recover by synchronizing the intended current source revision and redeploying
+the current version; do not select an `OLD12SHA` tag. Restore business data only
+from an explicitly selected compatible backup, without deleting the external
+`docker_gsm-data` volume.
 
-```bash
-export GSM_IMAGE=gsm-system:2.1.0-OLD12SHA
-export GSM_REVISION=OLD12SHA
-./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
-```
-
-If native data changed after cutover, stop writes and restore the matching
-timestamped database/CDR set before RF restart. Revalidate image ID, HTTP,
-database quick checks, persistence, and then the RF chain. Restoring an image
-without its compatible data set is not a complete rollback. 回滚必须同时考虑镜像与数据集。
+服务器不再保留旧 GSM 镜像或停止的回滚容器。恢复时同步指定的当前源码版本并重新部署，
+不要选择 `OLD12SHA`；仅在明确选定兼容备份后恢复业务数据，且不得删除外部
+`docker_gsm-data` 卷。

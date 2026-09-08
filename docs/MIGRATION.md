@@ -78,8 +78,12 @@ docker volume inspect docker_gsm-data >/dev/null
 ```
 
 The script builds `gsm-system:2.1.0-<12sha>`. Only after container/HTTP
-validation does it tag the same image as `gsm-system:2.1.0`. Keep the previous
-SHA tag for rollback. 脚本先构建 SHA 标签，验证通过后再更新发布标签；旧 SHA 必须保留。
+validation does it tag the same image as `gsm-system:2.1.0`. After acceptance,
+the operator chose to retain only the active image ID and its two tags; old
+images, the stopped rollback container, and old host backup directories were
+removed while the external business-data volume was kept. 验收后按当前策略只保留
+在用镜像 ID 及两个标签；旧镜像、停止的回滚容器及主机旧备份目录已删除，外部业务
+数据卷仍保留。
 
 ## 6. Validate in order / 按顺序验收
 
@@ -100,18 +104,13 @@ Asterisk bridge fixture also verified the calls API and a real 18-column
 of step 8 remain pending. 2026-09-08 已完成构建、隔离镜像、管理面及非射频持久化验收；
 本地 Asterisk 桥接验证不等于真机/SIP/RF 验收，步骤 4–7 仍待执行。
 
-## 7. Rollback / 回滚
+## 7. Current retention policy / 当前保留策略
 
-Select the retained immutable tag and skip build:
-
-```bash
-GSM_IMAGE=gsm-system:2.1.0-OLD12SHA \
-  ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
-```
-
-If a data schema/native configuration change was made after upgrade, stop writes
-and restore the matching verified database snapshots as one rollback set.
-回滚镜像时如数据已变化，应暂停写入并将同批验证快照整体恢复，不能混用不同时间的数据库。
+There is no retained previous image or stopped rollback container. Future
+recovery uses a deliberately selected source revision and a fresh deployment of
+the current version. The external `docker_gsm-data` volume remains
+operator-owned and must not be deleted. 当前没有保留旧镜像或停止的回滚容器；后续恢复
+应明确选择源码版本并重新部署当前版本。外部 `docker_gsm-data` 卷仍由运维持有，不得删除。
 
 The former audit remains as historical context only: [`AUDIT-2026-09.md`](AUDIT-2026-09.md).
 旧审计仅作历史上下文，不是 2.1 当前契约。

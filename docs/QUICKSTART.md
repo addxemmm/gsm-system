@@ -12,6 +12,10 @@ or host addresses. 需准备 B210、Docker、外部数据卷与已在外部制�
 
 ## 1. Deploy without transmitting / 部署但不发射
 
+Set repository-root `.env` as described in [DEPLOY.md](DEPLOY.md): blank
+`GSM_API_TOKEN` disables authentication; a non-empty value enables it.
+按 DEPLOY.md 配置项目根 `.env`：`GSM_API_TOKEN` 留空关闭鉴权，非空启用。
+
 ```bash
 cd ~/gsm-system
 docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_gsm-data

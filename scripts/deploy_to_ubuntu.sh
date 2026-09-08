@@ -6,6 +6,7 @@ COMPOSE_FILE=${COMPOSE_FILE:-deploy/docker/docker-compose.yml}
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:-gsm-system-live}
 HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:8082/api/v1/cell}
 HEALTH_RETRIES=${HEALTH_RETRIES:-30}
+ENV_FILE=${GSM_ENV_FILE:-.env}
 BUILD=1
 VERIFY=1
 
@@ -62,6 +63,18 @@ esac
 cd "$(dirname "$0")/.."
 [ -f "$COMPOSE_FILE" ] || { echo "compose file not found: $COMPOSE_FILE" >&2; exit 2; }
 
+# Pass the repository-root environment file to Compose without sourcing it in
+# this shell. This keeps optional secrets out of process output and makes the
+# deployment independent of Compose's implicit .env lookup rules.
+# 将项目根环境文件直接交给 Compose，不在当前 shell 中 source/eval。
+compose() {
+  if [ -f "$ENV_FILE" ]; then
+    docker compose --env-file "$ENV_FILE" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+  else
+    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+  fi
+}
+
 VERSION=${GSM_VERSION:-$(sed -n '1p' VERSION | tr -d '[:space:]')}
 printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
   echo "VERSION must be semantic x.y.z: $VERSION" >&2
@@ -98,7 +111,7 @@ DATA_VOLUME=${GSM_DATA_VOLUME:-docker_gsm-data}
 docker volume inspect "$DATA_VOLUME" >/dev/null
 
 if [ "$BUILD" -eq 1 ]; then
-  docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" build
+  compose build
 fi
 
 verify_image_contract() {
@@ -117,9 +130,9 @@ verify_image_contract
 # Capture intended image IDs before starting; an unrelated API on the host port
 # must not turn an exited/wrong-image deployment into a false success.
 # 启动前锁定预期镜像 ID，避免宿主机上其它 API 的 200 响应掩盖失败部署。
-images=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --images)
+images=$(compose config --images)
 [ -n "$images" ] || { echo 'compose has no images to verify' >&2; exit 1; }
-services=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --services)
+services=$(compose config --services)
 [ -n "$services" ] || { echo 'compose has no services to verify' >&2; exit 1; }
 expected_ids=''
 for image in $images; do
@@ -127,14 +140,15 @@ for image in $images; do
   expected_ids="$expected_ids $image_id"
 done
 
-docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d
+compose up -d
 
+HEALTH_CONTAINER=''
 verify_containers() {
   # Query only services declared by the current Compose file. `ps` without a
   # service also returns retained same-project orphans used for rollback.
   # 仅检查当前配置声明的服务；同项目保留的回滚 orphan 不参与本次发布验收。
   for service in $services; do
-    ids=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" ps --all -q "$service") || return 1
+    ids=$(compose ps --all -q "$service") || return 1
     [ -n "$ids" ] || { echo "no deployment container found for service: $service" >&2; return 1; }
     for id in $ids; do
       running=$(docker inspect --format '{{.State.Running}}' "$id") || return 1
@@ -147,6 +161,9 @@ verify_containers() {
         *" $actual_image "*) ;;
         *) echo "unexpected deployment image: $service $id $actual_image" >&2; return 1 ;;
       esac
+      if [ -z "$HEALTH_CONTAINER" ] || [ "$service" = gsm-system ]; then
+        HEALTH_CONTAINER=$id
+      fi
     done
   done
 }
@@ -155,11 +172,20 @@ verify_containers
 if [ "$VERIFY" -eq 1 ]; then
   attempt=1
   health_check() {
-    if [ -n "${GSM_API_TOKEN:-}" ]; then
-      curl -fsS --max-time 30 -H "Authorization: Bearer $GSM_API_TOKEN" "$HEALTH_URL"
-    else
-      curl -fsS --max-time 30 "$HEALTH_URL"
-    fi
+    # Read the effective token only inside the newly started container. A token
+    # present solely in root .env therefore works without export/source/eval.
+    # Feed the header over stdin so the value is absent from both Docker CLI and
+    # container curl argv; neither the script nor curl prints the request header.
+    # 仅在新容器内读取实际令牌；经 stdin 传递请求头，不进入 Docker/curl argv 或日志。
+    docker exec "$HEALTH_CONTAINER" sh -c '
+      url=$1
+      if [ -n "${GSM_API_TOKEN:-}" ]; then
+        printf "Authorization: Bearer %s\n" "$GSM_API_TOKEN" |
+          curl -fsS --max-time 30 -H @- "$url"
+        exit $?
+      fi
+      exec curl -fsS --max-time 30 "$url"
+    ' sh "$HEALTH_URL"
   }
   while ! health_check; do
     if [ "$attempt" -ge "$HEALTH_RETRIES" ]; then

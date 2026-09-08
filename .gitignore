@@ -13,3 +13,6 @@ third_party/
 __pycache__/
 crash/
 *_run.conf
+
+# Legacy packaged runtime logs are not source / 旧打包运行日志不属于源码
+/gsmsystem/log/

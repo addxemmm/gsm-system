@@ -123,16 +123,30 @@ docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_
 curl -fsS http://127.0.0.1:8082/api/v1/health
 ```
 
+Copy [`.env.example`](.env.example) to the repository-root `.env`. Leave
+`GSM_API_TOKEN=` blank to disable Bearer authentication, or set a non-empty
+value to enable it; `.env` is ignored by Git. 修改令牌后只需重建容器，无需重构镜像：
+
+```bash
+docker compose --env-file .env -p gsm-system-live \
+  -f deploy/docker/docker-compose.yml \
+  up -d --no-build --force-recreate gsm-system
+```
+
+将 [`.env.example`](.env.example) 复制为项目根 `.env`：`GSM_API_TOKEN=`
+留空即关闭 Bearer 鉴权，填写非空值即启用；`.env` 已被 Git 忽略。
+
 The release script builds immutable `gsm-system:2.1.0-<12sha>`, validates the
 container and HTTP endpoint, then moves `gsm-system:2.1.0` to the same image ID.
 It never deletes the external `docker_gsm-data` volume. Read
 [`docs/DEPLOY.md`](docs/DEPLOY.md) before migrating or cleaning Docker objects.
 The Compose service is `gsm-system`; its container is `gsmsystem-uhd4`. The
-retained pre-2.1 rollback container is
-`gsmsystem-rollback-pre21-20260908`.
+server currently retains only the active GSM image ID and its two tags; old
+images and stopped rollback containers were removed after acceptance.
 
 发布脚本构建不可变 tag `gsm-system:2.1.0-<12sha>`，容器与 HTTP 验证通过后，
-再将 `gsm-system:2.1.0` 指向同一镜像 ID。脚本不删除外部数据卷。
+再将 `gsm-system:2.1.0` 指向同一镜像 ID。脚本不删除外部数据卷。服务器当前只保留
+在用 GSM 镜像 ID 及两个标签，不保留旧镜像或停止的回滚容器。
 
 ## Documentation / 文档
 

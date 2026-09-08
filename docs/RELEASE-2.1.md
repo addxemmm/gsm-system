@@ -101,3 +101,27 @@ ODBC, CDR, dialplan, or core modules failed. Asterisk 仍保留原生旧 `chan_s
 For upgrade and rollback procedure, see [`MIGRATION.md`](MIGRATION.md) and
 [`DEPLOY.md`](DEPLOY.md). Preserve the immutable image, named rollback container,
 database backup set, and evidence directory until handset/RF acceptance closes.
+
+## Post-acceptance operator update / 验收后运维更新
+
+On 2026-09-08 the operator adopted a current-version-only retention policy.
+The old GSM images, stopped rollback container, old release/audit packages, and
+old host backup directory were removed; the active GSM image ID with both tags,
+active container, and external business-data volume were retained. This latest
+operator decision supersedes the earlier retention recommendation above for the
+current host, without rewriting the historical acceptance record.
+
+2026-09-08 运维改为仅保留当前版本：旧 GSM 镜像、停止的回滚容器、旧发布/审计包及
+主机旧备份目录已删除；在用 GSM 镜像 ID 及两个标签、当前容器和外部业务数据卷均保留。
+此最新决定取代上文针对当前主机的旧保留建议，但不改写历史验收记录。
+
+An isolated, non-RF Compose fixture then verified all optional-token modes with
+no host token export: non-empty `.env` made unauthenticated/wrong-token requests
+return 401 and the matching token return 200; blank or missing `.env` left
+authentication disabled and returned 200. Deployment health passed in every
+mode, the token did not appear in captured deployment logs, fixture resources
+were removed, and the live container was unchanged.
+
+随后以无射频、无 USB、非特权的独立 Compose 样本验证可选令牌：宿主 shell 未导出令牌；
+`.env` 非空时无令牌/错误令牌返回 401、正确令牌返回 200；留空或缺少 `.env` 时鉴权关闭并
+返回 200。三种模式的部署健康检查均通过，采集日志未出现令牌，样本资源已清理，线上容器未变。
