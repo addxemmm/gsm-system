@@ -147,7 +147,44 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('HTTP 200 stopped health', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.ok).to.eql(true); pm.expect(d.version).to.eql('2.1.0'); pm.expect(d.cell.state).to.eql('stopped'); pm.expect(d.cell.ready).to.eql(false); });"
+                  "function assertContract(ok, message) { pm.expect(ok, message).to.eql(true); }",
+                  "function validateCell(d) {",
+                  "  const required=['state','ready','sms_ready','voice_ready','transitioning','running','openbts','transceiver','sipauthserve','smqueue','asterisk'];",
+                  "  const optional=['started_at','band','short_name'];",
+                  "  assertContract(d !== null && typeof d === 'object' && !Array.isArray(d), 'cell must be an object');",
+                  "  assertContract(required.every(k => Object.prototype.hasOwnProperty.call(d,k)), 'cell is missing a required field');",
+                  "  assertContract(Object.keys(d).every(k => required.includes(k) || optional.includes(k)), 'cell has an unknown field');",
+                  "  assertContract(['stopped','running','degraded','transitioning'].includes(d.state), 'unknown cell state');",
+                  "  const flags=['ready','sms_ready','voice_ready','transitioning','running','openbts','transceiver','sipauthserve','smqueue','asterisk'];",
+                  "  assertContract(flags.every(k => typeof d[k] === 'boolean'), 'cell flags must be booleans');",
+                  "  const running=d.openbts || d.transceiver;",
+                  "  const smsReady=d.openbts && d.transceiver && d.sipauthserve && d.smqueue;",
+                  "  const voiceReady=d.openbts && d.transceiver && d.sipauthserve && d.asterisk;",
+                  "  const ready=smsReady && voiceReady && !d.transitioning;",
+                  "  let state='degraded';",
+                  "  if (!running && !d.sipauthserve && !d.smqueue && !d.asterisk) state='stopped';",
+                  "  if (ready) state='running';",
+                  "  if (d.transitioning) state='transitioning';",
+                  "  assertContract(d.running===running && d.sms_ready===smsReady && d.voice_ready===voiceReady && d.ready===ready && d.state===state, 'cell classification fields are inconsistent');",
+                  "  const metadata=optional.filter(k => Object.prototype.hasOwnProperty.call(d,k));",
+                  "  assertContract(metadata.length===0 || metadata.length===3, 'start metadata must be absent or complete');",
+                  "  if (metadata.length) {",
+                  "    assertContract(d.running && !d.transitioning, 'start metadata requires an observed non-transitioning cell process');",
+                  "    assertContract(typeof d.started_at==='string' && /(Z|[+-][0-9]{2}:[0-9]{2})$/.test(d.started_at) && !Number.isNaN(Date.parse(d.started_at)), 'started_at must be RFC3339');",
+                  "    assertContract(typeof d.band==='string' && d.band.length>0 && typeof d.short_name==='string' && d.short_name.length>0, 'band and short_name must be non-empty strings');",
+                  "  }",
+                  "}",
+                  "pm.test('HTTP 200 control-plane health contract / 管理面健康契约', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const d=pm.response.json().data;",
+                  "  assertContract(d !== null && typeof d === 'object' && !Array.isArray(d), 'health data must be an object');",
+                  "  assertContract(d.ok===true, 'health ok must be true');",
+                  "  assertContract(typeof d.version==='string' && d.version.length>0, 'version must be a non-empty string');",
+                  "  assertContract(typeof d.revision==='string', 'revision must be a string');",
+                  "  assertContract(typeof d.time==='string' && /(Z|[+-][0-9]{2}:[0-9]{2})$/.test(d.time) && !Number.isNaN(Date.parse(d.time)), 'time must be RFC3339');",
+                  "  validateCell(d.cell);",
+                  "  if (d.cell.state==='degraded') console.warn('[GSM DEGRADED / 降级] Contract shape accepted; this is not healthy-cell or RF acceptance. / 响应格式通过不代表小区健康或射频验收通过。');",
+                  "});"
                 ]
               }
             }
@@ -165,7 +202,39 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('HTTP 200 stopped process snapshot', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.state).to.eql('stopped'); pm.expect(d.ready).to.eql(false); pm.expect(d.sms_ready).to.eql(false); pm.expect(d.voice_ready).to.eql(false); pm.expect(d.running).to.eql(false); });"
+                  "function assertContract(ok, message) { pm.expect(ok, message).to.eql(true); }",
+                  "function validateCell(d) {",
+                  "  const required=['state','ready','sms_ready','voice_ready','transitioning','running','openbts','transceiver','sipauthserve','smqueue','asterisk'];",
+                  "  const optional=['started_at','band','short_name'];",
+                  "  assertContract(d !== null && typeof d === 'object' && !Array.isArray(d), 'cell must be an object');",
+                  "  assertContract(required.every(k => Object.prototype.hasOwnProperty.call(d,k)), 'cell is missing a required field');",
+                  "  assertContract(Object.keys(d).every(k => required.includes(k) || optional.includes(k)), 'cell has an unknown field');",
+                  "  assertContract(['stopped','running','degraded','transitioning'].includes(d.state), 'unknown cell state');",
+                  "  const flags=['ready','sms_ready','voice_ready','transitioning','running','openbts','transceiver','sipauthserve','smqueue','asterisk'];",
+                  "  assertContract(flags.every(k => typeof d[k] === 'boolean'), 'cell flags must be booleans');",
+                  "  const running=d.openbts || d.transceiver;",
+                  "  const smsReady=d.openbts && d.transceiver && d.sipauthserve && d.smqueue;",
+                  "  const voiceReady=d.openbts && d.transceiver && d.sipauthserve && d.asterisk;",
+                  "  const ready=smsReady && voiceReady && !d.transitioning;",
+                  "  let state='degraded';",
+                  "  if (!running && !d.sipauthserve && !d.smqueue && !d.asterisk) state='stopped';",
+                  "  if (ready) state='running';",
+                  "  if (d.transitioning) state='transitioning';",
+                  "  assertContract(d.running===running && d.sms_ready===smsReady && d.voice_ready===voiceReady && d.ready===ready && d.state===state, 'cell classification fields are inconsistent');",
+                  "  const metadata=optional.filter(k => Object.prototype.hasOwnProperty.call(d,k));",
+                  "  assertContract(metadata.length===0 || metadata.length===3, 'start metadata must be absent or complete');",
+                  "  if (metadata.length) {",
+                  "    assertContract(d.running && !d.transitioning, 'start metadata requires an observed non-transitioning cell process');",
+                  "    assertContract(typeof d.started_at==='string' && /(Z|[+-][0-9]{2}:[0-9]{2})$/.test(d.started_at) && !Number.isNaN(Date.parse(d.started_at)), 'started_at must be RFC3339');",
+                  "    assertContract(typeof d.band==='string' && d.band.length>0 && typeof d.short_name==='string' && d.short_name.length>0, 'band and short_name must be non-empty strings');",
+                  "  }",
+                  "}",
+                  "pm.test('HTTP 200 cell process-state contract / 小区进程状态契约', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const d=pm.response.json().data;",
+                  "  validateCell(d);",
+                  "  if (d.state==='degraded') console.warn('[GSM DEGRADED / 降级] Contract shape accepted; this is not healthy-cell or RF acceptance. / 响应格式通过不代表小区健康或射频验收通过。');",
+                  "});"
                 ]
               }
             }
@@ -182,7 +251,24 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('HTTP 200 no saved profile', function () { pm.response.to.have.status(200); const d=pm.response.json().data; pm.expect(d.has_profile).to.eql(false); pm.expect(d).not.to.have.property('profile'); });"
+                  "function assertContract(ok, message) { pm.expect(ok, message).to.eql(true); }",
+                  "pm.test('HTTP 200 optional saved profile contract / 可选已保存配置契约', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const d=pm.response.json().data;",
+                  "  assertContract(d !== null && typeof d === 'object' && !Array.isArray(d), 'profile data must be an object');",
+                  "  assertContract(typeof d.has_profile==='boolean', 'has_profile must be a boolean');",
+                  "  if (!d.has_profile) {",
+                  "    assertContract(Object.keys(d).length===1 && !Object.prototype.hasOwnProperty.call(d,'profile'), 'profile must be absent when has_profile is false');",
+                  "    return;",
+                  "  }",
+                  "  assertContract(Object.keys(d).length===2 && Object.prototype.hasOwnProperty.call(d,'profile'), 'profile must be present when has_profile is true');",
+                  "  const p=d.profile;",
+                  "  const fields=['arfcns','c0','band','mcc','mnc','lac','ci','short_name','network'];",
+                  "  assertContract(p !== null && typeof p === 'object' && !Array.isArray(p), 'profile must be an object');",
+                  "  assertContract(Object.keys(p).length===fields.length && fields.every(k => Object.prototype.hasOwnProperty.call(p,k)), 'profile fields do not match StartParams');",
+                  "  assertContract(fields.every(k => typeof p[k]==='string'), 'profile fields must be strings');",
+                  "  assertContract(['band','mcc','mnc','network'].every(k => p[k].trim().length>0), 'persisted profile identity fields must be non-empty');",
+                  "});"
                 ]
               }
             }

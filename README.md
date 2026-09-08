@@ -105,11 +105,15 @@ Full contract / 完整契约：
 - `arfcns` is exactly `1` in 2.1 / 2.1 仅支持单载频。
 - GSM 900: `c0` is `0..124` or `975..1023`; DCS 1800: `512..885`.
 - `lac`: `1..65279` (software-compatible range); `ci`: `0..65535`.
-- SMS submission supports only the safe ASCII intersection of the GSM default
+- API SMS submission (`POST /sms`) supports only the safe ASCII intersection of the GSM default
   alphabet, up to 159 bytes. No UCS-2/Chinese, extension-table characters,
   quotes, or backticks. The API reports **submitted**, never delivered.
-  短信仅支持 GSM 默认基本表的安全 ASCII 交集，最多 159 字节；不支持
+  API 短信发送仅支持 GSM 默认基本表的安全 ASCII 交集，最多 159 字节；不支持
   UCS-2/中文、扩展表字符、引号或反引号。成功只表示已提交，不表示已送达。
+- SMS observations (`GET /sms`) separately support decoded BMP UCS-2 Chinese
+  from patched smqueue. They cover the current cell start, not all historical
+  logs or confirmed deliveries. 接收记录可包含中文；范围是本次小区启动，
+  不是完整历史或送达回执。详见 [短信解码](docs/SMS-UNICODE.md)。
 
 ## Repository / 仓库结构
 
@@ -145,7 +149,9 @@ cd ~/gsm-system
 docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_gsm-data
 ./scripts/prefetch_vendor.sh
 ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live
-curl -fsS http://127.0.0.1:8082/api/v1/health
+# Read-only state-aware probe; uses the container's optional Token internally.
+# 只读状态探针，内部遵循容器的可选令牌配置，不输出令牌。
+docker exec gsmsystem-uhd4 /usr/local/bin/gsm-system --healthcheck
 ```
 
 Copy [`.env.example`](.env.example) to the repository-root `.env`. Leave
@@ -153,9 +159,9 @@ Copy [`.env.example`](.env.example) to the repository-root `.env`. Leave
 value to enable it; `.env` is ignored by Git. 修改令牌后只需重建容器，无需重构镜像：
 
 ```bash
-docker compose --env-file .env -p gsm-system-live \
-  -f deploy/docker/docker-compose.yml \
-  up -d --no-build --force-recreate gsm-system
+# Stop the cell before changing .env; retain the deployed .release-revision.
+# 先停止小区再修改 .env，保留与镜像匹配的发布标记。
+./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
 ```
 
 将 [`.env.example`](.env.example) 复制为项目根 `.env`：`GSM_API_TOKEN=`
@@ -177,7 +183,9 @@ is recorded by its OCI revision label rather than a revision-suffixed tag.
 ## Documentation / 文档
 
 - [Quick start / 快速开始](docs/QUICKSTART.md)
-- [Deployment, cleanup, rollback / 部署、清理、回滚](docs/DEPLOY.md)
+- [Daily operations and troubleshooting / 日常操作与排障](docs/OPERATIONS.md)
+- [Postman setup and test interpretation / Postman 配置与测试结果解读](postman/README.md)
+- [Deployment, cleanup, current-version recovery / 部署、清理与当前版本恢复](docs/DEPLOY.md)
 - [Operating rules / 运行规则](docs/RULES.md)
 - [SIM and number binding / SIM 与号码绑定](docs/SIM.md)
 - [SDR notes / SDR 说明](docs/SDR.md)

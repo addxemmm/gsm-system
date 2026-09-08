@@ -18,6 +18,35 @@ for (const holder of [collection, ...walk(collection.item)]) {
     assert.doesNotThrow(() => new vm.Script(event.script.exec.join('\n')), `${holder.name || 'collection'} ${event.listen} script`);
   }
 }
+function responseItem(method, url) {
+  const matches = requests.filter(item => item.request.method === method && item.request.url === url);
+  assert.equal(matches.length, 1, `${method} ${url}`);
+  return matches[0];
+}
+function runResponseTests(item, body, status = 200) {
+  const logs = [];
+  const response = {
+    code: status,
+    json: () => body,
+    to: {have: {status: expected => assert.equal(status, expected)}},
+  };
+  const context = {
+    pm: {
+      response,
+      test(_name, callback) { callback(); },
+      expect(actual, message) {
+        return {to: {eql(expected) { assert.deepEqual(actual, expected, message); }}};
+      },
+    },
+    console: {warn: message => logs.push(String(message))},
+  };
+  const scripts = (item.event || []).filter(event => event.listen === 'test');
+  assert.ok(scripts.length > 0, `${item.name} has no exported test script`);
+  for (const event of scripts) {
+    vm.runInNewContext(event.script.exec.join('\n'), context, {timeout: 1000});
+  }
+  return logs.join('\n');
+}
 const starts = requests.filter(i => i.request.method === 'POST' && i.request.url === '{{baseUrl}}/api/v1/cell');
 assert.equal(starts.length, 2);
 const preset = starts.find(i => JSON.parse(i.request.body.raw).preset_id);
@@ -109,4 +138,103 @@ for (const item of [collection, ...requests]) for (const event of item.event || 
 const noAuth = run(custom, {collection: {token: 'collection-secret'}, environment: {token: ''}});
 assert.equal(noAuth.headers.has('Authorization'), false);
 assert.ok(!noAuth.logs.includes('collection-secret'));
-console.log('PASS Postman direct-send without client switches, preset/custom validation and optional Token; offline, no RF / 无额外开关的直接发送与参数校验离线验证通过');
+
+// Execute the three exported read-only response scripts against every state
+// produced by Status.classify. These valid fixtures make the former
+// stopped/no-profile-only scripts fail, preventing the original false alarms.
+// 对 classify 的全部状态执行真实导出脚本；旧的仅停止/无配置断言会在这里失败。
+const health = responseItem('GET', '{{baseUrl}}/api/v1/health');
+const cell = responseItem('GET', '{{baseUrl}}/api/v1/cell');
+const profile = responseItem('GET', '{{baseUrl}}/api/v1/profile');
+const legalCells = [
+  {
+    state:'stopped', ready:false, sms_ready:false, voice_ready:false,
+    transitioning:false, running:false, openbts:false, transceiver:false,
+    sipauthserve:false, smqueue:false, asterisk:false,
+  },
+  {
+    state:'running', ready:true, sms_ready:true, voice_ready:true,
+    transitioning:false, running:true, openbts:true, transceiver:true,
+    sipauthserve:true, smqueue:true, asterisk:true,
+    started_at:'2026-09-08T12:00:00+08:00', band:'1800', short_name:'fixture',
+  },
+  {
+    state:'degraded', ready:false, sms_ready:false, voice_ready:true,
+    transitioning:false, running:true, openbts:true, transceiver:true,
+    sipauthserve:true, smqueue:false, asterisk:true,
+    started_at:'2026-09-08T12:00:00+08:00', band:'900', short_name:'fixture',
+  },
+  {
+    state:'transitioning', ready:false, sms_ready:true, voice_ready:true,
+    transitioning:true, running:true, openbts:true, transceiver:true,
+    sipauthserve:true, smqueue:true, asterisk:true,
+  },
+  // Fully ready processes may be discovered externally, without manager-owned
+  // start metadata. / 外部进程可处于就绪态，但管理器没有启动元数据。
+  {
+    state:'running', ready:true, sms_ready:true, voice_ready:true,
+    transitioning:false, running:true, openbts:true, transceiver:true,
+    sipauthserve:true, smqueue:true, asterisk:true,
+  },
+  // A common failed-start residue: only auxiliary services are alive, so
+  // running is false but the aggregate state is degraded rather than stopped.
+  // 常见失败启动残留：仅辅助服务存活，running=false 但整体为 degraded。
+  {
+    state:'degraded', ready:false, sms_ready:false, voice_ready:false,
+    transitioning:false, running:false, openbts:false, transceiver:false,
+    sipauthserve:true, smqueue:true, asterisk:true,
+  },
+];
+function healthBody(cellState, overrides = {}) {
+  return {data: {ok:true, version:'2.1.0', revision:'fixture',
+    time:'2026-09-08T12:00:00+08:00', cell:cellState, ...overrides}};
+}
+for (const state of legalCells) {
+  assert.doesNotThrow(() => runResponseTests(cell, {data: state}), state.state);
+  assert.doesNotThrow(() => runResponseTests(health, healthBody(state)), state.state);
+}
+const degradedCellLogs = runResponseTests(cell, {data: legalCells[2]});
+const degradedHealthLogs = runResponseTests(health, healthBody(legalCells[2]));
+assert.match(degradedCellLogs, /not healthy-cell or RF acceptance/);
+assert.match(degradedHealthLogs, /not healthy-cell or RF acceptance/);
+
+const savedProfile = {
+  arfcns:'1', c0:'540', band:'1800', mcc:'001', mnc:'01', lac:'1', ci:'1',
+  short_name:'fixture', network:'eth0',
+};
+assert.doesNotThrow(() => runResponseTests(profile, {data:{has_profile:false}}));
+assert.doesNotThrow(() => runResponseTests(profile, {data:{has_profile:true, profile:savedProfile}}));
+assert.doesNotThrow(() => runResponseTests(profile, {data:{has_profile:true, profile:{
+  ...savedProfile, arfcns:'', c0:'', lac:'', ci:'', short_name:'',
+}}}));
+
+const clone = value => JSON.parse(JSON.stringify(value));
+const malformedCells = [];
+const missingFlag = clone(legalCells[0]);
+delete missingFlag.asterisk;
+malformedCells.push(missingFlag);
+malformedCells.push({...legalCells[0], state:'unknown'});
+malformedCells.push({...legalCells[0], ready:'false'});
+malformedCells.push({...legalCells[0], state:'running'});
+malformedCells.push({...legalCells[1], sms_ready:false});
+malformedCells.push({...legalCells[0], started_at:'2026-09-08T12:00:00+08:00'});
+malformedCells.push({...legalCells[3], started_at:'2026-09-08T12:00:00+08:00', band:'1800', short_name:'fixture'});
+for (const bad of malformedCells) {
+  assert.throws(() => runResponseTests(cell, {data:bad}));
+  assert.throws(() => runResponseTests(health, healthBody(bad)));
+}
+for (const bad of [
+  healthBody(legalCells[0], {ok:false}),
+  healthBody(legalCells[0], {version:''}),
+  healthBody(legalCells[0], {revision:1}),
+  healthBody(legalCells[0], {time:'2026-09-08 12:00:00'}),
+]) assert.throws(() => runResponseTests(health, bad));
+for (const bad of [
+  {data:{has_profile:false, profile:savedProfile}},
+  {data:{has_profile:true}},
+  {data:{has_profile:'true', profile:savedProfile}},
+  {data:{has_profile:true, profile:{...savedProfile, network:''}}},
+  {data:{has_profile:true, profile:{...savedProfile, extra:'unexpected'}}},
+]) assert.throws(() => runResponseTests(profile, bad));
+
+console.log('PASS Postman direct-send guards plus health/cell/profile response contracts; all classify states and profile variants verified offline, no RF / Postman 发送防护及健康、小区、配置响应契约离线验证通过');

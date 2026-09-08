@@ -196,7 +196,14 @@ paths:
       tags: [operations]
       operationId: getHealth
       summary: Read control-plane health; not RF acceptance / 管理面健康检查
-      description: time is RFC3339 in the startup-configured project TZ, default Asia/Shanghai / time 使用项目启动配置 TZ 的带偏移 RFC3339 时间，默认东八区
+      description: |
+        time is RFC3339 in the startup-configured project TZ, default Asia/Shanghai.
+        HTTP 200 and ok=true describe a responsive handler, including when cell.state is degraded.
+        Inspect cell state separately; the container probe accepts stopped or fully ready running cells,
+        not transitioning/degraded. This endpoint uses the same optional Bearer authentication.
+        time 使用项目启动时区的带偏移 RFC3339 时间，默认东八区。
+        HTTP 200 与 ok=true 不等于小区健康；降级时仍可能正常响应，须另查 cell 状态。
+        容器探针仅接受停止态或完全就绪运行态，不接受切换/降级；健康接口遵循相同可选鉴权。
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }

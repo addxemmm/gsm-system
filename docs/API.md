@@ -2,6 +2,9 @@
 
 Machine-readable contract / 机器可读契约：[`api/openapi.yaml`](api/openapi.yaml)
 Postman: [`../postman/gsm-system.postman_collection.json`](../postman/gsm-system.postman_collection.json)
+Usage and result interpretation / 使用与结果解读：
+[`../postman/README.md`](../postman/README.md) ·
+[Operations / 操作与排障](OPERATIONS.md)
 
 ## 1. Conventions / 通用约定
 
@@ -787,3 +790,13 @@ exclusive SDR scan. Health remaining responsive during a long transition is by
 design. 健康检查不获取启停锁、不独占探测 SDR，因此切换期间仍可响应。
 `time` uses RFC3339 in the startup-configured project time zone (`TZ`, default
 `Asia/Shanghai`). / `time` 为项目启动时区的带偏移 RFC3339 时间，默认东八区。
+
+HTTP `200` and `ok:true` describe a responsive management handler, even if
+`cell.state=degraded`. Inspect the nested cell state separately. The container's
+read-only `gsm-system --healthcheck` accepts intentionally stopped or fully ready
+running cells; it rejects transitioning/degraded states. Neither check proves
+handset delivery, audio quality or Internet connectivity. `/health` uses the same
+optional Bearer authentication as other endpoints.
+HTTP 200 与 ok:true 仅说明管理面可响应，即使内部小区 degraded 也可能返回成功；
+须另外检查 cell 状态。容器探针仅接受停止态或完全就绪的运行态，拒绝切换/降级状态。
+两者均不证明真机短信送达、音质或上网；健康接口同样受可选 Bearer 鉴权保护。

@@ -15,17 +15,21 @@ or host addresses. 需准备 B210、Docker、外部数据卷与已在外部制�
 Set repository-root `.env` as described in [DEPLOY.md](DEPLOY.md): blank
 `GSM_API_TOKEN` disables authentication; a non-empty value enables it.
 按 DEPLOY.md 配置项目根 `.env`：`GSM_API_TOKEN` 留空关闭鉴权，非空启用。
+First synchronize committed source as described in DEPLOY.md. A fresh server
+also needs pinned vendor inputs; uncommitted working-tree edits are not deployed.
+先按部署文档同步已提交源码；首次构建先准备固定上游源码，未提交改动不参与部署。
 
 ```bash
 cd ~/gsm-system
 docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_gsm-data
+./scripts/prefetch_vendor.sh
 ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live
 ```
 
 Container creation does not start a cell. First inspect non-RF state:
 
 ```bash
-BASE=http://127.0.0.1:8082/api/v1
+BASE=http://HOST:8082/api/v1 # published address / 管理端口实际绑定地址
 AUTH="" # or: AUTH="Authorization: Bearer TOKEN"
 curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/health"; echo
 curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/cell"; echo
@@ -196,19 +200,40 @@ curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/calls"; echo
 curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/calls/history"; echo
 ```
 
-SMS accepts at most 159 bytes from the documented safe ASCII/GSM-default-basic
+`POST /sms` accepts at most 159 bytes from the documented safe ASCII/GSM-default-basic
 intersection. It rejects UCS-2/Chinese, extension-table characters, quotes, and
 backticks. HTTP `202` means submitted directly through the OpenBTS CLI, not
 delivered and not queued through an API-owned `smqueue` job. 短信 `202` 只表示提交，
 不表示送达。
+
+`GET /sms` is a different path: patched smqueue observations support BMP UCS-2
+Chinese. Unsupported encodings, malformed data and absent historical text may
+remain `null`; long messages are observed as segments, not reassembled. Results
+use `scope=current_start`: stop freezes the window, the next accepted start
+creates a new one, and manager recreation leaves `session:null` until a start.
+Logs and number bindings are not deleted. Default timezone is `Asia/Shanghai`,
+customizable using root `.env` `TZ` before recreation.
+查询端与发送端不同：带补丁的原生日志可解析 BMP UCS-2 中文；不支持的编码、错误数据
+或旧日志缺失正文仍可能为 `null`，长短信按片段记录。查询仅含本次启动观察，停止冻结
+范围、下一次已接受的启动新建范围；管理进程重建后未启动时 `session:null`，不删除
+日志或号码绑定。默认东八区，在重建前通过根 `.env` 的 `TZ` 自定义。
+
+Before peer calls, dial **2600** for echo (60-second cap, `#` exits) and **2602**
+for a test tone (30-second cap). These built-in service numbers need no subscriber
+binding. A route/module test passing is not proof of radio audio; if these fail,
+inspect radio/channel/SIP evidence before changing peer routing.
+互拨前先拨 2600 测回声、2602 测试音，无需为它们绑定签约号码；先区分无线/信道/SIP
+故障与号码路由故障。详见 [运行与排障手册](OPERATIONS.md) 和
+[Postman 使用说明](../postman/README.md)。
 
 An empty normal welcome-message setting submits nothing. `WELCOME_SENT` is a
 native scheduling marker, not a phone number and not proof of delivery. / 正常
 欢迎消息为空就不发送；`WELCOME_SENT` 是原生调度标记，不是号码，也不代表送达。
 
 `GET /calls` lists current Asterisk channels. `/calls/history` reads real
-Asterisk CSV CDR rows and normalizes timestamps to UTC; neither endpoint creates
-synthetic calls. 语音状态与历史均来自 Asterisk 真实数据。
+Asterisk CSV CDR rows stored in UTC and displays them in the configured project
+timezone; neither endpoint creates synthetic calls. 话单以 UTC 存储，查询按项目时区
+展示；语音状态与历史均来自 Asterisk 真实数据。
 
 ## 5. Network and stop / 网络与停止
 

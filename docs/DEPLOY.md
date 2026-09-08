@@ -47,7 +47,7 @@ LTE images, and the external business-data volume remain untouched. 当前策略
 在用 `gsm-system:2.1` 镜像；每次健康验收后清理旧 GSM 对象及无用构建缓存，LTE
 容器/镜像和外部业务数据卷保持不变。
 
-## 2. Vendor inputs / 上游源码缓存
+## 2. Startup configuration and vendor inputs / 启动配置与上游源码缓存
 
 ### Project timezone / 项目时区
 
@@ -228,19 +228,32 @@ or validate the file; the migration changes only `network`.
 `eth0`，记录修改前后配置差异；仅修改 `network`，迁移和检查过程不得
 启动射频。
 
-After changing only the token, recreate the service container without rebuilding
-the image / 仅修改令牌后重建服务容器即可，无需重构镜像：
+For token/timezone-only changes, first stop the cell using its current API
+credentials, then edit root `.env`. Apply the changed Compose environment through
+the same release/health/cleanup gates without rebuilding the image. Retain the
+`.release-revision` matching that image; do not replace it with a newer docs-only
+HEAD. / 仅修改令牌或时区时，先用当前凭据停止小区，再编辑根 `.env`；仍经发布门禁
+应用配置，无需构建镜像，保留与镜像匹配的发布标记，不改成较新的纯文档 HEAD。
 
 ```bash
-docker compose --env-file .env -p gsm-system-live \
-  -f deploy/docker/docker-compose.yml \
-  up -d --no-build --force-recreate gsm-system
+./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
 ```
 
 `--skip-build` selects the already-built `gsm-system:2.1` image and still checks
 its recorded revision before deployment. `--skip-health` deliberately omits
 health validation and therefore also skips all cleanup. 跳过健康检查不构成发布成功，
 也不会执行清理。
+
+Compose recreates the service when the effective environment changes; an
+unchanged invocation need not recreate it. After recreation, apply stopped-state
+`PUT /api/v1/network` with `{"iface":"eth0"}` again and verify its idempotence.
+A docs-only update requires neither an image build nor a container restart:
+sync only documentation if needed. Full `deploy_from_windows.ps1` sync records
+HEAD as `.release-revision`, so follow a full sync with a matching build rather
+than editing labels to pass the mismatch check.
+有效环境变化时 Compose 会重建容器，配置未变则未必重建；重建后在停止态重新配置
+出口 NAT 并验证幂等。纯文档更新不需要构建/重启，可仅同步文档；全量同步会记录 HEAD，
+因此全量同步后应构建对应镜像，不伪改标签绕过版本核对。
 
 Compose uses the binary's read-only `--healthcheck`: a stopped cell is healthy,
 and a running cell is healthy only when `ready=true`; `transitioning` and
@@ -253,15 +266,16 @@ acceptance. / Compose 使用只读 `--healthcheck`：小区停止时健康，运
 ## 6. Acceptance / 验收顺序
 
 1. Development: `go test ./...`, `go vet ./...`, Linux cross-build.
-2. Server: isolated image smoke test with no USB, privilege, network, or RF.
+2. Server: all four isolated image suites below, with no production data or RF.
 3. Verify image labels/version, Compose image ID, `/health`, `/cell`, `/profile`;
    confirm only host TCP 8082 is published and the container has `eth0`.
 4. Confirm `/data/state` databases and `/data/log` ownership/modes.
 5. Start one permitted single-ARFCN cell; check process state without treating
    `ready` as RF acceptance.
 6. Attach dedicated test SIMs; compare `/connections` and `/subscribers`.
-7. Bind a unique test number; submit safe-ASCII SMS and independently confirm
-   receipt; place a two-way call and inspect real CDR history.
+7. Bind a unique test number; test 2600/2602, short Chinese handset SMS in both
+   directions, safe-ASCII API submission and independent receipt timing; then
+   place a two-way call and inspect real CDR history.
 8. Stop the cell; recreate the container; verify profile/database/log/CDR
    persistence and that no cell auto-transmits.
 
@@ -292,6 +306,21 @@ sh scripts/tests/test_build_contract.sh
 ```powershell
 pwsh -NoProfile -File scripts/tests/deploy_from_windows.Tests.ps1
 ```
+
+Final-image checks on the SDR server / SDR 服务器上的最终镜像验收：
+
+```bash
+for suite in test_image test_callerid_image test_sms_image test_presets_image; do
+  sh "scripts/tests/${suite}.sh" gsm-system:2.1 || exit 1
+done
+```
+
+These suites clean their own isolated containers/volumes. Native build gates
+also exercise GMM parsing, UHD timeout recovery and UCS-2 decoding against
+production methods, including original-source negative controls where provided.
+Record tests and handset acceptance separately; see [OPERATIONS.md](OPERATIONS.md).
+各套件自行清理隔离资源；原生构建另验收 GMM、UHD 和 UCS-2，含已提供的旧源码负向
+对照。离线测试与真机验收分开记录，不能互相代替。
 
 ## 7. Logs and persistence / 日志与持久化
 

@@ -2,6 +2,10 @@
 
 These rules describe release 2.1. 本文定义 2.1 的运行边界。
 
+For step-by-step checks and incident evidence, use [OPERATIONS.md](OPERATIONS.md).
+For imported collection settings and assertions, use [Postman README](../postman/README.md).
+日常步骤及故障证据查看运行手册，导入集合后的配置与断言解读查看 Postman 说明。
+
 ## 1. Control plane and native state / 管理面与原生状态
 
 The project-owned control plane is Go-only and has no account database or job
