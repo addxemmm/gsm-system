@@ -95,3 +95,17 @@ check_sqlite() {
     return 1
   fi
 }
+
+# Run only before native processes start. Replace known legacy defaults, not
+# operator-written messages or an intentionally blank (disabled) message.
+# 仅原生进程启动前迁移已知旧默认；保留自定义文案及留空禁用设置。
+migrate_welcome_defaults() {
+  sqlite3 -bail "$1" <<'SQL'
+.timeout 5000
+BEGIN IMMEDIATE;
+UPDATE CONFIG SET VALUESTRING='Welcome to addx. Reply to 101 with a 7-10 digit number, e.g. 10000001. Send info to 411 to check your number. '
+WHERE KEYSTRING IN ('Control.LUR.OpenRegistration.Message','Control.LUR.NormalRegistration.Message')
+AND VALUESTRING IN ('Welcome to addx. Your IMSI is ', 'Welcome to the test network.  Your IMSI is ');
+COMMIT;
+SQL
+}

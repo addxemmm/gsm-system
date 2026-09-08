@@ -31,6 +31,8 @@ grep -F 'GSM_SMS_V1' compat/patches/0003-smqueue-keyed-sms-observation.patch >/d
 grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1.0}"' deploy/docker/docker-compose.yml >/dev/null || fail 'release image default missing'
 grep -F 'container_name: gsmsystem-uhd4' deploy/docker/docker-compose.yml >/dev/null || fail 'collision-free container name missing'
 grep -F 'external: true' deploy/docker/docker-compose.yml >/dev/null || fail 'data volume is not external'
+grep -F 'test: ["CMD", "/usr/local/bin/gsm-system", "--healthcheck"]' deploy/docker/docker-compose.yml >/dev/null || fail 'state-aware Go health probe missing'
+grep -F 'migrate_welcome_defaults /etc/OpenBTS/OpenBTS.db' deploy/docker/entrypoint.sh >/dev/null || fail 'welcome migration missing'
 grep -F 'docker_gsm-data' deploy/docker/docker-compose.yml >/dev/null || fail 'existing data volume name missing'
 if grep -F 'network_mode: host' deploy/docker/docker-compose.yml >/dev/null; then
   fail 'host networking remains enabled'

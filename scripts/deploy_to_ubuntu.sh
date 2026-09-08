@@ -107,7 +107,18 @@ GSM_VERSION=$VERSION
 GSM_REVISION=$REVISION
 export GSM_IMAGE GSM_VERSION GSM_REVISION
 
-DATA_VOLUME=${GSM_DATA_VOLUME:-docker_gsm-data}
+# Ask Compose for its resolved interpolation inputs so .env and shell precedence
+# agree with the actual mount. Never source/eval or print the environment (Token).
+# 从 Compose 读取实际插值输入，确保 .env 卷名与预检一致；不输出环境或令牌。
+compose_environment=$(compose config --environment)
+DATA_VOLUME=$(printf '%s\n' "$compose_environment" | sed -n 's/^GSM_DATA_VOLUME=//p')
+unset compose_environment
+DATA_VOLUME=${DATA_VOLUME:-docker_gsm-data}
+case "$DATA_VOLUME" in
+  [A-Za-z0-9]* ) ;;
+  *) echo 'invalid data volume name' >&2; exit 2 ;;
+esac
+case "$DATA_VOLUME" in *[!A-Za-z0-9_.-]*) echo 'invalid data volume name' >&2; exit 2 ;; esac
 docker volume inspect "$DATA_VOLUME" >/dev/null
 
 if [ "$BUILD" -eq 1 ]; then

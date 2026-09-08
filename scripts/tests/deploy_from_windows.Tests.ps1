@@ -74,6 +74,7 @@ exit /b 0
   Assert-True ($output -match "excluded") "dirty HEAD-only sync warning should be visible"
   Assert-True ($calls -match "gsm-system:2\.1\.0-abcdef123456") "immutable image must use VERSION plus 12-char revision"
   Assert-True ($calls -match "docker compose -p 'gsm-system-live' -f 'deploy/docker/docker-compose\.yml' build") "single production Compose file must be the build default"
+  Assert-True ($calls -match "docker compose --env-file .env -p 'gsm-system-live'") "existing root .env must be explicit during build"
   Assert-True ($calls -notmatch "compose .*up") "Windows sync/build must never run compose up"
   $sshCalls = @($calls -split "`r?`n" | Where-Object { $_ -like "ssh *" })
   Assert-True ($sshCalls.Count -eq 2) "sync plus build should invoke two remote programs"

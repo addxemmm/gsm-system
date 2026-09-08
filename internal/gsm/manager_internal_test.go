@@ -1,13 +1,16 @@
 package gsm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +24,45 @@ type countingCloser struct{ calls atomic.Int32 }
 func (c *countingCloser) Close() error {
 	c.calls.Add(1)
 	return nil
+}
+
+func TestManagedProcessExitLogsMetadataOnly(t *testing.T) {
+	const privateText = "PRIVATE_SMS_BODY_MUST_NOT_BE_LOGGED"
+	if code := os.Getenv("GSM_EXIT_LOG_HELPER"); code != "" {
+		fmt.Fprintln(os.Stdout, privateText)
+		fmt.Fprintln(os.Stderr, privateText)
+		exitCode, _ := strconv.Atoi(code)
+		os.Exit(exitCode)
+	}
+	for _, exitCode := range []int{0, 7} {
+		t.Run(strconv.Itoa(exitCode), func(t *testing.T) {
+			var output bytes.Buffer
+			previous := log.Writer()
+			log.SetOutput(&output)
+			t.Cleanup(func() { log.SetOutput(previous) })
+			cmd := exec.Command(os.Args[0], "-test.run=^TestManagedProcessExitLogsMetadataOnly$")
+			cmd.Env = append(os.Environ(), "GSM_EXIT_LOG_HELPER="+strconv.Itoa(exitCode))
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			p := watchProcess("fixture-smqueue", cmd, nil)
+			select {
+			case <-p.done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("process exit was not observed")
+			}
+			got := output.String()
+			for _, expected := range []string{"managed process exited:", `name="fixture-smqueue"`,
+				fmt.Sprintf("pid=%d", cmd.Process.Pid), fmt.Sprintf(`state="exit status %d"`, exitCode)} {
+				if !strings.Contains(got, expected) {
+					t.Fatalf("missing %q in process metadata: %s", expected, got)
+				}
+			}
+			if strings.Contains(got, privateText) || strings.Contains(got, "-test.run") {
+				t.Fatalf("process log leaked native output or argv: %s", got)
+			}
+		})
+	}
 }
 
 func TestManagedProcessHasOneWaitOwner(t *testing.T) {
@@ -50,24 +92,22 @@ func TestManagedProcessHasOneWaitOwner(t *testing.T) {
 }
 
 func TestWaitForReadyRespondsToContextAndProcessExit(t *testing.T) {
-	logPath := filepath.Join(t.TempDir(), "openbts.log")
+	ready := make(chan struct{})
 	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := waitForReady(ctx, logPath, done, time.Second); !errors.Is(err, context.Canceled) {
+	if err := waitForReady(ctx, ready, done, time.Second); !errors.Is(err, context.Canceled) {
 		t.Fatalf("want context cancellation, got %v", err)
 	}
 
 	exited := make(chan struct{})
 	close(exited)
-	if err := waitForReady(context.Background(), logPath, exited, time.Second); err == nil || !strings.Contains(err.Error(), "process exited") {
+	if err := waitForReady(context.Background(), ready, exited, time.Second); err == nil || !strings.Contains(err.Error(), "process exited") {
 		t.Fatalf("want process-exited error, got %v", err)
 	}
 
-	if err := os.WriteFile(logPath, []byte("noise\nsystem ready\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := waitForReady(context.Background(), logPath, done, time.Second); err != nil {
+	close(ready)
+	if err := waitForReady(context.Background(), ready, done, time.Second); err != nil {
 		t.Fatalf("ready log rejected: %v", err)
 	}
 }

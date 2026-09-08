@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/addxemmm/gsm-system/internal/config"
+	"github.com/addxemmm/gsm-system/internal/logsink"
 	"github.com/addxemmm/gsm-system/internal/sdr"
 	"github.com/addxemmm/gsm-system/internal/sysop"
 )
@@ -246,14 +248,18 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	// CWD must be /OpenBTS: OpenBTS execs ./transceiver by relative path
 	// (legacy Flask ran with supervisord directory=/OpenBTS for the same reason).
 	cmd := exec.Command(m.cfg.OpenBTSBin)
+	// Rotating output uses os/exec copy pipes. A surviving transceiver must not
+	// keep Wait blocked after OpenBTS exits / 后代持有输出管道不应阻塞退出观测。
+	cmd.WaitDelay = time.Second
 	configureProcessGroup(cmd)
 	if filepath.IsAbs(m.cfg.OpenBTSBin) {
 		cmd.Dir = filepath.Dir(m.cfg.OpenBTSBin)
 	}
-	logF, err := os.Create(m.cfg.LogPath(m.cfg.OpenBTSLogName))
+	logFile, err := logsink.NewWriter(m.cfg.LogPath(m.cfg.OpenBTSLogName))
 	if err != nil {
 		return err
 	}
+	logF := newProcessLog(logFile)
 	cmd.Stdout = logF
 	cmd.Stderr = logF
 	if err := cmd.Start(); err != nil {
@@ -263,7 +269,7 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	openbts := watchProcess("OpenBTS", cmd, logF)
 	owned = append(owned, openbts)
 	// Wait for "system ready" (max ~20s), like run.sh timer-loopback wait.
-	if err := waitForReady(ctx, m.cfg.LogPath(m.cfg.OpenBTSLogName), openbts.done, 20*time.Second); err != nil {
+	if err := waitForReady(ctx, logF.ready, openbts.done, 20*time.Second); err != nil {
 		return fmt.Errorf("OpenBTS did not become ready, see %s: %w", m.cfg.LogPath(m.cfg.OpenBTSLogName), err)
 	}
 	// Legacy run.py: clear tmsis after successful start. It is best effort,
@@ -453,7 +459,15 @@ func watchProcess(name string, cmd *exec.Cmd, closer io.Closer) *managedProcess 
 	// This is the unique Wait owner. Closing the log here also covers a normal
 	// post-start process exit without leaking the parent file descriptor.
 	go func() {
-		_ = cmd.Wait()
+		err := cmd.Wait()
+		// Report only process metadata. Native output/argv may contain private
+		// SMS bodies and must not be included in lifecycle diagnostics.
+		// 只记录进程元数据，不记录可能包含短信正文的输出或启动参数。
+		state := "unavailable"
+		if cmd.ProcessState != nil {
+			state = cmd.ProcessState.String()
+		}
+		log.Printf("managed process exited: name=%q pid=%d state=%q wait_error=%v", name, cmd.Process.Pid, state, err)
 		if closer != nil {
 			_ = closer.Close()
 		}
@@ -462,11 +476,9 @@ func watchProcess(name string, cmd *exec.Cmd, closer io.Closer) *managedProcess 
 	return p
 }
 
-func waitForReady(ctx context.Context, logPath string, done <-chan struct{}, timeout time.Duration) error {
+func waitForReady(ctx context.Context, ready, done <-chan struct{}, timeout time.Duration) error {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -475,15 +487,6 @@ func waitForReady(ctx context.Context, logPath string, done <-chan struct{}, tim
 			return fmt.Errorf("process exited")
 		default:
 		}
-		b, err := os.ReadFile(logPath)
-		if err == nil && strings.Contains(string(b), "system ready") {
-			select {
-			case <-done:
-				return fmt.Errorf("process exited")
-			default:
-				return nil
-			}
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -491,7 +494,16 @@ func waitForReady(ctx context.Context, logPath string, done <-chan struct{}, tim
 			return fmt.Errorf("process exited")
 		case <-timer.C:
 			return fmt.Errorf("readiness timeout")
-		case <-ticker.C:
+		case <-ready:
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			select {
+			case <-done:
+				return fmt.Errorf("process exited")
+			default:
+				return nil
+			}
 		}
 	}
 }

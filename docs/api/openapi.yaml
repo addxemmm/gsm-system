@@ -32,6 +32,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/CellStatusOK' }
         '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/Error' }
     post:
       tags: [cell]
@@ -55,6 +56,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
@@ -69,6 +71,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
 
   /api/v1/presets:
@@ -156,6 +159,7 @@ paths:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
     patch:
       tags: [config]
@@ -185,6 +189,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/health:
     get:
@@ -194,6 +199,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/connections:
     get:
@@ -206,7 +212,9 @@ paths:
         - $ref: '#/components/parameters/Offset'
       responses:
         '200': { $ref: '#/components/responses/ConnectionsOK' }
+        '401': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
 
   /api/v1/subscribers:
@@ -219,8 +227,10 @@ paths:
         - $ref: '#/components/parameters/Offset'
       responses:
         '200': { $ref: '#/components/responses/SubscribersOK' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
 
   /api/v1/subscribers/{imsi}:
@@ -232,6 +242,7 @@ paths:
       summary: Read one persistent subscriber / 查询单条签约
       responses:
         '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/ValidationError' }
@@ -252,6 +263,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
@@ -264,6 +276,7 @@ paths:
       summary: Transactionally remove a number binding / 事务解绑号码
       responses:
         '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/ValidationError' }
@@ -294,7 +307,9 @@ paths:
         - $ref: '#/components/parameters/Offset'
       responses:
         '200': { $ref: '#/components/responses/SMSListOK' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
     post:
       tags: [messaging]
@@ -312,6 +327,7 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/Accepted' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
         '415': { $ref: '#/components/responses/Error' }
@@ -328,7 +344,9 @@ paths:
         - $ref: '#/components/parameters/Offset'
       responses:
         '200': { $ref: '#/components/responses/ActiveCallsOK' }
+        '401': { $ref: '#/components/responses/Error' }
         '412': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/Error' }
 
   /api/v1/calls/history:
@@ -342,7 +360,9 @@ paths:
         - $ref: '#/components/parameters/Offset'
       responses:
         '200': { $ref: '#/components/responses/CallHistoryOK' }
+        '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '500': { $ref: '#/components/responses/Error' }
 
   /api/v1/network:
@@ -359,6 +379,7 @@ paths:
           schema: { type: string, example: eth0 }
       responses:
         '200': { $ref: '#/components/responses/NetworkOK' }
+        '401': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/Error' }
     put:
@@ -373,6 +394,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/NetworkOK' }
         '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
         '415': { $ref: '#/components/responses/Error' }
@@ -508,13 +530,23 @@ components:
         deleted: { type: boolean, enum: [true] }
     ConfigPatch:
       type: object
+      description: Atomically updates a non-empty subset of the eight public radio/identity keys; other native OpenBTS keys are read-only through this API / 原子更新八个公开无线/标识键的非空子集；其他原生 OpenBTS 键只读
       required: [values]
       additionalProperties: false
       properties:
         values:
           type: object
           minProperties: 1
-          additionalProperties: { type: string }
+          additionalProperties: false
+          properties:
+            GSM.Radio.ARFCNs: { type: string }
+            GSM.Radio.C0: { type: string }
+            GSM.Radio.Band: { type: string }
+            GSM.Identity.MCC: { type: string }
+            GSM.Identity.MNC: { type: string }
+            GSM.Identity.LAC: { type: string }
+            GSM.Identity.CI: { type: string }
+            GSM.Identity.ShortName: { type: string }
           example: { GSM.Identity.ShortName: LAB }
     NumberBinding:
       type: object
@@ -731,7 +763,7 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Envelope' }
-          example: { code: 0, message: SMS submitted, data: { status: submitted, imsi: IMSI }, request_id: REQUEST_ID }
+          example: { code: 0, message: sms submitted, data: { status: submitted, imsi: IMSI }, request_id: REQUEST_ID }
     CellStatusOK:
       description: Managed process status / 托管进程状态
       headers:

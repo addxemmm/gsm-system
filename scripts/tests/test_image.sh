@@ -128,6 +128,7 @@ assert_marker_state() {
 
 start_container
 wait_ready
+docker exec "$CONTAINER" /usr/local/bin/gsm-system --healthcheck || fail HEALTH "stopped cell health probe failed"
 pass STARTUP "isolated container ready (network=none, no RF devices)"
 docker exec "$CONTAINER" test -S /dev/log || fail LOGGING "Go syslog socket /dev/log is missing"
 docker exec "$CONTAINER" test ! -e /OpenBTS/run.so || fail GO-ONLY "legacy run.so is present"

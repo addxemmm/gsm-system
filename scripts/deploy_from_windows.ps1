@@ -132,7 +132,11 @@ echo SYNCED
 set -eu
 cd "$HOME/gsm-system"
 export GSM_VERSION='__VERSION__' GSM_REVISION='__REVISION__' GSM_IMAGE='__IMAGE__'
-docker compose -p '__PROJECT__' -f '__COMPOSE__' build
+if [ -f .env ]; then
+  docker compose --env-file .env -p '__PROJECT__' -f '__COMPOSE__' build
+else
+  docker compose -p '__PROJECT__' -f '__COMPOSE__' build
+fi
 test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$GSM_IMAGE")" = "$GSM_VERSION"
 test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$GSM_IMAGE")" = "$GSM_REVISION"
 docker run --rm --entrypoint /usr/local/bin/gsm-system "$GSM_IMAGE" --version

@@ -39,10 +39,13 @@ return `404`. 旧方法收到 `405` 时不要降级重试；根路径返回 `404
 `PATCH /api/v1/config` now updates a map atomically at the API boundary:
 
 ```json
-{"values":{"GSM.Identity.ShortName":"LAB","Control.LUR.OpenRegistration":"REGEX"}}
+{"values":{"GSM.Identity.ShortName":"LAB","GSM.Radio.Band":"900"}}
 ```
 
-The old `{name,value}` body is rejected. 旧单键请求体不再接受。
+Only the eight radio/identity keys listed in `API.md` are writable; arbitrary
+native keys such as `Control.LUR.*` return `422`. The old `{name,value}` body is
+rejected. 仅可写入 `API.md` 列出的八个无线/标识键；`Control.LUR.*` 等任意原生键
+返回 `422`，旧单键请求体也不再接受。
 
 ## 3. Configuration migration / 配置迁移
 

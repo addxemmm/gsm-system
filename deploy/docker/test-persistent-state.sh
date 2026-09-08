@@ -74,3 +74,17 @@ if (set -e; initialize_sqlite "$workspace/volume/empty.db" "$seed" sql); then
 fi
 test ! -s "$workspace/volume/empty.db"
 echo 'PASS: invalid existing state fails without overwrite / 异常现存状态停止启动且不覆盖'
+
+# Welcome migration is idempotent and never enables disabled messages.
+welcome="$workspace/welcome.db"
+sqlite3 "$welcome" "CREATE TABLE CONFIG(KEYSTRING TEXT PRIMARY KEY, VALUESTRING TEXT);
+INSERT INTO CONFIG VALUES('Control.LUR.OpenRegistration.Message','Welcome to addx. Your IMSI is ');
+INSERT INTO CONFIG VALUES('Control.LUR.NormalRegistration.Message','');"
+migrate_welcome_defaults "$welcome"
+migrate_welcome_defaults "$welcome"
+test "$(sqlite3 "$welcome" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='Control.LUR.OpenRegistration.Message';")" = 'Welcome to addx. Reply to 101 with a 7-10 digit number, e.g. 10000001. Send info to 411 to check your number. '
+test -z "$(sqlite3 "$welcome" "SELECT VALUESTRING FROM CONFIG WHERE KEYSTRING='Control.LUR.NormalRegistration.Message';")"
+sqlite3 "$welcome" "UPDATE CONFIG SET VALUESTRING='Operator custom text';"
+migrate_welcome_defaults "$welcome"
+test "$(sqlite3 "$welcome" "SELECT count(*) FROM CONFIG WHERE VALUESTRING='Operator custom text';")" = 2
+echo 'PASS: welcome defaults migrate once, custom and disabled messages preserved / 欢迎默认迁移且保留自定义与禁用设置'

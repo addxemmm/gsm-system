@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -82,6 +83,9 @@ func TestOpenAPIAndPostmanMatchRouter(t *testing.T) {
 	if got = canonical(got); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Postman route drift\n got: %#v\nwant: %#v", got, want)
 	}
+	if got := canonical(readMarkdownRoutes(t)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("API.md route drift\n got: %#v\nwant: %#v", got, want)
+	}
 	assertCellStartInputChecks(t, collection.Item)
 	for _, key := range []string{"enable_mutations", "enable_rf_start"} {
 		if strings.Contains(string(mustRead(t, filepath.Join(root(t), "postman", "gsm-system.postman_collection.json"))), key) {
@@ -91,6 +95,94 @@ func TestOpenAPIAndPostmanMatchRouter(t *testing.T) {
 	assertPostmanDoesNotMutateDefaults(t, collection.Item)
 	if got := collectionVariable(collection, "verify_factory_defaults"); got != "false" {
 		t.Errorf("Postman collection verify_factory_defaults=%q, want false", got)
+	}
+}
+
+func TestOpenAPIOperationsDeclareCommonMiddlewareErrors(t *testing.T) {
+	type operation struct {
+		Responses map[string]any `yaml:"responses"`
+	}
+	var doc struct {
+		Paths map[string]struct {
+			Get    *operation `yaml:"get"`
+			Post   *operation `yaml:"post"`
+			Put    *operation `yaml:"put"`
+			Patch  *operation `yaml:"patch"`
+			Delete *operation `yaml:"delete"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(mustRead(t, filepath.Join(root(t), "docs", "api", "openapi.yaml")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for path, methods := range routes {
+		item := doc.Paths[path]
+		for _, method := range methods {
+			var op *operation
+			switch method {
+			case http.MethodGet:
+				op = item.Get
+			case http.MethodPost:
+				op = item.Post
+			case http.MethodPut:
+				op = item.Put
+			case http.MethodPatch:
+				op = item.Patch
+			case http.MethodDelete:
+				op = item.Delete
+			}
+			if op == nil {
+				t.Errorf("OpenAPI is missing %s %s", method, path)
+				continue
+			}
+			for _, status := range []string{"401", "422"} {
+				if _, ok := op.Responses[status]; !ok {
+					t.Errorf("OpenAPI %s %s must declare common %s response", method, path, status)
+				}
+			}
+		}
+	}
+}
+
+func TestConfigPatchOpenAPIUsesExactPublicAllowlist(t *testing.T) {
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					AdditionalProperties any `yaml:"additionalProperties"`
+					Properties           map[string]struct {
+						Type string `yaml:"type"`
+					} `yaml:"properties"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(mustRead(t, filepath.Join(root(t), "docs", "api", "openapi.yaml")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	values := doc.Components.Schemas["ConfigPatch"].Properties["values"]
+	if values.AdditionalProperties != false {
+		t.Fatalf("ConfigPatch.values must reject non-allowlisted keys, got %#v", values.AdditionalProperties)
+	}
+	got := make([]string, 0, len(values.Properties))
+	for key, property := range values.Properties {
+		got = append(got, key)
+		if property.Type != "string" {
+			t.Errorf("ConfigPatch.values.%s must be a string", key)
+		}
+	}
+	sort.Strings(got)
+	want := []string{
+		"GSM.Identity.CI", "GSM.Identity.LAC", "GSM.Identity.MCC", "GSM.Identity.MNC",
+		"GSM.Identity.ShortName", "GSM.Radio.ARFCNs", "GSM.Radio.Band", "GSM.Radio.C0",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ConfigPatch allowlist drifted: got %v, want %v", got, want)
+	}
+	collection := string(mustRead(t, filepath.Join(root(t), "postman", "gsm-system.postman_collection.json")))
+	for _, marker := range []string{"Config rejects non-public native key", "Control.LUR.OpenRegistration.Message", "HTTP 422 unsupported config key"} {
+		if !strings.Contains(collection, marker) {
+			t.Errorf("Postman config allowlist negative case is missing %q", marker)
+		}
 	}
 }
 
@@ -322,7 +414,7 @@ func TestSMSObservationSchemaAndPostmanContract(t *testing.T) {
 				}
 			}
 			joined := strings.Join(checks, "\n")
-			for _, marker := range append(wantFields, "d.count", "d.sms.length", "typeof m[k]") {
+			for _, marker := range append(wantFields, "d.count", "d.sms.length", "typeof m[k]", "d.limit", "d.offset", "d.window.bytes", "d.window.max_bytes", "d.truncated", "d.window.truncated") {
 				if !strings.Contains(joined, marker) {
 					t.Errorf("Postman SMS checks are missing %q", marker)
 				}
@@ -337,6 +429,68 @@ func TestSMSObservationSchemaAndPostmanContract(t *testing.T) {
 	walk(collection.Item)
 	if !found {
 		t.Fatal("Postman is missing SMS observation query")
+	}
+}
+
+func TestSMSSubmissionExampleAndPostmanContract(t *testing.T) {
+	var doc struct {
+		Components struct {
+			Responses map[string]struct {
+				Content map[string]struct {
+					Example struct {
+						Code      int    `yaml:"code"`
+						Message   string `yaml:"message"`
+						RequestID string `yaml:"request_id"`
+						Data      struct {
+							Status string `yaml:"status"`
+							IMSI   string `yaml:"imsi"`
+						} `yaml:"data"`
+					} `yaml:"example"`
+				} `yaml:"content"`
+			} `yaml:"responses"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(mustRead(t, filepath.Join(root(t), "docs", "api", "openapi.yaml")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	example := doc.Components.Responses["Accepted"].Content["application/json"].Example
+	if example.Code != 0 || example.Message != "sms submitted" || example.Data.Status != "submitted" ||
+		example.Data.IMSI != "IMSI" || example.RequestID != "REQUEST_ID" {
+		t.Fatalf("OpenAPI Accepted SMS example drifted: %+v", example)
+	}
+
+	collection, _ := readPostman(t)
+	found := false
+	var walk func([]postmanItem)
+	walk = func(items []postmanItem) {
+		for _, item := range items {
+			walk(item.Item)
+			if item.Request == nil || item.Request.Method != http.MethodPost {
+				continue
+			}
+			var url string
+			_ = json.Unmarshal(item.Request.URL, &url)
+			if url != "{{baseUrl}}/api/v1/sms" || item.Name != "POST /api/v1/sms" {
+				continue
+			}
+			found = true
+			var checks []string
+			for _, event := range item.Event {
+				if event.Listen == "test" {
+					checks = append(checks, event.Script.Exec...)
+				}
+			}
+			joined := strings.Join(checks, "\n")
+			for _, marker := range []string{"sms submitted", "data.status", "data.imsi", "{{imsi}}"} {
+				if !strings.Contains(joined, marker) {
+					t.Errorf("Postman SMS submission checks are missing %q", marker)
+				}
+			}
+		}
+	}
+	walk(collection.Item)
+	if !found {
+		t.Fatal("Postman is missing SMS submission request")
 	}
 }
 
@@ -357,6 +511,17 @@ func readOpenAPIRoutes(t *testing.T) map[string][]string {
 				out[path] = append(out[path], method)
 			}
 		}
+	}
+	return out
+}
+
+func readMarkdownRoutes(t *testing.T) map[string][]string {
+	t.Helper()
+	markdown := string(mustRead(t, filepath.Join(root(t), "docs", "API.md")))
+	heading := regexp.MustCompile("(?m)^### `(?P<method>GET|POST|PUT|PATCH|DELETE) (?P<path>/[^`\\[]+)")
+	out := map[string][]string{}
+	for _, match := range heading.FindAllStringSubmatch(markdown, -1) {
+		out["/api/v1"+match[2]] = append(out["/api/v1"+match[2]], match[1])
 	}
 	return out
 }

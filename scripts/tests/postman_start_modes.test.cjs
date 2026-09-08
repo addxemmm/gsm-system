@@ -11,7 +11,13 @@ const environment = JSON.parse(fs.readFileSync(path.join(root, 'postman/gsm-syst
 const defaults = Object.fromEntries(collection.variable.map(v => [v.key, v.value]));
 const envDefaults = Object.fromEntries(environment.values.map(v => [v.key, v.value]));
 function flatten(items) { return items.flatMap(i => i.request ? [i] : flatten(i.item || [])); }
+function walk(items) { return items.flatMap(i => [i, ...walk(i.item || [])]); }
 const requests = flatten(collection.item);
+for (const holder of [collection, ...walk(collection.item)]) {
+  for (const event of holder.event || []) {
+    assert.doesNotThrow(() => new vm.Script(event.script.exec.join('\n')), `${holder.name || 'collection'} ${event.listen} script`);
+  }
+}
 const starts = requests.filter(i => i.request.method === 'POST' && i.request.url === '{{baseUrl}}/api/v1/cell');
 assert.equal(starts.length, 2);
 const preset = starts.find(i => JSON.parse(i.request.body.raw).preset_id);

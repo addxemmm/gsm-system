@@ -326,7 +326,10 @@ Missing database: `404`; query failure: `500`.
 
 ### `PATCH /config`
 
-Updates one or more native OpenBTS values while the cell is stopped:
+Updates one or more allowlisted radio/identity values while the cell is stopped.
+The exact writable keys are `GSM.Radio.ARFCNs`, `GSM.Radio.C0`,
+`GSM.Radio.Band`, `GSM.Identity.MCC`, `GSM.Identity.MNC`, `GSM.Identity.LAC`,
+`GSM.Identity.CI`, and `GSM.Identity.ShortName`:
 
 ```json
 {"values":{"GSM.Radio.Band":"900","GSM.Radio.C0":"55"}}
@@ -334,7 +337,10 @@ Updates one or more native OpenBTS values while the cell is stopped:
 
 HTTP `200`: `data.updated` is an array of updated key names. Empty/invalid values
 return `422`; a running/transitioning cell returns `409`; missing DB returns
-`404`. 更新多个键；小区运行或切换中返回 `409`。
+`404`. `GET /config` exposes the native database, but other keys—including
+`Control.LUR.*` welcome/admission settings—are read-only through this API.
+仅允许原子更新上述八个无线与标识键；小区运行或切换中返回 `409`。`GET /config`
+虽可读取原生数据库，但 `Control.LUR.*` 欢迎/接入配置等其他键不能通过本 API 修改。
 
 ### `GET /profile`
 

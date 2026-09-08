@@ -77,6 +77,21 @@ HTTP `202` likewise means submitted, not delivered; verify handset receipt
 separately. / 正常欢迎消息为空就不发送；`WELCOME_SENT` 仅是原生调度标记，
 不代表送达。API 的 HTTP `202` 同样仅表示已提交，须另行核验手机收件。
 
+At container startup, the image migrates only the two known legacy normal/open
+registration welcome defaults (the old addx IMSI prefix and the upstream test-
+network IMSI prefix) to the short `101`/`411` onboarding instruction. Operator-
+written text and an intentionally empty value remain unchanged. This does not
+clear an existing `WELCOME_SENT` marker or prove handset receipt. / 容器启动时仅
+把已知的两种旧默认欢迎文案（旧 addx IMSI 前缀、上游测试网络 IMSI 前缀）迁移为
+简短的 `101`/`411` 操作提示；保留管理员自定义文案及留空禁用设置。迁移不会清除
+已有 `WELCOME_SENT` 标记，也不代表手机已收到。
+
+This LUR welcome is separate from the `SC.Register.Msg.WelcomeA/B` reply sent
+after a successful `101` number registration; those values live in the smqueue
+database and are not managed by `GET/PATCH /api/v1/config`. / LUR 欢迎短信与
+`101` 号码注册成功后的 `SC.Register.Msg.WelcomeA/B` 回执是两套配置；后者位于
+smqueue 数据库，不受 `GET/PATCH /api/v1/config` 管理。
+
 ## Reattach after an open-registration deployment / 开放注册部署后重新接入
 
 On this pinned OpenBTS build, the built-in SGSN/GGSN parses but does not select
@@ -136,6 +151,12 @@ If OpenBTS/transceiver exits with `UHD: Receive timed out`, stop the cell and
 inspect USB passthrough/UHD logs. A healthy management container does not resolve
 that radio failure. 若出现 UHD 接收超时退出，停止小区并检查 USB 直通和 UHD 日志；
 管理容器健康不代表射频故障已消失。
+
+The current image/configuration still requires an end-to-end handset run for
+welcome/manual SMS transmit and receive plus packet-data/DNS/Internet traffic.
+Management, database, parser, and container-health checks do not close those
+acceptance items. / 当前镜像与配置仍须真机端到端验收欢迎/手动短信收发，以及分组
+数据、DNS 和互联网流量；管理面、数据库、解析器与容器健康检查不等同于业务验收。
 
 ## Bind a number / 绑定号码
 

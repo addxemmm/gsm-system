@@ -16,6 +16,7 @@ import (
 	"github.com/addxemmm/gsm-system/internal/api"
 	"github.com/addxemmm/gsm-system/internal/config"
 	"github.com/addxemmm/gsm-system/internal/gsm"
+	"github.com/addxemmm/gsm-system/internal/healthcheck"
 	"github.com/addxemmm/gsm-system/internal/logsink"
 )
 
@@ -24,6 +25,7 @@ var revision = "unknown"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print version and exit / 显示版本后退出")
+	probe := flag.Bool("healthcheck", false, "check management and cell readiness without RF / 只读检查管理及小区状态")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("gsm-system %s (%s)\n", version, revision)
@@ -43,10 +45,17 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 	cfg.Version, cfg.Revision = version, revision
+	if *probe {
+		if err := healthcheck.Check(context.Background(), cfg.ListenAddr, os.Getenv("GSM_API_TOKEN")); err != nil {
+			log.Printf("healthcheck: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := cfg.EnsureDirs(); err != nil {
 		log.Fatalf("ensure dirs: %v", err)
 	}
-	sink, err := logsink.Start(cfg.SyslogSocket, cfg.LogDir)
+	sink, err := logsink.StartWithSmqueueLog(cfg.SyslogSocket, cfg.LogDir, cfg.SmqueueLogName)
 	if err != nil {
 		log.Fatalf("start native log receiver: %v", err)
 	}

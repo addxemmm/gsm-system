@@ -15,17 +15,16 @@ through one versioned REST API. Release 2.1 keeps only the standardized
 `/api/v1` surface and removes the ad-hoc root endpoints and project-owned Python
 management code.
 
-> **2.1 status / 状态：** the Go management plane was deployed on the SDR host
-> on 2026-09-08 10:45–10:50 HKT from revision `16986725daa9`. The container and
-> read-only API are healthy with every cell process stopped and RF off. Image,
-> persistence, Asterisk, contract, and read-only Newman acceptance passed.
-> Handset attach, over-the-air SMS, two-way handset voice, and RF acceptance
-> remain pending and are not implied by management-plane deployment.
+> **2.1 status / 状态：** the 2026-09-08 audit observed runtime revision
+> `08f184f063c5`; the cell was `degraded` after smqueue exited. The latest
+> workspace fixes have not yet been rebuilt or deployed. The operator confirmed welcome-message receipt; the registry contains three
+> number bindings. Complete SMS
+> transmit/receive, packet-data/DNS/Internet, two-way voice, and RF acceptance
+> remain pending.
 >
-> 2.1 Go 管理面已于 2026-09-08 10:45–10:50 HKT 从 `16986725daa9` 部署到
-> SDR 服务器；容器与只读 API 健康，小区进程全部停止且 RF 关闭。镜像、持久化、
-> Asterisk、契约及只读 Newman 验收通过。真机入网、空口短信、双向手机语音与射频
-> 验收仍未执行，管理面部署不代表这些业务已通过。
+> 2026-09-08 审计现场运行版本为 `08f184f063c5`；smqueue 退出后小区为
+> `degraded`，工作区最新修复尚未重新构建部署。用户此前已确认欢迎短信实收，注册库中已查到三个
+> 号码绑定；完整短信收发、分组数据/DNS/互联网、双向语音及射频仍待验收。
 
 ## Highlights / 主要特性
 

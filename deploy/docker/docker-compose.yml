@@ -30,7 +30,7 @@ services:
     healthcheck:
       # Process-free status probe: do not repeatedly claim/probe the SDR.
       # 仅查状态，避免健康检查周期性探测或占用 SDR。
-      test: ["CMD-SHELL", "curl --fail --silent --max-time 30 -H \"Authorization: Bearer $$GSM_API_TOKEN\" http://127.0.0.1:8082/api/v1/cell >/dev/null"]
+      test: ["CMD", "/usr/local/bin/gsm-system", "--healthcheck"]
       interval: 60s
       timeout: 35s
       start_period: 30s

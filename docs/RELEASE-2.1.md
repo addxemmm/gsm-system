@@ -410,3 +410,40 @@ container DNS/HTTP, and one packet-attached handset. It did not establish
 handset web access; no speculative firewall disabling or route replacement was
 performed. 网络检查已有 TUN、转发/NAT、容器 DNS/HTTP 可达及一个数据附着终端，
 尚未证明手机网页成功；保留已有规则，等待主动手机流量与上下行计数对照。
+
+## Follow-up audit, 2026-09-08 / 后续审计
+
+This is an audit and code-correction record, **not a new deployment record**.
+本节记录现场审计及代码修复，**不代表新版已部署**。
+
+- Observed runtime: `gsm-system:2.1.0-08f184f063c5`, binary revision
+  `08f184f063c5`. The latest earlier local SMS commit `e2d65066cc9e` was not
+  installed. GitHub branch inspection still returned `45842fb` before this audit
+  was committed. / 现场运行旧镜像；前次短信修复尚未安装，审计时 GitHub 分支亦落后。
+- The GSM API reported `state=degraded`, `smqueue=false`, while Docker reported
+  healthy. Three subscriber and three number-routing rows remain present.
+  / 小区处于降级状态、短信队列退出，但旧 Docker 探针仍报健康；三条签约及号码路由仍在。
+- There is only one GSM image ID with two aliases, no stopped GSM rollback
+  container, and **0 B build cache**. The stopped LTE container/image and the
+  Ubuntu/Go build bases remain intentionally. Vendor inputs (~230 MiB) are
+  necessary pinned build sources, not disposable generated cache.
+  / 无旧 GSM 镜像或回滚容器；构建缓存为零。保留 LTE、构建基础镜像及必要上游源码。
+- Follow-up fixes add a read-only state-aware Go health probe, migrate known
+  legacy welcome defaults before native startup while preserving custom/blank
+  messages, retain process exit metadata without SMS contents, and align custom
+  SMS log filenames between collection and the history API.
+  / 本轮补齐真实状态探针、启动前默认欢迎文案迁移、无正文的退出诊断及短信日志文件名一致性。
+- Build scripts now use the root `.env` explicitly and preflight the volume
+  selected by Compose interpolation rather than a conflicting shell-only value.
+  No Token is sourced/evaluated or printed. See [Docker interpolation precedence](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/).
+  / 构建显式读取根环境文件；数据卷预检遵循 Compose 实际插值，不输出或执行令牌内容。
+- The source-sync/build attempt was blocked by execution approval; no running
+  container was replaced, no LTE state or business volume was removed. Native
+  image build and handset SMS/data end-to-end acceptance remain outstanding.
+  / 同步构建被执行审批拦截，未替换线上容器、未删除 LTE 或业务卷；原生镜像构建和真机业务验收待完成。
+
+- OpenBTS stdout now retains at most 16 MiB plus one backup, preserves prior startup evidence, and detects readiness only in the current child session. Bounded pipe waiting avoids inherited descriptors hiding process exits. / OpenBTS 输出新增 16 MiB 加一份轮转，重启保留证据，就绪仅取本次进程输出，并限制继承管道等待。
+
+- API completeness is checked across 14 path templates and 23 operations in the router, Markdown, OpenAPI and Postman. Actual middleware errors, the eight-key config allowlist and SMS pagination/window assertions are covered. / 14 个路径模板、23 项操作已对齐四套契约，并覆盖中间件错误、8 键配置白名单及短信分页窗口断言。
+
+- Validation passed: Windows Go test/vet; Linux full race/vet; persistent-state, vendor-prefetch, Ubuntu/Windows deployment contracts; Postman offline script and schema/route checks. Native image execution remains pending. / Windows 与 Linux 离线测试、race/vet、持久化及部署构建契约、Postman 脚本与接口契约均通过；新版原生镜像执行验收仍待完成。

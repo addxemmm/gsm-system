@@ -204,6 +204,14 @@ docker compose --env-file .env -p gsm-system-live \
 `--skip-health` deliberately omits HTTP validation and therefore does not
 publish the moving release alias. 跳过健康检查不构成发布成功。
 
+Compose uses the binary's read-only `--healthcheck`: a stopped cell is healthy,
+and a running cell is healthy only when `ready=true`; `transitioning` and
+`degraded` are unhealthy. The probe honors `GSM_API_TOKEN`, starts no native
+process, and is management/process-state evidence rather than RF or handset
+acceptance. / Compose 使用只读 `--healthcheck`：小区停止时健康，运行时仅
+`ready=true` 才健康；`transitioning` 与 `degraded` 均不健康。探针遵循令牌配置且
+不启动原生进程，只证明管理面与进程状态，不代表射频或真机业务验收。
+
 ## 6. Acceptance / 验收顺序
 
 1. Development: `go test ./...`, `go vet ./...`, Linux cross-build.
@@ -231,6 +239,11 @@ supersedes the earlier host-network image. The saved uplink was migrated to
 版本已部署，存档出口已迁移为 `eth0`；业务数据摘要与 LTE 状态保持不变。
 Exact evidence is in [`RELEASE-2.1.md`](RELEASE-2.1.md).
 
+Welcome-default migration and the state-aware container probe have offline
+coverage, but handset SMS transmit/receive and packet-data/DNS/Internet remain
+pending end-to-end acceptance. / 欢迎默认迁移与状态感知容器探针已有离线覆盖；
+手机短信收发及分组数据/DNS/互联网仍待端到端验收。
+
 Offline build/deploy contract checks / 离线构建与部署契约检查：
 
 ```bash
@@ -249,7 +262,7 @@ pwsh -NoProfile -File scripts/tests/deploy_from_windows.Tests.ps1
 - `/data/last_start.json`: `0600`, atomic write + fsync;
 - `/data/log/smqueue.log`, `openbts-syslog.log`, `system.log`: `0600`, 16 MiB,
   one `.1` backup via the Go `/dev/log` collector;
-- `/data/log/openbts.log`: OpenBTS startup stdout/readiness evidence;
+- `/data/log/openbts.log`: OpenBTS stdout, 16 MiB plus one `.1` backup; append on restart, with readiness detected only from the current process output. / OpenBTS 输出按 16 MiB 加一份备份轮转，重启保留证据，就绪仅取本次进程输出；
 - `/data/log/asterisk/cdr-csv/Master.csv`: persisted Asterisk CDR path;
 - `/data/state/OpenBTS/` and `/data/state/asterisk/`: native databases.
 

@@ -21,17 +21,28 @@ const maxMessageBytes = 64 << 10
 var tagPattern = regexp.MustCompile(`(?i)(?:^|\s)(smqueue|openbts)(?:\[[0-9]+\])?:`)
 
 type Sink struct {
-	conn  net.PacketConn
-	path  string
-	inode os.FileInfo
-	done  chan struct{}
-	once  sync.Once
+	smqueueLogName string
+	conn           net.PacketConn
+	path           string
+	inode          os.FileInfo
+	done           chan struct{}
+	once           sync.Once
 }
 
 // Start binds only an unused socket. An existing regular file or live listener
 // is never replaced. Empty socketPath explicitly disables collection.
 func Start(socketPath, logDir string) (*Sink, error) {
-	s := &Sink{}
+	return StartWithSmqueueLog(socketPath, logDir, "smqueue.log")
+}
+
+// StartWithSmqueueLog keeps the collector and history API on the same filename.
+// 自定义短信日志名与历史接口保持一致；原 Start 保留默认文件名兼容性。
+func StartWithSmqueueLog(socketPath, logDir, smqueueLogName string) (*Sink, error) {
+	if smqueueLogName == "" || smqueueLogName == "." || smqueueLogName == ".." ||
+		filepath.Base(smqueueLogName) != smqueueLogName || strings.ContainsAny(smqueueLogName, `/\\`) {
+		return nil, fmt.Errorf("smqueue log filename must be a plain basename")
+	}
+	s := &Sink{smqueueLogName: smqueueLogName}
 	if socketPath == "" {
 		return s, nil
 	}
@@ -100,11 +111,19 @@ func (s *Sink) receive(dir string) {
 		if line == "" {
 			continue
 		}
-		if err := appendLog(filepath.Join(dir, logName(line)), []byte(line+"\n"), maxLogBytes); err != nil {
+		if err := s.appendMessage(dir, line); err != nil {
 			// Never log the private SMS body when reporting a storage failure.
 			log.Printf("native syslog write failed: %v", err)
 		}
 	}
+}
+
+func (s *Sink) appendMessage(dir, line string) error {
+	name := logName(line)
+	if name == "smqueue.log" && s.smqueueLogName != "" {
+		name = s.smqueueLogName
+	}
+	return appendLog(filepath.Join(dir, name), []byte(line+"\n"), maxLogBytes)
 }
 
 func logName(line string) string {

@@ -17,6 +17,9 @@ cat >"$BIN/docker" <<'EOF'
 printf 'docker image=%s version=%s revision=%s %s\n' \
   "${GSM_IMAGE:-}" "${GSM_VERSION:-}" "${GSM_REVISION:-}" "$*" >>"$FAKE_DEPLOY_LOG"
 case " $* " in
+  *" compose "*" config --environment "*)
+    printf 'GSM_DATA_VOLUME=%s\nGSM_API_TOKEN=fixture-secret-not-printed\n' "${FAKE_COMPOSE_VOLUME:-${GSM_DATA_VOLUME:-docker_gsm-data}}"
+    ;;
   *" compose "*" build "*) [ "${FAKE_BUILD_FAIL:-0}" != 1 ] ;;
   *" compose "*" config --images "*) echo "$GSM_IMAGE" ;;
   *" compose "*" config --services "*) echo 'gsm-system' ;;
@@ -143,3 +146,12 @@ if grep -F ' image tag ' "$LOG" >/dev/null; then
 fi
 
 echo "PASS test_deploy_to_ubuntu.sh / Ubuntu 部署脚本测试通过"
+
+: >"$LOG"
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_COMPOSE_VOLUME=fixture-env-volume \
+  "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build
+grep -F 'volume inspect fixture-env-volume' "$LOG" >/dev/null
+if grep -F 'fixture-secret-not-printed' "$LOG" >/dev/null; then
+  echo 'Compose environment secret leaked' >&2; exit 1
+fi
+echo 'PASS resolved Compose data volume / 使用 Compose 实际数据卷'

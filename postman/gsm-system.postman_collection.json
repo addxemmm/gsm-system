@@ -277,7 +277,7 @@
                 "exec": [
                   "pm.test('HTTP 200 observations or 404 before log activity', () => pm.expect([200,404]).to.include(pm.response.code));",
                   "if (pm.response.code === 404) pm.test('not-found code', () => pm.expect(pm.response.json().code).to.eql(40401));",
-                  "if (pm.response.code === 200) pm.test('SMS snapshot keeps six nullable fields and counts', function () { const d=pm.response.json().data; const keys=['time','text','sender_number','sender_imsi','receiver_number','receiver_imsi']; pm.expect(d.sms).to.be.an('array'); pm.expect(d.count).to.eql(d.sms.length); pm.expect(d.total).to.be.a('number'); pm.expect(d.count).to.be.at.most(d.total); pm.expect(d.source).to.eql('smqueue.log'); pm.expect(d.window).to.be.an('object'); d.sms.forEach(function (m) { pm.expect(Object.keys(m).sort()).to.eql(keys.slice().sort()); keys.forEach(function (k) { pm.expect(m[k] === null || typeof m[k] === 'string').to.eql(true); }); }); });"
+                  "if (pm.response.code === 200) pm.test('SMS snapshot keeps six nullable fields and pagination metadata', function () { const d=pm.response.json().data; const keys=['time','text','sender_number','sender_imsi','receiver_number','receiver_imsi']; pm.expect(d.sms).to.be.an('array'); pm.expect(d.count).to.eql(d.sms.length); pm.expect(d.total).to.be.a('number'); pm.expect(d.count).to.be.at.most(d.total); pm.expect(d.limit).to.eql(100); pm.expect(d.offset).to.eql(0); pm.expect(d.source).to.eql('smqueue.log'); pm.expect(d.window).to.be.an('object'); pm.expect(d.window.bytes).to.be.a('number'); pm.expect(d.window.max_bytes).to.be.a('number'); pm.expect(d.window.truncated).to.be.a('boolean'); pm.expect(d.truncated).to.eql(d.window.truncated); d.sms.forEach(function (m) { pm.expect(Object.keys(m).sort()).to.eql(keys.slice().sort()); keys.forEach(function (k) { pm.expect(m[k] === null || typeof m[k] === 'string').to.eql(true); }); }); });"
                 ]
               }
             }
@@ -654,7 +654,8 @@
                 }
               }
             },
-            "url": "{{baseUrl}}/api/v1/config"
+            "url": "{{baseUrl}}/api/v1/config",
+            "description": "Atomically updates only the eight public GSM.Radio/GSM.Identity keys documented in API.md; other native keys, including Control.LUR.*, return 422. / 仅原子更新 API.md 所列八个 GSM.Radio/GSM.Identity 键；Control.LUR.* 等其他原生键返回 422。"
           }
         },
         {
@@ -716,7 +717,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('HTTP 202 submitted', function () { pm.response.to.have.status(202); pm.expect(pm.response.json().data.status).to.eql('submitted'); });"
+                  "pm.test('HTTP 202 submitted', function () { pm.response.to.have.status(202); const b=pm.response.json(); pm.expect(b.message).to.eql('sms submitted'); pm.expect(b.data.status).to.eql('submitted'); pm.expect(b.data.imsi).to.eql(pm.variables.replaceIn('{{imsi}}')); });"
                 ]
               }
             }
@@ -796,6 +797,39 @@
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/subscribers?limit=1&limit=2",
             "description": "Read-only negative case; repeated and unknown list query keys are rejected."
+          }
+        },
+        {
+          "name": "Config rejects non-public native key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('HTTP 422 unsupported config key', function () { pm.response.to.have.status(422); const b=pm.response.json(); pm.expect(b.code).to.eql(42201); pm.expect(b.data.errors[0].field).to.eql('values'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"values\": {\n    \"Control.LUR.OpenRegistration.Message\": \"fixture\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/config",
+            "description": "Negative contract: runtime-managed welcome/admission keys are not public PATCH keys. / 负例：运行时管理的欢迎/接入键不属于公开 PATCH 白名单。"
           }
         },
         {

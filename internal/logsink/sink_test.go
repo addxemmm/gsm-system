@@ -21,6 +21,49 @@ func TestRouting(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomSmqueueFilenameIsUsedWithoutChangingOtherRoutes(t *testing.T) {
+	dir := t.TempDir()
+	s, err := StartWithSmqueueLog("", dir, "custom-sms.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line, filename := range map[string]string{
+		"<30>Sep 8 12:01:00 smqueue[42]: fixture SMS":   "custom-sms.log",
+		"<30>Sep 8 12:01:00 OpenBTS[43]: fixture BTS":   "openbts-syslog.log",
+		"<30>Sep 8 12:01:00 asterisk[44]: fixture call": "system.log",
+	} {
+		if err := s.appendMessage(dir, line); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(filepath.Join(dir, filename))
+		if err != nil || string(got) != line+"\n" {
+			t.Fatalf("route %s: content=%q error=%v", filename, got, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "smqueue.log")); !os.IsNotExist(err) {
+		t.Fatalf("default SMS file should not be written: %v", err)
+	}
+	legacy, err := Start("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.appendMessage(dir, "smqueue: legacy fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "smqueue.log")); err != nil {
+		t.Fatalf("legacy Start lost the default filename: %v", err)
+	}
+}
+
+func TestCustomSmqueueFilenameRejectsPaths(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "../sms.log", `..\sms.log`, "nested/sms.log"} {
+		if _, err := StartWithSmqueueLog("", t.TempDir(), name); err == nil {
+			t.Errorf("accepted non-basename %q", name)
+		}
+	}
+}
+
 func TestRotationAndPermissions(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "smqueue.log")
 	if err := appendLog(p, []byte("first\n"), 10); err != nil {
