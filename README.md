@@ -15,18 +15,21 @@ through one versioned REST API. Release 2.1 keeps only the standardized
 `/api/v1` surface and removes the ad-hoc root endpoints and project-owned Python
 management code.
 
-> **2.1 status / 状态：** deployed at 2026-09-08 17:19 HKT, verified at 17:23:
-> image `gsm-system:2.1.0-9512d5e4d850`, management healthy, cell stopped and RF off.
-> SMS queries now cover only the current cell start; historical log files remain
-> intact. Project time defaults to `Asia/Shanghai`, configurable with startup `TZ`.
-> Four isolated image suites and CI passed; three number bindings were preserved.
-> Handset caller display, packet-data Internet and the earlier UHD receive-timeout
-> fault still require separate live investigation/acceptance.
+> **2.1 status / 状态：** verified at 2026-09-08 18:42 HKT:
+> image `gsm-system:2.1`, revision `8466188416a7`, management healthy, cell stopped
+> and RF off. Native Chinese UCS-2 SMS observations, bounded transient UHD RX
+> timeout recovery and built-in 2600/2602 voice routes are included. Four isolated
+> image suites, native regression/negative-control tests and CI passed.
+> Three bindings and raw SMS history were preserved; obsolete GSM images and
+> containers were removed, build cache is 0 B. Phone-to-phone/API SMS latency,
+> radio call reliability and packet-data Internet still require live acceptance.
 >
-> 2026-09-08 17:19 HKT 已部署，17:23 验证健康，小区停止、射频关闭。
-> 短信仅查询本次小区启动范围，历史原始日志保留；项目默认东八区，可通过启动 `TZ`
-> 自定义。四套隔离镜像测试及 CI 通过，三条绑定完整。真机来电显示、互联网与此前 UHD
-> 接收超时仍需独立排查或验收。详见 [发布记录](docs/RELEASE-2.1.md)。
+> 2026-09-08 18:42 HKT 验证修复版健康，镜像固定为 `gsm-system:2.1`，小区及射频停止。
+> 已包含原生中文短信解码、短暂 UHD 接收超时的有限重试及 2600/2602 语音路由；四套
+> 镜像测试、原生回归/旧版负向对照及 CI 通过。三条绑定和原始短信日志完整，旧 GSM
+> 镜像与容器已清理，构建缓存为零。短信延迟、空口互拨可靠性及上网仍待真机验收。
+> 短信保持本次小区启动范围，默认东八区可由启动 `TZ` 自定义。
+> 详见 [发布记录](docs/RELEASE-2.1.md)。
 
 ## Highlights / 主要特性
 

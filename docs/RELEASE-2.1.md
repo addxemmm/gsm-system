@@ -635,3 +635,111 @@ handset caller-ID and packet-data Internet still need separate live acceptance.
 此前 UHD 接收超时导致 degraded 的问题不属于本次已修复范围，真机来电显示及上网
 仍需独立验收。Documentation-only commits after this record do not change the
 runtime implementation or `.release-revision` / 后续纯文档提交不改变运行实现版本。
+
+## Chinese SMS, bounded RX recovery and diagnostic calls, 2026-09-08 18:42 HKT / 中文短信、有限接收恢复与测试通话
+
+Implementation commits / 实现提交:
+- `d901423be38e`: fixed runtime tag, gated cleanup, bounded UHD receive-timeout
+  handling and restored 2600/2602 routes. / 固定运行标签、验收后清理、有限接收超时处理与测试号码路由。
+- `8466188416a7`: native UCS-2 decoding and lossless observation tests.
+  / 原生 UCS-2 解码与无损短信观察测试。
+
+### Delivered and validated / 已交付与验收
+
+- Image is now exactly `gsm-system:2.1`, with no alternate GSM tags. Application
+  semantic version remains `2.1.0`; OCI and binary revision identify the source
+  without a runtime tag suffix. Image ID:
+  `sha256:0ecf8f12741072a55ff24f01322412ee5690e52814b4af1ae5b866548fc9a0aa`.
+  Container `gsmsystem-uhd4`, ID:
+  `7f7da87c176ec8429a1d83856cd01d07159a2781a9355cdf9006f56233b02b55`.
+  / 运行镜像仅保留 2.1 标签，源码追踪使用元数据，不擅自升级版本或增加尾号。
+- Chinese `text:null` originated in native `TLUserData::decode`, which rejected
+  DCS 0x08 before Go parsed the observation. Patch 0006 decodes strict BMP UCS-2
+  (0x08 and 0x18..0x1b), checks lengths/UDH and preserves forwarding bytes.
+  Unsupported encodings, malformed data and surrogate code units stay unknown;
+  multipart reassembly and API outbound Unicode are not added. Existing missing
+  historical text cannot be reconstructed from an empty observation.
+  / 根因是原生解码器拒绝中文编码而非 Go JSON；新增严格 BMP UCS-2 解码与边界校验，
+  不改转发字节。不支持的编码、错误报文、代理码元保持未知；不新增分段重组或 API
+  中文发送，旧空正文记录不会凭空恢复。详见 [SMS-UNICODE.md](SMS-UNICODE.md)。
+- Old transceiver exited on the first 100 ms receive timeout, followed by an
+  OpenBTS clock timeout. Patch 0005 retries a transient timeout for at most ten
+  timeout events or one second and requires recovered sample continuity.
+  Persistent faults, timestamp gaps and malformed metadata remain fatal; no
+  sample fabrication, automatic RF restart or unlimited retry is introduced.
+  / 旧版单次 100 ms 超时即退出；现在有限重试且验证样本连续性，持续故障或时间戳
+  缺口仍停止，不伪造采样或自动重启射频。详见 [UHD-RX-RECOVERY.md](UHD-RX-RECOVERY.md)。
+- Restored exact 2600 Echo and 2602 Milliwatt routes via phones/default/from-openBTS.
+  Reserved-number binding validation and Postman/OpenAPI documentation are in
+  sync. Six actual Local-channel calls reached the correct answered applications;
+  no broad legacy demo/shell/recording routes were re-enabled.
+  / 恢复两个测试号码，六条 Local 通道路由均实际接通对应应用；保留号码校验与文档
+  同步，不恢复旧演示中的 shell/录音功能。详见 [VOICE-DIAGNOSTICS.md](VOICE-DIAGNOSTICS.md)。
+- Native build passed UCS-2 decode/forwarding regressions and original-source
+  negative control, 32 UHD RX checks and its original immediate-exit control,
+  and 144 GMM optional-IE cases. Linux Go race/vet and all four final image suites
+  passed: caller identity/diagnostics, general persistence/Asterisk/ODBC/CDR/TZ,
+  current-start SMS, and presets/custom starts. Tests used isolated resources,
+  no production volume or RF access.
+  / 原生解码、UHD 32 项、GMM 144 项、旧代码负向对照、Go race/vet 与四套最终镜像
+  验收全部通过；镜像测试使用隔离资源，不接入生产卷或射频。
+- Implementation CI passed:
+  [GitHub Actions run 34216249308](https://github.com/addxemmm/gsm-system/actions/runs/34216249308).
+  / 最终实现提交的 GitHub CI 已通过。
+
+### Production deployment and cleanup / 生产部署与清理
+
+- Before replacement the old runtime was degraded with OpenBTS/transceiver absent,
+  supporting services alive and zero calls. DELETE /cell stopped remaining services.
+  No subscriber binding conflicted with the restored reserved service numbers.
+  / 替换前旧版再次 degraded，无活动通话，停止残留服务后部署；测试保留号无绑定冲突。
+- At 18:42 HKT the new container was running/healthy, direct binary probe passed,
+  binary revision was `8466188416a7`, and all five native cell processes were
+  stopped. RF was not automatically restarted. GET /sms correctly returned an
+  empty current-start scope with session=null; historical files remain intact.
+  / 18:42 管理容器健康、版本匹配，小区五进程全部停止且未自动开射频；新管理进程
+  尚未启动小区，因此本次短信范围为空，历史日志保留。
+- SQL-dump and raw SMS-log digests matched immediately before/after deployment;
+  quick_check=ok, three subscribers and three bindings retained. Token remains
+  blank/disabled; timezone is Asia/Shanghai and container time carried +08:00.
+  Bridge networking publishes only LAN-bound TCP 8082. PUT /network eth0 returned
+  changed=true then changed=false, confirming idempotent forwarding/NAT setup.
+  / 部署前后 SQL 与短信日志摘要一致，三条签约及绑定保留；免 Token、东八区、bridge
+  和局域网管理端口不变，出口 NAT 幂等验证通过。
+- The deploy script verified revision, image identity and health before deleting
+  superseded GSM images, the old runtime and unused builder cache. Only the
+  current GSM tag, unchanged LTE image and required Go/Ubuntu build bases remain;
+  build cache is 0 B. Two business containers and two external business volumes
+  remain, no isolated test containers or volumes. LTE container/image IDs, stopped
+  state and start/finish timestamps were unchanged. No volumes or networks were
+  pruned; database, raw SMS logs and unrelated files were not treated as cache.
+  / 清理在版本和健康验收通过后执行；仅保留当前 GSM 标签、原 LTE 及 Go/Ubuntu
+  构建基础镜像，构建缓存为零，两个业务容器和两个数据卷保留。LTE 身份、状态与时间戳
+  均未变化，未清理数据卷、网络、数据库或原始短信日志。
+
+### Not yet proven on handsets / 尚未真机证明的部分
+
+Peer/API SMS delay, difficult peer calls, physical USB/radio stability and GPRS
+Internet are not declared fixed by these isolated checks. Logs also showed TCH
+release/reassignment conflicts, late paging and peer-call SIP 502/cause 27.
+The queue's 15-second acknowledgement wait plus 60-second retry delay can amplify
+failed deliveries, but the existing log does not establish that path for each
+reported message. Radio allocation and queue timers were not blindly shortened.
+
+手机互发/API 下发延迟、互拨困难、物理 USB/无线稳定性及 GPRS 上网不等于已被这些隔离
+测试证明修好。日志另有信道释放/重分配冲突、迟到寻呼和 SIP 502/cause 27；确认等待
+与重试可能放大投递失败的延迟，但还缺少逐条关联证据，本次未盲目缩短定时器。
+
+Next live acceptance: start the cell through the existing preset or custom API,
+reattach the test phones, verify 2600 echo and 2602 tone first, then compare short
+Chinese SMS in both directions with API observations. Time a distinct ASCII API
+message and peer calls in both directions, recording test times rather than
+publishing subscriber identifiers or message contents. Correlate new errors with
+radio, paging and SIP/ACK logs before further tuning.
+
+下一步真机验收：用预设或自定义 API 启动小区，手机重新接入；先测 2600 回声与 2602
+测试音，再测双向短中文短信和记录一致性、API ASCII 下发时延及双向互拨。按测试时刻
+关联无线/寻呼/SIP 确认日志，不公开用户身份和实际短信正文，再决定进一步参数调整。
+
+Subsequent documentation-only commits do not change the deployed implementation
+revision or `.release-revision`. / 后续纯文档提交不改变已部署的实现版本与发布标记。

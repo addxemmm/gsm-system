@@ -58,13 +58,18 @@ Go tests check lossless UTF-8 hex → parser → API JSON and documentation limi
 反向应用补丁后的旧版本必须复现 `0x08` 拒绝。Go 测试验证 UTF-8 正文到 API JSON
 保持一致，且无编码标签的原始字节不被猜测为中文。
 
-Native full compilation and two-handset acceptance remain separate gates.
+Native full compilation and two-handset acceptance are separate gates.
+The 2026-09-08 release at revision `8466188416a7` passed native image compilation,
+the extracted-method regression/negative control, Go race/vet and four isolated
+image suites. Two-handset radio acceptance remains pending.
 Test short Chinese text in both directions and compare handset content with
 the keyed observation; inspect metadata/error counts without publishing real
 SMS contents or subscriber identities. Delivery delay, paging, voice setup and
 UHD recovery are separate issues; this decoder change is not evidence that
 those paths are healthy.
 
-完整原生编译与双手机空口验收仍需单独完成；双向短中文短信对照手机和日志观察，
+完整原生编译与双手机空口验收是独立关卡；2026-09-08 的 `8466188416a7` 已通过镜像原生
+编译、提取方法回归/旧版负向对照、Go race/vet 与四套隔离镜像测试，尚待双手机空口验收。
+双向短中文短信对照手机和日志观察，
 只报告元数据/错误计数，不公开真实正文或用户身份。本补丁不证明延迟、寻呼、语音或
 UHD 恢复已经正常。
