@@ -119,6 +119,8 @@ verify_image_contract
 # 启动前锁定预期镜像 ID，避免宿主机上其它 API 的 200 响应掩盖失败部署。
 images=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --images)
 [ -n "$images" ] || { echo 'compose has no images to verify' >&2; exit 1; }
+services=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" config --services)
+[ -n "$services" ] || { echo 'compose has no services to verify' >&2; exit 1; }
 expected_ids=''
 for image in $images; do
   image_id=$(docker image inspect --format '{{.Id}}' "$image")
@@ -128,19 +130,24 @@ done
 docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d
 
 verify_containers() {
-  ids=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" ps --all -q) || return 1
-  [ -n "$ids" ] || { echo 'no deployment containers found' >&2; return 1; }
-  for id in $ids; do
-    running=$(docker inspect --format '{{.State.Running}}' "$id") || return 1
-    actual_image=$(docker inspect --format '{{.Image}}' "$id") || return 1
-    if [ "$running" != true ]; then
-      echo "deployment container is not running: $id" >&2
-      return 1
-    fi
-    case " $expected_ids " in
-      *" $actual_image "*) ;;
-      *) echo "unexpected deployment image: $id $actual_image" >&2; return 1 ;;
-    esac
+  # Query only services declared by the current Compose file. `ps` without a
+  # service also returns retained same-project orphans used for rollback.
+  # 仅检查当前配置声明的服务；同项目保留的回滚 orphan 不参与本次发布验收。
+  for service in $services; do
+    ids=$(docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" ps --all -q "$service") || return 1
+    [ -n "$ids" ] || { echo "no deployment container found for service: $service" >&2; return 1; }
+    for id in $ids; do
+      running=$(docker inspect --format '{{.State.Running}}' "$id") || return 1
+      actual_image=$(docker inspect --format '{{.Image}}' "$id") || return 1
+      if [ "$running" != true ]; then
+        echo "deployment container is not running: $service $id" >&2
+        return 1
+      fi
+      case " $expected_ids " in
+        *" $actual_image "*) ;;
+        *) echo "unexpected deployment image: $service $id $actual_image" >&2; return 1 ;;
+      esac
+    done
   done
 }
 verify_containers
