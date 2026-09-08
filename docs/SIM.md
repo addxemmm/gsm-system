@@ -77,6 +77,66 @@ HTTP `202` likewise means submitted, not delivered; verify handset receipt
 separately. / 正常欢迎消息为空就不发送；`WELCOME_SENT` 仅是原生调度标记，
 不代表送达。API 的 HTTP `202` 同样仅表示已提交，须另行核验手机收件。
 
+## Reattach after an open-registration deployment / 开放注册部署后重新接入
+
+On this pinned OpenBTS build, the built-in SGSN/GGSN parses but does not select
+or reject a route by APN, and allocates IPv4 addresses. Configure the handset:
+本项目固定版本的内置 SGSN/GGSN 解析 APN，但不按 APN 选择或拒绝路由，分配 IPv4。
+手机可使用以下配置：
+
+| Setting / 设置 | Value / 值 |
+|---|---|
+| APN | `internet` (a conventional label, not an admission whitelist / 常用名称，不是接入白名单) |
+| APN type / 类型 | `default` |
+| APN protocol and roaming protocol / 协议及漫游协议 | IPv4 |
+| Username/password / 用户名、密码 | empty / 留空 |
+| Authentication / 认证 | None / 无 |
+| MCC/MNC in the handset APN / 手机 APN 中的 MCC/MNC | keep the SIM-derived values / 保持 SIM 自动值 |
+| Mobile data, data roaming / 移动数据、数据漫游 | enabled for this test SIM / 对该测试 SIM 开启 |
+
+This implementation processes IPCP DNS options, not PAP/CHAP credentials. Verify
+`GGSN.DNS` points to a handset-reachable upstream DNS server, not the Docker
+resolver `127.0.0.11` or host loopback stub. The address must also pass the native
+GGSN firewall policy. 当前实现处理 IPCP DNS，不做 PAP/CHAP 凭据校验。DNS 必须是
+手机可达且符合 GGSN 防火墙策略的上游服务器，不下发 Docker 或宿主机回环解析地址。
+Implementation references / 实现依据：pinned `GPRS/GPRSL3Messages.cpp`,
+`SGSNGGSN/Ggsn.cpp`, `SGSNGGSN/miniggsn.cpp`.
+
+1. With the cell stopped, verify the persisted registration/GPRS settings and
+   apply `PUT /api/v1/network` with `{"iface":"eth0"}` after container recreation.
+   小区停止时核对持久配置，容器重建后重新应用容器内 NAT。
+2. Start using either the preset request or complete custom parameters, then
+   enable 2G on the test phone and manually select the test PLMN if needed.
+   使用预设或完整自定义参数启动，在测试手机启用 2G，必要时手选测试网络。
+3. Reattach by toggling airplane mode. A newly accepted open-registration
+   observation normally has `auth:2`; this is not a continuing online guarantee.
+   `ip` remains null until packet attach and PDP activation succeed. 飞行模式开关
+   后重新接入；开放注册通常记录 `auth:2`，成功建立 PDP 后才出现数据 IP。
+4. Verify the welcome SMS on the handset, then send one manual test:
+   在手机检查欢迎短信，再发送一条手动测试短信：
+
+   ```http
+   POST /api/v1/sms
+   Content-Type: application/json
+
+   {"imsi":"IMSI","sender":"101","text":"hello"}
+   ```
+
+   Replace `IMSI` with the owned test SIM's 15-digit identity. Receipt, not `202`,
+   is acceptance evidence. Direct IMSI-addressed MT SMS does not require a bound
+   receiving number or data IP. 替换为自有测试 SIM 的 15 位 IMSI，以手机实收验收；
+   直接 IMSI 下发不要求先绑定收件号码，也不要求手机有数据 IP。
+5. An empty TMSI seed after container recreation allows a fresh welcome attempt;
+   changing the message alone does not clear `WELCOME_SENT`. Open-registration
+   admission does not create persistent subscribers or number routes. 容器重建
+   后易失 TMSI 从空种子开始；单改欢迎文字不会清除已调度标记。开放注册不会自动
+   创建持久签约或号码路由，语音和号码业务须另行配置及验收。
+
+If OpenBTS/transceiver exits with `UHD: Receive timed out`, stop the cell and
+inspect USB passthrough/UHD logs. A healthy management container does not resolve
+that radio failure. 若出现 UHD 接收超时退出，停止小区并检查 USB 直通和 UHD 日志；
+管理容器健康不代表射频故障已消失。
+
 ## Bind a number / 绑定号码
 
 ```http

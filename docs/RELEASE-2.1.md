@@ -335,7 +335,46 @@ forwarding/NAT rule was present. 当前只读调查确认列表为被拒绝的�
 Synthetic parser/API regressions, Windows unit/vet, Linux race/vet and offline
 Postman script tests passed. This investigation did not send SMS, provision SIM
 keys, enable open registration/GPRS, restart the cell or replace its image.
-The running image remains source `fbdaa5be2209`; deployment and any access-policy
-change await the operator's confirmation while the cell is in use. 合成回归验证
-通过；当前只修复源码和契约，线上仍为原镜像。小区使用期间，部署及开放注册/GPRS
-变更等待确认，不声称真实短信或数据业务已经修复。
+At that investigation stage the running image remained source `fbdaa5be2209`;
+deployment and access-policy changes awaited operator confirmation. 合成回归验证
+通过时仅修复源码和契约，尚未变更运行镜像；后续经确认部署的结果见下节。
+
+## Registration/data deployment verification / 注册与数据配置部署验收
+
+After operator approval on 2026-09-08, stopped the cell and old management
+container, rebuilt committed source `08f184f063c5`, and deployed
+`gsm-system:2.1.0-08f184f063c5` (validated alias `gsm-system:2.1.0`).
+Image ID: `sha256:ac59eb214fb023b4022796fb5b5b15723e76ea23ed8fa926bd404c525e0cac05`.
+用户确认后停止旧小区及容器，完整重建并部署上述修复版本，保持射频关闭，由用户
+手动启动及重新接入测试设备。本节及接入指南为后续文档变更，不改变镜像源码版本。
+
+- Persisted an explicit open-registration policy for 15-digit IMSIs, cleared its
+  reject pattern, and set both open/normal welcome messages to the addx greeting
+  with shortcode `101` and frequency `FIRST`. 持久配置显式开放注册匹配规则、空
+  拒绝规则及两类欢迎短信；未写入 SIM 密钥或凭空创建签约/号码。
+- Enabled GPRS with minimum C0/CN channels `2/0`; preserved automatic signaling
+  allocation and the existing GGSN pool. Configured the host's actual upstream
+  LAN DNS rather than Docker's loopback resolver. 启用 GPRS，保留信令时隙与地址池，
+  下发实际上游 DNS；真实服务器地址未写入此文档。
+- Retained the dedicated bridge and only the LAN-bound TCP management port.
+  Reapplied the `eth0` NAT rule: first PUT `changed:true`, second PUT
+  `changed:false`, both with forwarding/rule present. 保持 bridge 与必要管理端口；
+  容器内转发及幂等 NAT 验证通过，Token 仍为空、免鉴权。
+- Management health and image/version checks passed; cell stayed `stopped` and
+  connections correctly returned HTTP `412`. OpenBTS/TMSI/subscriber database
+  checks passed; volatile TMSI count was zero, persistent subscriber/routing
+  counts remained unchanged at zero. 管理面正常，所有射频/业务进程保持停止，易失
+  注册记录已重置，未清除持久业务库。
+- Isolated image tests passed for five defaults, CRUD/persistence and both start
+  paths, with no USB, privileged access or RF. Removed the old GSM image after
+  validation; build-cache cleanup reported 3.524 GB, with zero cache remaining.
+  镜像隔离测试通过，旧容器已替换、旧镜像已删除，不留回滚；LTE 容器、镜像及卷
+  未变更，保留必要的 Go/Ubuntu 构建基础镜像。
+
+The pre-deployment native log also recorded `UHD: Receive timed out` followed by
+transceiver/OpenBTS exit. USB enumeration still showed the SDR, but no radio
+restart or handset delivery/PDP test was performed by this deployment. This
+hardware/runtime issue is not declared fixed. See SIM.md for the reattach/APN,
+welcome/manual SMS and data acceptance steps. 部署前另有 UHD 超时退出证据，USB
+枚举仍有设备；本次不将管理面验收当作射频、手机短信实收或 PDP 成功，需用户重接
+设备后验证，超时复发时再检查 USB 直通及射频运行日志。
