@@ -4,6 +4,9 @@ package gsm
 
 import "os/exec"
 
+func terminateProcessGroup(cmd *exec.Cmd) error { return killProcessGroup(cmd) }
+func syncProfileDirectory(_ string) error       { return nil }
+
 func configureProcessGroup(_ *exec.Cmd) {}
 
 func killProcessGroup(cmd *exec.Cmd) error {

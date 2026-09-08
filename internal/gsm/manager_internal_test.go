@@ -123,7 +123,7 @@ func TestConfigTransactionRollsBackWhenPresetKeyMissing(t *testing.T) {
 	cfg := testConfig(t, dir, sqlite)
 	var initSQL strings.Builder
 	initSQL.WriteString("CREATE TABLE CONFIG(KEYSTRING TEXT PRIMARY KEY, VALUESTRING TEXT);\n")
-	for _, key := range presetConfigKeys[:len(presetConfigKeys)-1] {
+	for _, key := range radioConfigKeys[:len(radioConfigKeys)-1] {
 		fmt.Fprintf(&initSQL, "INSERT INTO CONFIG VALUES('%s','old');\n", sqliteEscape(key))
 	}
 	if out, err := exec.Command(sqlite, cfg.OpenBTSDbPath, initSQL.String()).CombinedOutput(); err != nil {
@@ -279,7 +279,6 @@ func testConfig(t *testing.T, dir, sqlite string) config.Config {
 	cfg.LogDir = filepath.Join(dir, "log")
 	cfg.OpenBTSDbPath = filepath.Join(dir, "OpenBTS.db")
 	cfg.Sqlite3Bin = sqlite
-	cfg.SmqueueSeedPath = filepath.Join(dir, "no-smqueue-seed.sql")
 	if err := os.WriteFile(cfg.OpenBTSDbPath, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}

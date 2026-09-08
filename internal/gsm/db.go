@@ -9,20 +9,19 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 )
 
-// configKeys whitelists single-key updates (legacy /allconfig allowed any
-// string, which is an injection + typo footgun; v1 restricts, legacy keeps
-// compat but validates KEYSTRING shape).
+// configKeys is the public 2.1 radio configuration allowlist.
 var configKeys = map[string]bool{
 	"GSM.Radio.ARFCNs": true, "GSM.Radio.C0": true, "GSM.Radio.Band": true,
 	"GSM.Identity.MCC": true, "GSM.Identity.MNC": true, "GSM.Identity.LAC": true,
 	"GSM.Identity.CI": true, "GSM.Identity.ShortName": true,
 }
 
-var presetConfigKeys = []string{
+var radioConfigKeys = []string{
 	"GSM.Radio.ARFCNs",
 	"GSM.Radio.C0",
 	"GSM.Radio.Band",
@@ -33,7 +32,7 @@ var presetConfigKeys = []string{
 	"GSM.Identity.ShortName",
 }
 
-// applyConfigLocked writes the 8 radio keys (preset-equivalent).
+// applyConfigLocked writes all eight validated radio configuration keys.
 func (m *Manager) applyConfigLocked(p StartParams) error {
 	kvs := map[string]string{
 		"GSM.Radio.ARFCNs": p.ARFCNs, "GSM.Radio.C0": p.C0, "GSM.Radio.Band": p.Band,
@@ -41,29 +40,14 @@ func (m *Manager) applyConfigLocked(p StartParams) error {
 		"GSM.Identity.LAC": p.LAC, "GSM.Identity.CI": p.CI,
 		"GSM.Identity.ShortName": p.ShortName,
 	}
-	updates := make([][2]string, 0, len(presetConfigKeys))
-	for _, key := range presetConfigKeys {
+	updates := make([][2]string, 0, len(radioConfigKeys))
+	for _, key := range radioConfigKeys {
 		updates = append(updates, [2]string{key, kvs[key]})
 	}
 	if err := m.updateConfigTransaction(updates); err != nil {
 		return fmt.Errorf("apply radio config: %w", err)
 	}
 	return nil
-}
-
-// ApplyPreset is the legacy /config id path (stops cell first, like run.py).
-func (m *Manager) ApplyPreset(id int) error {
-	p, err := PresetParams(id, "")
-	if err != nil {
-		return err
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	_, stopped := m.stopLocked()
-	if !stopped {
-		return ErrStopFailed
-	}
-	return m.applyConfigLocked(p)
 }
 
 // GetAllConfig returns every KEYSTRING,VALUESTRING row.
@@ -77,40 +61,60 @@ func (m *Manager) GetAllConfig() ([][2]string, error) {
 	return out, nil
 }
 
-// SetSingleConfig updates one whitelisted key (v1 strict; legacy checks shape).
+// SetSingleConfig delegates to the same validated atomic batch path.
 func (m *Manager) SetSingleConfig(name, value string) error {
-	if !configKeys[name] {
-		// Legacy allowed arbitrary keys; keep compat but require safe shape.
-		if !isConfigKeyShape(name) || strings.ContainsAny(value, "'\n\r") {
-			return fmt.Errorf("invalid config name/value")
-		}
+	return m.UpdateConfig(map[string]string{name: value})
+}
+
+// UpdateConfig validates the resulting full radio configuration, then commits
+// all requested values together. Band and C0 can change in a single request.
+// 校验合并后的完整配置，频段与信道可原子更新；运行中禁止配置修改。
+func (m *Manager) UpdateConfig(values map[string]string) error {
+	if len(values) == 0 {
+		return fmt.Errorf("%w: values must not be empty", ErrInvalidConfig)
 	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if !configKeys[key] {
+			return fmt.Errorf("%w: unsupported key %s", ErrInvalidConfig, key)
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cellRunningLocked() {
 		return ErrCellRunning
 	}
-	return m.updateConfigTransaction([][2]string{{name, value}})
-}
-
-func isConfigKeyShape(s string) bool {
-	if len(s) == 0 || len(s) > 64 {
-		return false
+	rows, err := m.sqliteQuery2("SELECT KEYSTRING,VALUESTRING FROM CONFIG;")
+	if err != nil {
+		return err
 	}
-	for _, r := range s {
-		if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_') {
-			return false
-		}
+	merged := make(map[string]string)
+	for _, row := range rows {
+		merged[row[0]] = row[1]
 	}
-	return strings.Contains(s, ".")
+	for k, v := range values {
+		merged[k] = v
+	}
+	p := StartParams{ARFCNs: merged["GSM.Radio.ARFCNs"], C0: merged["GSM.Radio.C0"], Band: merged["GSM.Radio.Band"],
+		MCC: merged["GSM.Identity.MCC"], MNC: merged["GSM.Identity.MNC"], LAC: merged["GSM.Identity.LAC"],
+		CI: merged["GSM.Identity.CI"], ShortName: merged["GSM.Identity.ShortName"], Network: "lo"}
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
+	updates := make([][2]string, 0, len(keys))
+	for _, k := range keys {
+		updates = append(updates, [2]string{k, values[k]})
+	}
+	return m.updateConfigTransaction(updates)
 }
-
 func sqliteEscape(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
 // updateConfigTransaction applies every update in one sqlite process and one
 // BEGIN IMMEDIATE transaction. The guard CHECK turns a missing/duplicate key
 // into a sqlite error; -bail then exits and the uncommitted transaction rolls
-// back instead of silently applying a partial preset.
+// back instead of silently applying a partial configuration.
 func (m *Manager) updateConfigTransaction(updates [][2]string) error {
 	var sql strings.Builder
 	sql.WriteString("PRAGMA busy_timeout=5000;\n")
@@ -158,6 +162,7 @@ func (m *Manager) sqliteQuery2(sql string) ([][2]string, error) {
 	}
 	var rows [][2]string
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		if line == "" {
 			continue
 		}

@@ -1,10 +1,11 @@
 // Package gsm owns the OpenBTS cell lifecycle + radio params.
-// Intelligent rewrite of gsmsystem/run.py: no shell string concat,
+// Go control plane: no shell string concatenation,
 // no `ps | grep` self-match, explicit validation, atomic profile.
 package gsm
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -22,73 +23,11 @@ type StartParams struct {
 	Network   string `json:"network"` // uplink iface for iptables MASQUERADE
 }
 
-// Preset mirrors legacy /config id 0-4 (run.py values, the canonical set).
-// [arfcns c0 band mcc mnc lac ci shortname]
-var Presets = [][]string{
-	{"1", "540", "1800", "001", "01", "4420", "41240", "test"},
-	{"1", "55", "900", "460", "00", "4420", "41240", "ChinaMobile"},
-	{"1", "540", "1800", "460", "00", "1", "0", "ChinaMobile"},
-	{"1", "100", "900", "460", "01", "4420", "41240", "ChinaUnicom"},
-	{"1", "540", "1800", "460", "01", "4420", "41240", "ChinaUnicom"},
-}
-
-// PresetParams expands a legacy config id into explicit params (network kept).
-func PresetParams(id int, network string) (StartParams, error) {
-	if id < 0 || id >= len(Presets) {
-		return StartParams{}, fmt.Errorf("unknown config id %d (want 0-%d)", id, len(Presets)-1)
-	}
-	c := Presets[id]
-	return StartParams{
-		ARFCNs: c[0], C0: c[1], Band: c[2], MCC: c[3],
-		MNC: c[4], LAC: c[5], CI: c[6], ShortName: c[7], Network: network,
-	}, nil
-}
-
 // Validate checks required fields + strict formats. No silent fallback:
 // unknown band / bad digits => error (caller maps to 422 / message_id 0).
 func (p StartParams) Validate() error {
-	if strings.TrimSpace(p.ARFCNs) == "" || strings.TrimSpace(p.C0) == "" ||
-		strings.TrimSpace(p.Band) == "" || strings.TrimSpace(p.MCC) == "" ||
-		strings.TrimSpace(p.MNC) == "" || strings.TrimSpace(p.LAC) == "" ||
-		strings.TrimSpace(p.CI) == "" || strings.TrimSpace(p.ShortName) == "" ||
-		strings.TrimSpace(p.Network) == "" {
-		return fmt.Errorf("incomplete parameters")
-	}
-	if p.Band != "900" && p.Band != "1800" {
-		return fmt.Errorf("band must be 900 or 1800")
-	}
-	for _, f := range []struct {
-		name, val string
-		exact    []int
-		digits   bool
-	}{
-		{"arfcns", p.ARFCNs, nil, true},
-		{"c0", p.C0, nil, true},
-		{"mcc", p.MCC, []int{3}, true},
-		{"mnc", p.MNC, []int{2, 3}, true},
-		{"lac", p.LAC, nil, true},
-		{"ci", p.CI, nil, true},
-	} {
-		if f.digits && !isDigits(f.val) {
-			return fmt.Errorf("%s must be digits", f.name)
-		}
-		if len(f.exact) > 0 {
-			ok := false
-			for _, n := range f.exact {
-				if len(f.val) == n {
-					ok = true
-				}
-			}
-			if !ok {
-				return fmt.Errorf("%s has bad length", f.name)
-			}
-		}
-	}
-	if err := validateShortName(p.ShortName); err != nil {
-		return err
-	}
-	if strings.ContainsAny(p.Network, " \t\n\r\"';&|<>$`\\") {
-		return fmt.Errorf("network contains illegal characters")
+	if issues := p.ValidateDetailed(); len(issues) > 0 {
+		return fmt.Errorf("%s: %s", issues[0].Field, issues[0].Reason)
 	}
 	return nil
 }
@@ -107,11 +46,19 @@ func (p StartParams) ValidateDetailed() []FieldIssue {
 		add("arfcns", "required")
 	} else if !isDigits(p.ARFCNs) {
 		add("arfcns", "must be digits")
+	} else if p.ARFCNs != "1" {
+		add("arfcns", "this UHD transceiver supports one carrier only")
 	}
 	if strings.TrimSpace(p.C0) == "" {
 		add("c0", "required")
 	} else if !isDigits(p.C0) {
 		add("c0", "must be digits")
+	} else {
+		n, err := strconv.Atoi(p.C0)
+		if err != nil || (p.Band == "900" && !((n >= 0 && n <= 124) || (n >= 975 && n <= 1023))) ||
+			(p.Band == "1800" && !(n >= 512 && n <= 885)) {
+			add("c0", "outside the selected GSM band channel range")
+		}
 	}
 	if p.Band != "900" && p.Band != "1800" {
 		add("band", "must be 900 or 1800")
@@ -126,21 +73,38 @@ func (p StartParams) ValidateDetailed() []FieldIssue {
 		add("lac", "required")
 	} else if !isDigits(p.LAC) {
 		add("lac", "must be digits")
+	} else if n, err := strconv.Atoi(p.LAC); err != nil || n < 1 || n > 65279 {
+		add("lac", "must be 1-65279 for this OpenBTS compatibility profile")
 	}
 	if strings.TrimSpace(p.CI) == "" {
 		add("ci", "required")
 	} else if !isDigits(p.CI) {
 		add("ci", "must be digits")
+	} else if n, err := strconv.Atoi(p.CI); err != nil || n < 0 || n > 65535 {
+		add("ci", "must be 0-65535")
 	}
 	if err := validateShortName(p.ShortName); err != nil {
 		add("short_name", err.Error())
 	}
 	if strings.TrimSpace(p.Network) == "" {
 		add("network", "required")
-	} else if strings.ContainsAny(p.Network, " \t\n\r\"';&|<>$`\\") {
+	} else if !ValidInterfaceName(p.Network) {
 		add("network", "illegal characters")
 	}
 	return out
+}
+
+// ValidInterfaceName accepts Linux interface names without CLI metacharacters.
+func ValidInterfaceName(name string) bool {
+	if len(name) < 1 || len(name) > 15 || name == "." || name == ".." {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 func validateShortName(s string) error {

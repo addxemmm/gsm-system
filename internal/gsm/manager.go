@@ -25,9 +25,8 @@ var CellProcs = []string{"OpenBTS", "sipauthserve", "smqueue", "asterisk", "tran
 
 var (
 	// ErrCellRunning is returned when a config/start operation races a live cell.
-	ErrCellRunning = errors.New("cell is running")
-	// ErrStopFailed is returned when a preset cannot safely update the DB.
-	ErrStopFailed = errors.New("cell failed to stop")
+	ErrCellRunning   = errors.New("cell is running")
+	ErrInvalidConfig = errors.New("invalid radio configuration")
 	// ErrDatabaseNotFound classifies a missing configured sqlite database.
 	ErrDatabaseNotFound = errors.New("database file not found")
 )
@@ -52,14 +51,14 @@ func (p *managedProcess) alive() bool {
 
 // Manager owns child handles + saved profile.
 type Manager struct {
-	cfg config.Config
-	mu  sync.Mutex
+	cfg       config.Config
+	mu        sync.Mutex
+	profileMu sync.Mutex
 
 	openbts       *managedProcess
 	ownedChildren []*managedProcess
 	startedAt     time.Time
 	lastStart     StartParams
-	lastNet       string
 }
 
 // New creates a Manager.
@@ -67,21 +66,24 @@ func New(cfg config.Config) *Manager { return &Manager{cfg: cfg} }
 
 // Status is the machine-readable state for /api/v1/cell and /health.
 type Status struct {
-	Running   bool       `json:"running"`
-	OpenBTS   bool       `json:"openbts"`
-	Transc    bool       `json:"transceiver"`
-	SipAuth   bool       `json:"sipauthserve"`
-	Smqueue   bool       `json:"smqueue"`
-	Asterisk  bool       `json:"asterisk"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	Band      string     `json:"band,omitempty"`
-	ShortName string     `json:"short_name,omitempty"`
+	State         string     `json:"state"`
+	Ready         bool       `json:"ready"`
+	SMSReady      bool       `json:"sms_ready"`
+	VoiceReady    bool       `json:"voice_ready"`
+	Transitioning bool       `json:"transitioning"`
+	Running       bool       `json:"running"`
+	OpenBTS       bool       `json:"openbts"`
+	Transc        bool       `json:"transceiver"`
+	SipAuth       bool       `json:"sipauthserve"`
+	Smqueue       bool       `json:"smqueue"`
+	Asterisk      bool       `json:"asterisk"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	Band          string     `json:"band,omitempty"`
+	ShortName     string     `json:"short_name,omitempty"`
 }
 
 // IsRunning reports live state (system procs OR managed child).
 func (m *Manager) IsRunning() Status {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	st := Status{
 		OpenBTS:  sysop.Running("OpenBTS"),
 		Transc:   sysop.Running("transceiver"),
@@ -89,10 +91,30 @@ func (m *Manager) IsRunning() Status {
 		Smqueue:  sysop.Running("smqueue"),
 		Asterisk: sysop.Running("asterisk"),
 	}
+	// Long start/stop operations must not block health probes for their full
+	// timeout. Process observations remain available while metadata is locked.
+	if !m.mu.TryLock() {
+		st.Transitioning = true
+		st.classify()
+		return st
+	}
+	defer m.mu.Unlock()
 	if m.openbts.alive() {
 		st.OpenBTS = true
 	}
-	st.Running = st.OpenBTS || st.Transc
+	for _, child := range m.ownedChildren {
+		if child.alive() {
+			switch child.name {
+			case "sipauthserve":
+				st.SipAuth = true
+			case "smqueue":
+				st.Smqueue = true
+			case "asterisk":
+				st.Asterisk = true
+			}
+		}
+	}
+	st.classify()
 	if st.Running && !m.startedAt.IsZero() {
 		t := m.startedAt
 		st.StartedAt = &t
@@ -100,6 +122,34 @@ func (m *Manager) IsRunning() Status {
 		st.ShortName = m.lastStart.ShortName
 	}
 	return st
+}
+
+// Ready means process availability, not a successful handset/RF test.
+func (st *Status) classify() {
+	st.Running = st.OpenBTS || st.Transc
+	st.SMSReady = st.OpenBTS && st.Transc && st.SipAuth && st.Smqueue
+	st.VoiceReady = st.OpenBTS && st.Transc && st.SipAuth && st.Asterisk
+	st.Ready = st.SMSReady && st.VoiceReady && !st.Transitioning
+	st.State = "degraded"
+	if !st.Running && !st.SipAuth && !st.Smqueue && !st.Asterisk {
+		st.State = "stopped"
+	}
+	if st.Ready {
+		st.State = "running"
+	}
+	if st.Transitioning {
+		st.State = "transitioning"
+	}
+}
+
+// WithStoppedCell serializes a configuration side effect against Start/Stop.
+func (m *Manager) WithStoppedCell(operation func() error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cellRunningLocked() {
+		return ErrCellRunning
+	}
+	return operation()
 }
 
 // CheckUSRP reports B210 presence.
@@ -217,13 +267,17 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	for _, child := range owned {
+		if !child.alive() {
+			return fmt.Errorf("%s exited before startup completed", child.name)
+		}
+	}
 	if err := m.SaveProfile(p); err != nil {
 		return fmt.Errorf("save start profile: %w", err)
 	}
 
 	m.startedAt = time.Now()
 	m.lastStart = p
-	m.lastNet = p.Network
 	m.openbts = openbts
 	m.ownedChildren = append(m.ownedChildren[:0], owned[:len(owned)-1]...)
 	committed = true
@@ -251,10 +305,10 @@ func (m *Manager) stopLocked() (was, stopped bool) {
 		cancel()
 	}
 
-	stopManaged(m.openbts, 2*time.Second)
-	m.openbts = nil
 	stopManagedReverse(m.ownedChildren, 2*time.Second)
 	m.ownedChildren = nil
+	stopManaged(m.openbts, 2*time.Second)
+	m.openbts = nil
 
 	sysop.KillAll("smqueue", 2*time.Second)
 	sysop.KillAll("asterisk", 2*time.Second)
@@ -264,7 +318,6 @@ func (m *Manager) stopLocked() (was, stopped bool) {
 	sysop.KillAll("transceiver", 3*time.Second)
 	stopped = !m.anyServiceRunningLocked()
 	if stopped {
-		m.lastNet = ""
 		m.startedAt = time.Time{}
 	}
 	return was, stopped
@@ -277,19 +330,42 @@ func (m *Manager) ProfilePath() string {
 
 // SaveProfile persists resolved start params (atomic tmp+rename).
 func (m *Manager) SaveProfile(p StartParams) error {
+	m.profileMu.Lock()
+	defer m.profileMu.Unlock()
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := m.ProfilePath() + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+	f, err := os.CreateTemp(m.cfg.DataDir, ".last-start-*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, m.ProfilePath())
+	defer os.Remove(f.Name())
+	if err := f.Chmod(0600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), m.ProfilePath()); err != nil {
+		return err
+	}
+	return syncProfileDirectory(m.cfg.DataDir)
 }
 
 // LoadProfile reads the persisted launch config.
 func (m *Manager) LoadProfile() (StartParams, bool) {
+	m.profileMu.Lock()
+	defer m.profileMu.Unlock()
 	b, err := os.ReadFile(m.ProfilePath())
 	if err != nil {
 		return StartParams{}, false
@@ -428,9 +504,9 @@ func stopManaged(p *managedProcess, timeout time.Duration) {
 	if p == nil {
 		return
 	}
-	// Kill the whole owned process group. OpenBTS may have spawned its
-	// transceiver by the time the parent exits or readiness is cancelled.
-	groupErr := killProcessGroup(p.cmd)
+	// TERM gives native services time to flush CDRs/SQLite. KILL still covers
+	// descendants after the parent exits, using a fresh bounded wait.
+	groupErr := terminateProcessGroup(p.cmd)
 	if groupErr != nil && p.alive() {
 		// Compatibility fallback for a caller-supplied Cmd that was not started
 		// through startDetached/configureProcessGroup.
@@ -441,6 +517,11 @@ func stopManaged(p *managedProcess, timeout time.Duration) {
 	select {
 	case <-p.done:
 	case <-timer.C:
+	}
+	_ = killProcessGroup(p.cmd)
+	select {
+	case <-p.done:
+	case <-time.After(time.Second):
 	}
 }
 

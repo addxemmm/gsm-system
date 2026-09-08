@@ -6,28 +6,6 @@ import (
 	"github.com/addxemmm/gsm-system/internal/gsm"
 )
 
-func TestPresetsCount(t *testing.T) {
-	if len(gsm.Presets) != 5 {
-		t.Fatalf("want 5 presets, got %d", len(gsm.Presets))
-	}
-}
-
-func TestPresetParamsBounds(t *testing.T) {
-	if _, err := gsm.PresetParams(-1, ""); err == nil {
-		t.Fatal("negative id must fail")
-	}
-	if _, err := gsm.PresetParams(5, ""); err == nil {
-		t.Fatal("id 5 must fail")
-	}
-	p, err := gsm.PresetParams(0, "eth0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Band != "1800" || p.MCC != "001" {
-		t.Fatalf("bad preset 0: %+v", p)
-	}
-}
-
 func TestValidateOK(t *testing.T) {
 	p := gsm.StartParams{ARFCNs: "1", C0: "540", Band: "1800", MCC: "001",
 		MNC: "01", LAC: "4420", CI: "41240", ShortName: "test", Network: "eth0"}

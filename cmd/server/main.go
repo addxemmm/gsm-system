@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,9 +16,19 @@ import (
 	"github.com/addxemmm/gsm-system/internal/api"
 	"github.com/addxemmm/gsm-system/internal/config"
 	"github.com/addxemmm/gsm-system/internal/gsm"
+	"github.com/addxemmm/gsm-system/internal/logsink"
 )
 
+var version = "2.1.0"
+var revision = "unknown"
+
 func main() {
+	showVersion := flag.Bool("version", false, "print version and exit / 显示版本后退出")
+	flag.Parse()
+	if *showVersion {
+		fmt.Printf("gsm-system %s (%s)\n", version, revision)
+		return
+	}
 	cfgPath := os.Getenv("GSM_CONFIG")
 	if cfgPath == "" {
 		for _, cand := range []string{"/app/configs/app.yaml", "configs/app.yaml", "/data/app.yaml"} {
@@ -29,14 +42,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	cfg.Version, cfg.Revision = version, revision
 	if err := cfg.EnsureDirs(); err != nil {
 		log.Fatalf("ensure dirs: %v", err)
 	}
+	sink, err := logsink.Start(cfg.SyslogSocket, cfg.LogDir)
+	if err != nil {
+		log.Fatalf("start native log receiver: %v", err)
+	}
+	defer sink.Close()
 	mgr := gsm.New(cfg)
 	if strings.TrimSpace(os.Getenv("GSM_API_TOKEN")) == "" {
 		log.Printf("WARNING: GSM_API_TOKEN unset, API is open (LAN-only deployment required)")
 	}
+	requestContext, cancelRequests := context.WithCancel(context.Background())
+	defer cancelRequests()
 	srv := &http.Server{
+		BaseContext:       func(net.Listener) context.Context { return requestContext },
 		Addr:              cfg.ListenAddr,
 		Handler:           api.New(cfg, mgr).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -53,6 +75,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+	cancelRequests()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
