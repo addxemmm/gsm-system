@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -258,8 +259,9 @@ func TestSMSHistoryPaginationAndTailMetadata(t *testing.T) {
 	var envelope struct {
 		Data struct {
 			SMS []struct {
-				Text         string `json:"text"`
-				ReceiverIMSI string `json:"receiver_imsi"`
+				Text               string            `json:"text"`
+				ReceiverIMSI       string            `json:"receiver_imsi"`
+				IdentityResolution map[string]string `json:"identity_resolution"`
 			} `json:"sms"`
 			Count     int        `json:"count"`
 			Total     int        `json:"total"`
@@ -273,8 +275,44 @@ func TestSMSHistoryPaginationAndTailMetadata(t *testing.T) {
 	}
 	if envelope.Data.Count != 1 || envelope.Data.Total != 2 || len(envelope.Data.SMS) != 1 ||
 		envelope.Data.SMS[0].Text != "same text" || envelope.Data.SMS[0].ReceiverIMSI != "001010123456781" ||
+		envelope.Data.SMS[0].IdentityResolution["receiver_imsi"] != identityLogObservation ||
+		envelope.Data.SMS[0].IdentityResolution["receiver_number"] != identityLogObservation ||
 		envelope.Data.Source != cfg.SmqueueLogName || envelope.Data.Truncated {
 		t.Fatalf("unexpected SMS page: %+v", envelope.Data)
+	}
+}
+
+func TestSMSHistoryCompletesUniqueCurrentSubscriberBindings(t *testing.T) {
+	cfg, _ := testServer(t)
+	sqlite := sqliteBinary(t)
+	createSubscriberFixture(t, sqlite, cfg.AsteriskDbPath, cfg.TMSITablePath)
+	hexValue := func(value string) string { return hex.EncodeToString([]byte(value)) }
+	logText := "NOTICE 10:12 2026-09-08T01:02:03.4 smsc.cpp:320:submitSMS: GSM_SMS_V1 qtag_hex=" +
+		hexValue("fixture-tag") + " from_hex=" + hexValue("IMSI001010123456780") +
+		" to_hex=" + hexValue("10002") + " text_hex=" + hexValue("fixture text") + "\n"
+	if err := os.WriteFile(cfg.LogPath(cfg.SmqueueLogName), []byte(logText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := serve(t, New(cfg, gsm.New(cfg)), http.MethodGet, "/api/v1/sms", "", "")
+	assertCode(t, recorder, http.StatusOK, CodeOK)
+	var envelope struct {
+		Data struct {
+			SMS []struct {
+				SenderNumber       string            `json:"sender_number"`
+				ReceiverIMSI       string            `json:"receiver_imsi"`
+				IdentityResolution map[string]string `json:"identity_resolution"`
+			} `json:"sms"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Data.SMS) != 1 || envelope.Data.SMS[0].SenderNumber != "10001" ||
+		envelope.Data.SMS[0].ReceiverIMSI != "001010123456781" ||
+		envelope.Data.SMS[0].IdentityResolution["sender_number"] != identityCurrentBinding ||
+		envelope.Data.SMS[0].IdentityResolution["receiver_imsi"] != identityCurrentBinding {
+		t.Fatalf("unexpected current-binding completion: %+v", envelope.Data.SMS)
 	}
 }
 

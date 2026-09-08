@@ -476,12 +476,26 @@ func (s *Server) handleSMSList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	messages := parser.ParseSmqueueLog(string(content))
+	// The registry is a current snapshot, not historical SMS evidence. Use it
+	// only to complete a uniquely mapped party and retain explicit provenance.
+	// A registry read failure must not hide otherwise valid log observations.
+	registryCtx, registryCancel := context.WithTimeout(r.Context(), 2*time.Second)
+	registered, registryErr := s.subscriberStore().List(registryCtx)
+	registryCancel()
+	var bindings smsBindingIndex
+	if registryErr == nil {
+		bindings = newSMSBindingIndex(registered)
+	} else {
+		log.Printf("rid=%s SMS current-binding registry unavailable; returning log observations only", RequestID(r))
+	}
 	items := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
+		resolution := smsIdentityResolution(&message, bindings)
 		items = append(items, map[string]any{
 			"time": nilStr(message.Time), "text": nilStr(message.Text),
 			"sender_number": nilStr(message.SenderNumber), "sender_imsi": nilStr(message.SenderIMSI),
 			"receiver_number": nilStr(message.ReceiverNumber), "receiver_imsi": nilStr(message.ReceiverIMSI),
+			"identity_resolution": resolution,
 		})
 	}
 	paged := pageSlice(items, page)
@@ -490,6 +504,90 @@ func (s *Server) handleSMSList(w http.ResponseWriter, r *http.Request) {
 		"limit": page.Limit, "offset": page.Offset, "source": filepath.Base(path),
 		"window": window, "truncated": window.Truncated,
 	})
+}
+
+const (
+	identityUnknown        = "unknown"
+	identityLogObservation = "log_observation"
+	identityCurrentBinding = "current_subscriber_binding"
+)
+
+// smsBindingIndex contains only globally one-to-one, internally consistent
+// current registry bindings. Duplicate IMSIs or numbers invalidate every
+// affected mapping rather than selecting an arbitrary row.
+type smsBindingIndex struct {
+	byIMSI   map[string]string
+	byNumber map[string]string
+}
+
+func newSMSBindingIndex(registered []subscriber.Subscriber) smsBindingIndex {
+	imsiCount := make(map[string]int, len(registered))
+	numberCount := make(map[string]int, len(registered))
+	for _, entry := range registered {
+		imsiCount[entry.IMSI]++
+		if entry.Number != nil {
+			numberCount[*entry.Number]++
+		}
+	}
+	index := smsBindingIndex{byIMSI: make(map[string]string), byNumber: make(map[string]string)}
+	for _, entry := range registered {
+		if !entry.Consistent || entry.Number == nil || *entry.Number == "" ||
+			imsiCount[entry.IMSI] != 1 || numberCount[*entry.Number] != 1 || isSMSServiceCode(*entry.Number) {
+			continue
+		}
+		index.byIMSI[entry.IMSI] = *entry.Number
+		index.byNumber[*entry.Number] = entry.IMSI
+	}
+	return index
+}
+
+func isSMSServiceCode(number string) bool {
+	switch strings.TrimPrefix(number, "+") {
+	case "101", "411", "111", "112", "911":
+		return true
+	default:
+		return false
+	}
+}
+
+// smsIdentityResolution fills only a missing complement. Log-observed values
+// always win, even when they disagree with today's subscriber registry.
+func smsIdentityResolution(message *parser.SMS, bindings smsBindingIndex) map[string]string {
+	resolution := map[string]string{
+		"sender_number": identityUnknown, "sender_imsi": identityUnknown,
+		"receiver_number": identityUnknown, "receiver_imsi": identityUnknown,
+	}
+	if message.SenderNumber != "" {
+		resolution["sender_number"] = identityLogObservation
+	}
+	if message.SenderIMSI != "" {
+		resolution["sender_imsi"] = identityLogObservation
+	}
+	if message.ReceiverNumber != "" {
+		resolution["receiver_number"] = identityLogObservation
+	}
+	if message.ReceiverIMSI != "" {
+		resolution["receiver_imsi"] = identityLogObservation
+	}
+	resolveSMSParty(&message.SenderNumber, &message.SenderIMSI, resolution, "sender", bindings)
+	resolveSMSParty(&message.ReceiverNumber, &message.ReceiverIMSI, resolution, "receiver", bindings)
+	return resolution
+}
+
+func resolveSMSParty(number, imsi *string, resolution map[string]string, prefix string, bindings smsBindingIndex) {
+	if *number == "" && *imsi != "" {
+		if current, ok := bindings.byIMSI[*imsi]; ok {
+			*number = current
+			resolution[prefix+"_number"] = identityCurrentBinding
+		}
+		return
+	}
+	if *imsi == "" && *number != "" && !isSMSServiceCode(*number) {
+		if current, ok := bindings.byNumber[*number]; ok {
+			*imsi = current
+			resolution[prefix+"_imsi"] = identityCurrentBinding
+		}
+	}
 }
 
 func (s *Server) handleSMSSend(w http.ResponseWriter, r *http.Request) {

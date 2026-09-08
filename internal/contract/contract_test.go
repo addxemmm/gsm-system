@@ -367,22 +367,32 @@ func TestSMSObservationSchemaAndPostmanContract(t *testing.T) {
 				Properties map[string]struct {
 					Type     string `yaml:"type"`
 					Nullable bool   `yaml:"nullable"`
+					Ref      string `yaml:"$ref"`
 				} `yaml:"properties"`
+				Enum []string `yaml:"enum"`
 			} `yaml:"schemas"`
 		} `yaml:"components"`
 	}
 	if err := yaml.Unmarshal(mustRead(t, filepath.Join(root(t), "docs", "api", "openapi.yaml")), &doc); err != nil {
 		t.Fatal(err)
 	}
-	wantFields := []string{"receiver_imsi", "receiver_number", "sender_imsi", "sender_number", "text", "time"}
+	wantObservationFields := []string{"receiver_imsi", "receiver_number", "sender_imsi", "sender_number", "text", "time"}
+	wantFields := append(append([]string{}, wantObservationFields...), "identity_resolution")
+	sort.Strings(wantFields)
 	schema := doc.Components.Schemas["SMSMessage"]
 	sort.Strings(schema.Required)
 	if !reflect.DeepEqual(schema.Required, wantFields) {
-		t.Fatalf("SMSMessage must retain exactly six required fields: %v", schema.Required)
+		t.Fatalf("SMSMessage required fields drifted: %v", schema.Required)
 	}
 	gotFields := make([]string, 0, len(schema.Properties))
 	for field, property := range schema.Properties {
 		gotFields = append(gotFields, field)
+		if field == "identity_resolution" {
+			if property.Ref != "#/components/schemas/SMSIdentityResolution" {
+				t.Errorf("SMSMessage.identity_resolution ref=%q", property.Ref)
+			}
+			continue
+		}
 		if property.Type != "string" || !property.Nullable {
 			t.Errorf("SMSMessage.%s must remain a nullable string", field)
 		}
@@ -390,6 +400,23 @@ func TestSMSObservationSchemaAndPostmanContract(t *testing.T) {
 	sort.Strings(gotFields)
 	if !reflect.DeepEqual(gotFields, wantFields) {
 		t.Fatalf("SMSMessage properties drifted: %v", gotFields)
+	}
+	identityFields := []string{"receiver_imsi", "receiver_number", "sender_imsi", "sender_number"}
+	resolution := doc.Components.Schemas["SMSIdentityResolution"]
+	sort.Strings(resolution.Required)
+	if !reflect.DeepEqual(resolution.Required, identityFields) {
+		t.Fatalf("SMSIdentityResolution required fields drifted: %v", resolution.Required)
+	}
+	for _, field := range identityFields {
+		if resolution.Properties[field].Ref != "#/components/schemas/SMSIdentitySource" {
+			t.Errorf("SMSIdentityResolution.%s must reference SMSIdentitySource", field)
+		}
+	}
+	wantSources := []string{"current_subscriber_binding", "log_observation", "unknown"}
+	sources := doc.Components.Schemas["SMSIdentitySource"].Enum
+	sort.Strings(sources)
+	if !reflect.DeepEqual(sources, wantSources) {
+		t.Fatalf("SMSIdentitySource enum drifted: %v", sources)
 	}
 
 	collection, _ := readPostman(t)
@@ -414,12 +441,12 @@ func TestSMSObservationSchemaAndPostmanContract(t *testing.T) {
 				}
 			}
 			joined := strings.Join(checks, "\n")
-			for _, marker := range append(wantFields, "d.count", "d.sms.length", "typeof m[k]", "d.limit", "d.offset", "d.window.bytes", "d.window.max_bytes", "d.truncated", "d.window.truncated") {
+			for _, marker := range append(wantFields, "d.count", "d.sms.length", "typeof m[k]", "d.limit", "d.offset", "d.window.bytes", "d.window.max_bytes", "d.truncated", "d.window.truncated", "log_observation", "current_subscriber_binding", "unknown") {
 				if !strings.Contains(joined, marker) {
 					t.Errorf("Postman SMS checks are missing %q", marker)
 				}
 			}
-			for _, marker := range []string{"GSM_SMS_V1", "qtag_hex", "message identity/qtag", "never by content", "unkeyed text remains null", "never associated", "not delivery receipts"} {
+			for _, marker := range []string{"GSM_SMS_V1", "qtag_hex", "message identity/qtag", "never by content", "unkeyed text remains null", "never associated", "identity_resolution", "current_subscriber_binding", "101/411", "not historical facts", "delivery receipts"} {
 				if !strings.Contains(item.Request.Description, marker) {
 					t.Errorf("Postman SMS description is missing identity/observation rule %q", marker)
 				}

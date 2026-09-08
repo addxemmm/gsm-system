@@ -296,12 +296,18 @@ paths:
         never associated and remains null rather than fabricating content.
         Explicitly keyed text and complete local detailed delivery blocks remain
         supported. Entries are deduplicated by message identity, not content;
-        missing evidence remains null and observations are not delivery receipts.
+        missing identity complements are filled only from a unique, consistent
+        current subscriber binding. Per-field identity_resolution distinguishes
+        log observations, query-time current binding context, and unknowns. Log
+        values are never overwritten; 101/411 service codes remain without an
+        IMSI. Current bindings are not historical facts or delivery receipts.
         优先解析 hex 编码 qtag/收发方/正文的结构化 `GSM_SMS_V1` NOTICE，准确保留
         内容并防止日志行注入；同一进程代际内按 qtag 合并旧 NOTICE 证据。旧 NOTICE
         仅保留有证据的时间与收发方；不带身份的 Decoded 正文一律不关联并保持为空。
         显式 keyed 正文及完整局部详细日志继续支持。按消息身份而非内容去重；无证据
-        字段为空，观察记录不是送达回执。
+        身份缺项仅由唯一且一致的当前签约绑定补全；identity_resolution 逐字段区分
+        日志观察、查询时当前绑定和未知。日志值绝不覆盖，101/411 服务短码不补 IMSI；
+        当前绑定不是历史事实，观察记录也不是送达回执。
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
@@ -615,8 +621,8 @@ components:
         binding_consistent: { type: boolean }
     SMSMessage:
       type: object
-      description: One smqueue log observation, deduplicated by message identity rather than content; missing evidence is null and the record is not a delivery receipt / 一条 smqueue 日志观察，按消息身份而非内容去重；无证据字段为空，且不是送达回执
-      required: [time, text, sender_number, sender_imsi, receiver_number, receiver_imsi]
+      description: One smqueue log observation, optionally completed from a unique consistent current subscriber binding; current bindings are query-time context, not historical facts or delivery receipts / 一条 smqueue 日志观察；仅可由唯一且一致的当前签约绑定补全；当前绑定只是查询时上下文，不是历史事实或送达回执
+      required: [time, text, sender_number, sender_imsi, receiver_number, receiver_imsi, identity_resolution]
       properties:
         time: { type: string, nullable: true }
         text: { type: string, nullable: true }
@@ -624,6 +630,20 @@ components:
         sender_imsi: { type: string, nullable: true }
         receiver_number: { type: string, nullable: true }
         receiver_imsi: { type: string, nullable: true }
+        identity_resolution: { $ref: '#/components/schemas/SMSIdentityResolution' }
+    SMSIdentityResolution:
+      type: object
+      additionalProperties: false
+      description: Per-field provenance. current_subscriber_binding means the value was completed from the unique consistent binding at query time and must not be treated as message-time history; unknown means no conservative completion was possible. Log observations are never overwritten. / 逐字段来源。current_subscriber_binding 表示由查询时唯一且一致的当前绑定补全，不得视为消息发生时的历史事实；unknown 表示无法保守补全。日志观察值绝不覆盖。
+      required: [sender_number, sender_imsi, receiver_number, receiver_imsi]
+      properties:
+        sender_number: { $ref: '#/components/schemas/SMSIdentitySource' }
+        sender_imsi: { $ref: '#/components/schemas/SMSIdentitySource' }
+        receiver_number: { $ref: '#/components/schemas/SMSIdentitySource' }
+        receiver_imsi: { $ref: '#/components/schemas/SMSIdentitySource' }
+    SMSIdentitySource:
+      type: string
+      enum: [log_observation, current_subscriber_binding, unknown]
     NetworkState:
       type: object
       required: [iface, rule_present, ipv4_forwarding, persisted]

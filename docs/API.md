@@ -498,7 +498,13 @@ HTTP `200`, including an empty parsed log:
     "sender_number":null,
     "sender_imsi":null,
     "receiver_number":null,
-    "receiver_imsi":null
+    "receiver_imsi":null,
+    "identity_resolution":{
+      "sender_number":"unknown",
+      "sender_imsi":"unknown",
+      "receiver_number":"unknown",
+      "receiver_imsi":"unknown"
+    }
   }],
   "count":1,
   "total":1,
@@ -523,9 +529,18 @@ explicitly keyed decoded line may still merge by qtag. Legacy complete local
 `Request Message Delivery` / `Decoded text` / `Deliver message` blocks also
 remain supported. Records are deduplicated by message identity (qtag scoped to
 one smqueue process generation), never by text or party content; two different
-messages with identical content remain two records. All six fields keep the
-same shape and any fact not evidenced by the logs is JSON `null`. These are log
-observations, not delivery receipts.
+messages with identical content remain two records. The six observation fields
+keep their existing nullable shape. A missing number or IMSI is completed only
+when the other identifier has exactly one globally unique, internally consistent
+mapping in the current subscriber registry. Duplicate IMSIs/numbers,
+inconsistent/unbound entries, and service shortcodes such as `101` and `411`
+remain unresolved. An observed log value is never overwritten. The four fixed
+`identity_resolution` keys report `log_observation`,
+`current_subscriber_binding`, or `unknown` for each identity field. A
+`current_subscriber_binding` value is query-time context and must not be treated
+as the binding that existed when the message was logged. These are observations,
+not delivery receipts. If the registry is unavailable, log history remains
+available and missing identity fields stay `null` with `unknown` provenance.
 
 Only complete entries inside the bounded tail window are exposed;
 `window.truncated` and top-level `truncated` report excluded older bytes.
@@ -535,8 +550,13 @@ NOTICE 合并。旧 `Got SMS rqst qtag ...` 事件仅保留有证据的时间与
 消息身份的 `Decoded text:` 一律不与其关联，`text` 保持 `null`，不会伪造跨消息
 正文。显式携带 qtag 的正文仍可合并，旧版完整局部详细日志块继续支持。去重依据
 消息身份/qtag，而非正文或收发方内容，
-因此同文不同消息仍分别保留。六个字段形状不变，无日志证据的字段均为 `null`；
-这些是日志观察，不是送达回执。日志读取受 `max_history_bytes` 限制。
+因此同文不同消息仍分别保留。六个观察字段保持原有可空形状；仅当另一身份在当前
+签约库中存在全局唯一且内部一致的映射时，才补全缺失号码或 IMSI。重复 IMSI/号码、
+不一致或未绑定记录，以及 `101`、`411` 等服务短码都保持未知；日志观察值绝不覆盖。
+固定四键 `identity_resolution` 为每个身份字段标注 `log_observation`、
+`current_subscriber_binding` 或 `unknown`。当前绑定只是查询时上下文，不表示短信发生时
+的历史绑定。签约库不可读时仍返回日志历史，缺失身份保持 `null`/`unknown`。这些是
+日志观察，不是送达回执。日志读取受 `max_history_bytes` 限制。
 
 ### `POST /sms`
 
