@@ -493,3 +493,75 @@ Handset reply/confirmation SMS, peer SMS, two-way voice and Internet access stil
 require a separate live acceptance run after the operator starts the cell.
 用户启动小区后仍须完成号码回复确认、手机互发短信、双向语音和互联网的真机验收；
 本次没有发送空口短信或重新开启射频。
+
+## Caller identity, SMS enrichment and GPRS update, 2026-09-08 16:32 HKT / 通话、短信与分组数据更新
+
+The operator confirmed working handset registration and SMS transmit/receive,
+but reported zero caller numbers, missing SMS identities and failed Internet
+access. This release separates proven implementation repairs from remaining
+handset acceptance. 用户确认接入与短信收发正常，本次针对零号码来电、短信身份缺项
+和上网失败修复；以下区分已验证实现与尚待真机完成的验收。
+
+- Runtime revision `5eff87bfa9be`; image `gsm-system:2.1.0-5eff87bfa9be`,
+  release alias `gsm-system:2.1.0`; image ID
+  `sha256:c2cedf2f5a02015c90f7736d378f94adc590cb6d8def5e7c0b15c1e549e72dae`.
+- Container `gsmsystem-uhd4`, ID
+  `0a67149da510433baf800087b7371b7b2865ed6a65dcbfa406e721f3987e5949`.
+  Management is healthy, cell/RF stopped, Token blank/disabled. The existing
+  bridge, LAN-only TCP 8082 publication and external business volume remain.
+  / 管理健康、小区与射频停止、令牌保持留空；保留 bridge、局域网管理端口及业务卷。
+- Caller-ID root cause: realtime subscribers enter `phones`, which previously
+  skipped caller identity initialization. The outbound path then copied an empty
+  CDR into caller ID. Both entry paths now resolve the configured SIP peer to its
+  valid bound number; unknown/invalid mappings preserve existing identity.
+  / 实时签约的 phones 入口此前遗漏主叫初始化，出局又用空 CDR 覆盖号码；现已统一
+  通过驱动解析的 peer 查绑定，异常或未知映射保留原身份。
+- The production SMS endpoint returned 12 observations: all 12 sender numbers
+  resolved from current bindings and all three peer-message receiver IMSIs
+  resolved. Three messages to 101 correctly retain no receiver IMSI; six legacy
+  unkeyed texts remain unknown. Per-field provenance explicitly distinguishes
+  log observations, query-time bindings and unknown values; no bodies or device
+  identifiers are copied into this release record. / 线上 12 条观察均已补齐发送号码，
+  三条点对点短信补齐接收 IMSI；三条发往 101 的 IMSI 仍为空，六条旧无键正文仍未知。
+  各字段标注日志、当前绑定或未知来源，本记录不复制短信正文与设备身份。
+- GMM optional-IE parsing accepts modern one-octet C/D/E/F fields, rejects
+  malformed TLVs and avoids MBMS fallthrough. The native builder ran 144 cases
+  against the extracted production method. A pre-patch negative control failed
+  the valid terminal TV case. This fixes a definite defect consistent with the
+  observed AttachRequest errors, not proof that every handset failure had that
+  cause. / 原生构建验证生产方法 144 项用例，旧方法负对照复现合法 TV 失败；补丁修复
+  确定缺陷，但未捕获本次手机具体 IE，不将全部失败武断归因或声称已经上网。
+- Fresh volumes default to GPRS enabled, two C0 packet-data channels and a
+  validated upstream DNS; existing native configuration remains unchanged.
+  Invalid initialization can recover after configuration correction, including
+  container PID reuse. Production GPRS was verified enabled, with its existing
+  LAN upstream DNS preserved. Container eth0 forwarding/NAT was reapplied and
+  returned changed=true then false. / 新卷默认开启分组数据、两个 C0 信道及上游 DNS；
+  旧配置保留，错误配置修正后初始化可恢复。线上 GPRS 已开启、原 LAN DNS 保留，
+  容器转发/NAT 已恢复并验证幂等。
+- Four server-side isolated suites passed: image/persistence/Asterisk/ODBC/CDR,
+  preset/custom start modes, SMS history/identity/deduplication, and caller-ID
+  Local-channel mapping/unknown/invalid cases. No RF, production volume or
+  handset messages were used by these tests. Windows Go test/vet, Linux race/vet,
+  persistence and deployment/build contracts and Postman checks also passed.
+  / 四套服务器隔离镜像测试与跨平台离线测试通过，不使用生产卷或射频发短信。
+- Before replacement there were zero active calls; DELETE /api/v1/cell stopped
+  the cell successfully. Subscriber SQL-dump digests matched before and after,
+  with three subscribers, three bindings and quick_check=ok. LTE ID, image,
+  stopped state and timestamps were unchanged. / 无通话时通过停止 API 维护；升级前后
+  签约摘要一致、三条签约及绑定完整，LTE 容器与状态未变。
+- Removed obsolete b830c6fd1119 and intermediate c2a08f02f48d images; no rollback
+  or isolated test containers/volumes remain. Builder pruning reclaimed 3.638 GB;
+  final build cache is 0 B. Only the current GSM image ID/two aliases, LTE image,
+  Go/Ubuntu bases, two business containers and two business volumes remain.
+  / 旧版及中间镜像、测试资源已清理；构建缓存回收 3.638 GB 后为零，业务数据保留。
+- Final implementation CI passed:
+  [GitHub Actions run 34204429022](https://github.com/addxemmm/gsm-system/actions/runs/34204429022).
+  Documentation-only commits after this entry do not change runtime revision.
+  / 最终实现 CI 通过；后续纯文档提交不更改镜像实现版本。
+
+Remaining live acceptance: start the cell through preset or custom POST /cell,
+reattach the test handsets, call in both directions and inspect incoming numbers;
+then verify PDP address, bidirectional TUN/NAT traffic, DNS and handset HTTP.
+待真机验收：通过预设或自定义请求启动小区，手机重新接入后双向互拨检查来电号码；
+再验证 PDP 地址、TUN/NAT 双向流量、DNS 与手机 HTTP。当前并未自动重新开启射频。

@@ -15,17 +15,18 @@ through one versioned REST API. Release 2.1 keeps only the standardized
 `/api/v1` surface and removes the ad-hoc root endpoints and project-owned Python
 management code.
 
-> **2.1 status / 状态：** deployed and verified on 2026-09-08 15:42 HKT:
-> image `gsm-system:2.1.0-b830c6fd1119`, management healthy, cell stopped and RF off.
-> Isolated image, persistence, Asterisk/ODBC/CDR, preset/custom start-path and SMS
-> history/deduplication tests passed. The three number bindings were preserved;
-> legacy welcome defaults now include `101`/`411` instructions. Real handset SMS
-> and Internet acceptance remain separate from these management-plane checks.
+> **2.1 status / 状态：** deployed and verified on 2026-09-08 16:32 HKT:
+> image `gsm-system:2.1.0-5eff87bfa9be`, management healthy, cell stopped and RF off.
+> The operator confirmed registration and SMS transmit/receive before this update.
+> Caller-ID mapping, SMS current-binding provenance and modern GMM attach parsing
+> are repaired; four isolated image suites passed, with three number bindings
+> preserved. Handset caller display and packet-data Internet still need a live
+> reattachment test; parser/Local-channel tests do not prove those outcomes.
 >
-> 2026-09-08 15:42 HKT 已部署并验证上述镜像，管理容器健康，小区停止、射频关闭。
-> 隔离镜像、持久化、Asterisk/ODBC/CDR、双启动路径及短信历史去重测试通过；三条
-> 号码绑定完整保留，旧默认欢迎短信已迁移为 `101`/`411` 提示。真机短信收发和上网
-> 仍须另行验收，管理面测试不代表空口业务已通过。详见 [发布记录](docs/RELEASE-2.1.md)。
+> 2026-09-08 16:32 HKT 已部署上述镜像，管理容器健康，小区停止、射频关闭。
+> 用户已确认接入及短信收发正常；本次修复主叫映射、短信当前绑定补全及现代 GMM
+> 附着解析，四套隔离镜像测试通过，三条绑定保留。真机来电显示和互联网仍待重连验收，
+> 不以解析器或 Local 通道测试代替。详见 [发布记录](docs/RELEASE-2.1.md)。
 
 ## Highlights / 主要特性
 
