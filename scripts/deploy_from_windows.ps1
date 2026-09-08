@@ -45,6 +45,28 @@ if ($ProjectName -notmatch '^[a-z0-9][a-z0-9_-]*$') {
   throw "ProjectName must be a safe Compose project name / ProjectName 必须是安全的 Compose 项目名"
 }
 
+function Invoke-CheckedRemoteSh {
+  param(
+    [Parameter(Mandatory)][string]$RemoteHost,
+    [Parameter(Mandatory)][string]$Script,
+    [Parameter(Mandatory)][string]$Action
+  )
+
+  # Never pass a program as the SSH remote-command string: OpenSSH otherwise
+  # delegates parsing to the account's login shell (for example zsh, whose
+  # NOMATCH option rejects rsync patterns such as /.env.*). Feed the program to
+  # an explicitly selected POSIX shell instead. 不依赖远程账号的默认 shell。
+  # PowerShell 7 preserves embedded LF but terminates a pipeline string with
+  # CRLF on Windows. Put that final CR on a comment line so remote POSIX sh
+  # never sees it as part of a command token.
+  $stdinProgram = $Script.Replace("`r", "").TrimEnd("`n") + "`n# pwsh-stdin-end"
+  $stdinProgram | & "ssh" "-oBatchMode=yes" $RemoteHost "sh" "-s" "--"
+  $exitCode = $LASTEXITCODE
+  if ($exitCode -ne 0) {
+    throw "$Action failed / $Action 失败 (exit code $exitCode)"
+  }
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content -Raw -LiteralPath (Join-Path $root "VERSION")).Trim()
 if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
@@ -101,8 +123,7 @@ mv "$HOME/gsm-system/.release-revision.tmp" "$HOME/gsm-system/.release-revision"
 echo SYNCED
 '@.Replace("__ARCHIVE__", $remoteArchive).Replace("__STAGE__", $remoteStage).Replace("__REVISION__", $revision).Replace("`r", "")
 
-  Invoke-CheckedNative -Command "ssh" `
-    -Arguments @("-o", "BatchMode=yes", $HostAlias, $syncCommand) `
+  Invoke-CheckedRemoteSh -RemoteHost $HostAlias -Script $syncCommand `
     -Action "Install archive / 安装归档"
   Write-Host "Synced HEAD $revision with third_party preserved / 已同步 HEAD，保留 third_party"
 
@@ -115,9 +136,8 @@ docker compose -p '__PROJECT__' -f '__COMPOSE__' build
 test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$GSM_IMAGE")" = "$GSM_VERSION"
 test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$GSM_IMAGE")" = "$GSM_REVISION"
 docker run --rm --entrypoint /usr/local/bin/gsm-system "$GSM_IMAGE" --version
-'@.Replace("__VERSION__", $version).Replace("__REVISION__", $revision).Replace("__IMAGE__", $immutableImage).Replace("__PROJECT__", $ProjectName).Replace("__COMPOSE__", $ComposeFile).Replace("`r", "").Replace("`n", "; ")
-    Invoke-CheckedNative -Command "ssh" `
-      -Arguments @("-o", "BatchMode=yes", $HostAlias, $buildCommand) `
+'@.Replace("__VERSION__", $version).Replace("__REVISION__", $revision).Replace("__IMAGE__", $immutableImage).Replace("__PROJECT__", $ProjectName).Replace("__COMPOSE__", $ComposeFile).Replace("`r", "")
+    Invoke-CheckedRemoteSh -RemoteHost $HostAlias -Script $buildCommand `
       -Action "Remote compose build / 远端 Compose 构建"
     Write-Host "Build complete; no container was started / 构建完成，未启动容器"
   }
