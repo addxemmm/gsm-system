@@ -1,166 +1,227 @@
-// Helpers: subprocess + sqlite + iptables, all argv-based (no shell).
+// Helpers for bounded native commands, pagination, tail reads, and the one
+// project-owned iptables rule. All commands use argv; none invoke a shell.
 package api
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/addxemmm/gsm-system/internal/config"
+	"github.com/addxemmm/gsm-system/internal/gsm"
 )
 
-func runCLI(bin string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput()
-	return string(out), err
+const (
+	defaultPageLimit = 100
+	maxPageLimit     = 500
+	maxPageOffset    = 1_000_000
+	managedDataCIDR  = "192.168.99.0/24"
+)
+
+type pageRequest struct {
+	Limit  int
+	Offset int
 }
 
-func applyIptables(bin, iface string) error {
+type tailWindow struct {
+	Bytes     int64 `json:"bytes"`
+	MaxBytes  int64 `json:"max_bytes"`
+	Truncated bool  `json:"truncated"`
+}
+
+func runCLIContext(parent context.Context, bin string, args ...string) (string, error) {
+	if strings.TrimSpace(bin) == "" {
+		return "", errors.New("native command is not configured")
+	}
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("native command: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	lower := strings.ToLower(string(out))
+	for _, marker := range []string{"no such command", "unable to connect", "command not found"} {
+		if strings.Contains(lower, marker) {
+			return string(out), fmt.Errorf("native command reported %q", marker)
+		}
+	}
+	return string(out), nil
+}
+
+func parsePageQuery(values url.Values) (pageRequest, []FieldError) {
+	page := pageRequest{Limit: defaultPageLimit}
+	var fieldErrors []FieldError
+	for key, entries := range values {
+		if key != "limit" && key != "offset" {
+			fieldErrors = append(fieldErrors, FieldError{Field: key, Reason: "unknown query parameter"})
+			continue
+		}
+		if len(entries) != 1 {
+			fieldErrors = append(fieldErrors, FieldError{Field: key, Reason: "must be specified once"})
+		}
+	}
+	if entries, ok := values["limit"]; ok && len(entries) == 1 {
+		n, err := strconv.Atoi(entries[0])
+		if err != nil || n < 1 || n > maxPageLimit {
+			fieldErrors = append(fieldErrors, FieldError{Field: "limit", Reason: "must be an integer from 1 to 500"})
+		} else {
+			page.Limit = n
+		}
+	}
+	if entries, ok := values["offset"]; ok && len(entries) == 1 {
+		n, err := strconv.Atoi(entries[0])
+		if err != nil || n < 0 || n > maxPageOffset {
+			fieldErrors = append(fieldErrors, FieldError{Field: "offset", Reason: "must be an integer from 0 to 1000000"})
+		} else {
+			page.Offset = n
+		}
+	}
+	sort.Slice(fieldErrors, func(i, j int) bool { return fieldErrors[i].Field < fieldErrors[j].Field })
+	return page, fieldErrors
+}
+
+func pageSlice[T any](items []T, page pageRequest) []T {
+	if page.Offset >= len(items) {
+		return []T{}
+	}
+	end := page.Offset + page.Limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[page.Offset:end]
+}
+
+func requireNoQuery(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.RawQuery == "" {
+		return true
+	}
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeValidation(w, r, []FieldError{{Field: "query", Reason: "malformed query string"}})
+		return false
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	errs := make([]FieldError, 0, len(keys))
+	for _, key := range keys {
+		errs = append(errs, FieldError{Field: key, Reason: "unknown query parameter"})
+	}
+	writeValidation(w, r, errs)
+	return false
+}
+
+// readTail reads at most maxBytes and discards the first partial physical line
+// when seeking into a file. smqueue events are line-oriented and the parser
+// independently requires a complete event marker before accepting a message.
+func readTail(path string, maxBytes int64) ([]byte, tailWindow, error) {
+	if maxBytes <= 0 {
+		return nil, tailWindow{}, errors.New("tail size must be positive")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, tailWindow{}, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, tailWindow{}, err
+	}
+	start := int64(0)
+	truncated := info.Size() > maxBytes
+	if truncated {
+		start = info.Size() - maxBytes
+		if _, err := f.Seek(start, io.SeekStart); err != nil {
+			return nil, tailWindow{}, err
+		}
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	if err != nil {
+		return nil, tailWindow{}, err
+	}
+	if int64(len(b)) > maxBytes {
+		b = b[:maxBytes]
+		truncated = true
+	}
+	if truncated {
+		if i := bytes.IndexByte(b, '\n'); i >= 0 {
+			b = b[i+1:]
+		} else {
+			b = nil
+		}
+	}
+	return b, tailWindow{Bytes: int64(len(b)), MaxBytes: maxBytes, Truncated: truncated}, nil
+}
+
+func validateIface(iface string) error {
+	if !gsm.ValidInterfaceName(strings.TrimSpace(iface)) {
+		return errors.New("must be a safe Linux interface name of 1-15 characters")
+	}
+	return nil
+}
+
+// ipv4Forwarding reports host state without changing the shared sysctl. nil
+// means the platform does not expose the Linux procfs value or it was unreadable.
+func ipv4Forwarding() *bool {
+	b, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward")
+	if err != nil {
+		return nil
+	}
+	var enabled bool
+	switch strings.TrimSpace(string(b)) {
+	case "0":
+		enabled = false
+	case "1":
+		enabled = true
+	default:
+		return nil
+	}
+	return &enabled
+}
+
+func networkRulePresent(ctx context.Context, bin, iface string) (bool, error) {
 	if bin == "" {
 		bin = "iptables"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	// Add MASQUERADE for the GSM data subnet (legacy 192.168.99.0/24).
-	if out, err := exec.CommandContext(ctx, bin, "-t", "nat", "-A", "POSTROUTING",
-		"-s", "192.168.99.0/24", "-o", iface, "-j", "MASQUERADE").CombinedOutput(); err != nil {
-		return fmt.Errorf("iptables: %v: %s", err, strings.TrimSpace(string(out)))
+	out, err := exec.CommandContext(ctx, bin, "-t", "nat", "-C", "POSTROUTING",
+		"-s", managedDataCIDR, "-o", iface, "-j", "MASQUERADE").CombinedOutput()
+	if err == nil {
+		return true, nil
 	}
-	return nil
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("iptables check: %w: %s", err, strings.TrimSpace(string(out)))
 }
 
-// setSubscriberNumber mirrors legacy set_phone_number: update TMSITable +
-// asterisk sip_buddies/dialdata. Returns legacy message_id (1/3/4).
-func setSubscriberNumber(cfg config.Config, imsi, number string) (int, string, error) {
-	for name, path := range map[string]string{
-		"TMSI": cfg.TMSITablePath, "Asterisk": cfg.AsteriskDbPath,
-	} {
-		if _, err := os.Stat(path); err != nil {
-			return 0, "False", fmt.Errorf("%s database: %w", name, err)
-		}
-	}
-	exists, err := sqliteExists(cfg.Sqlite3Bin, cfg.TMSITablePath,
-		"SELECT 1 FROM tmsi_table WHERE IMSI='"+sqliteEsc(imsi)+"' LIMIT 1;")
-	if err != nil {
-		return 0, "False", err
-	}
-	if !exists {
-		return 3, "This imsi is not existed.", nil
-	}
-	astExists, err := sqliteExists(cfg.Sqlite3Bin, cfg.AsteriskDbPath,
-		"SELECT 1 FROM sip_buddies WHERE name='IMSI"+sqliteEsc(imsi)+"' LIMIT 1;")
-	if err != nil {
-		return 0, "False", err
-	}
-	if !astExists {
-		err := sqliteExec(cfg.Sqlite3Bin, cfg.TMSITablePath,
-			"UPDATE tmsi_table SET ASSOCIATED_URI='<tel:"+sqliteEsc(number)+">' WHERE IMSI='"+sqliteEsc(imsi)+"';")
-		if err != nil {
-			return 0, "False", err
-		}
-		// Preserve the legacy side effect: TMSITable is updated even when
-		// Asterisk has no matching row, while the response remains id 4.
-		return 4, "This imsi is not existed in asterisk.", nil
-	}
-	// One sqlite3 connection + ATTACH keeps the three related writes in one
-	// transaction. The TEMP CHECK turns a missing/duplicate target row into an
-	// error; -bail then prevents COMMIT and connection close rolls back writes.
-	sql := fmt.Sprintf(`ATTACH DATABASE '%s' AS asterisk;
-CREATE TEMP TABLE api_update_guard(affected INTEGER CHECK(affected = 1));
-BEGIN IMMEDIATE;
-UPDATE main.tmsi_table SET ASSOCIATED_URI='<tel:%s>' WHERE IMSI='%s';
-INSERT INTO api_update_guard VALUES(changes());
-DELETE FROM api_update_guard;
-UPDATE asterisk.sip_buddies SET callerid='%s' WHERE name='IMSI%s';
-INSERT INTO api_update_guard VALUES(changes());
-DELETE FROM api_update_guard;
-UPDATE asterisk.dialdata_table SET exten='%s' WHERE dial='IMSI%s';
-INSERT INTO api_update_guard VALUES(changes());
-COMMIT;`, sqliteEsc(cfg.AsteriskDbPath), sqliteEsc(number), sqliteEsc(imsi),
-		sqliteEsc(number), sqliteEsc(imsi), sqliteEsc(number), sqliteEsc(imsi))
-	if err := sqliteExec(cfg.Sqlite3Bin, cfg.TMSITablePath, sql); err != nil {
-		return 0, "False", err
-	}
-	return 1, "Success", nil
-}
-
-func listSubscribers(cfg config.Config) ([]map[string]string, error) {
-	if _, err := os.Stat(cfg.AsteriskDbPath); err != nil {
-		return nil, fmt.Errorf("Asterisk database: %w", err)
-	}
-	rows, err := sqliteQuery(cfg.Sqlite3Bin, cfg.AsteriskDbPath,
-		"SELECT name,callerid FROM sip_buddies WHERE name LIKE 'IMSI%';")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]string, 0, len(rows))
-	for _, r := range rows {
-		imsi := strings.TrimPrefix(r[0], "IMSI")
-		out = append(out, map[string]string{"imsi": imsi, "number": r[1]})
-	}
-	return out, nil
-}
-
-func listSubscribersBestEffort(cfg config.Config) []map[string]string {
-	items, err := listSubscribers(cfg)
-	if err != nil {
-		return []map[string]string{}
-	}
-	return items
-}
-
-func sqliteEsc(s string) string { return strings.ReplaceAll(s, "'", "''") }
-
-func sqliteExec(bin, db, sql string) error {
-	if bin == "" {
-		bin = "sqlite3"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "-bail", db, sql).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func sqliteExists(bin, db, sql string) (bool, error) {
-	if bin == "" {
-		bin = "sqlite3"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "-bail", db, sql).Output()
-	if err != nil {
+func ensureNetworkRule(ctx context.Context, bin, iface string) (bool, error) {
+	present, err := networkRulePresent(ctx, bin, iface)
+	if err != nil || present {
 		return false, err
 	}
-	return strings.TrimSpace(string(out)) != "", nil
-}
-
-func sqliteQuery(bin, db, sql string) ([][2]string, error) {
 	if bin == "" {
-		bin = "sqlite3"
+		bin = "iptables"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "-bail", "-separator", "\x1f", db, sql).Output()
+	out, err := exec.CommandContext(cmdCtx, bin, "-t", "nat", "-A", "POSTROUTING",
+		"-s", managedDataCIDR, "-o", iface, "-j", "MASQUERADE").CombinedOutput()
 	if err != nil {
-		return nil, err
+		return false, fmt.Errorf("iptables add: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	var rows [][2]string
-	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		p := strings.SplitN(line, "\x1f", 2)
-		if len(p) != 2 {
-			continue
-		}
-		rows = append(rows, [2]string{p[0], p[1]})
-	}
-	return rows, nil
+	return true, nil
 }

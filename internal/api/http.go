@@ -1,4 +1,4 @@
-// Package api implements the HTTP layer: legacy routes (frozen) + /api/v1.
+// Package api implements the /api/v1 HTTP layer.
 //
 // v1 contract (see docs/API.md and docs/api/openapi.yaml):
 //   - Proper HTTP status codes (200/400/401/404/405/409/412/413/422/500/503)
@@ -16,8 +16,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -34,6 +36,7 @@ const (
 	CodeConflict     = 40901 // cell already running, subscriber exists (HTTP 409)
 	CodePrecondition = 41201 // cell not running, no UE/SMS, no data (HTTP 412)
 	CodeTooLarge     = 41301 // upload exceeds limit (HTTP 413)
+	CodeMediaType    = 41501 // request is not application/json (HTTP 415)
 	CodeInvalid      = 42201 // validation failed, see data.errors (HTTP 422)
 	CodeInternal     = 50001 // unexpected failure (HTTP 500)
 	CodeNoHardware   = 50301 // no SDR attached (HTTP 503)
@@ -82,7 +85,11 @@ func writeV1(w http.ResponseWriter, r *http.Request, code int, message string, d
 	if status < 100 || status > 599 {
 		status = http.StatusInternalServerError
 	}
-	w.Header().Set("Content-Type", "application/json")
+	writeV1Status(w, r, status, code, message, data)
+}
+
+func writeV1Status(w http.ResponseWriter, r *http.Request, status, code int, message string, data any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Request-ID", RequestID(r))
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(Envelope{
@@ -94,6 +101,10 @@ func writeV1(w http.ResponseWriter, r *http.Request, code int, message string, d
 // MaxBytesReader also enforces the limit against otherwise-ignored tail data.
 // It returns CodeOK, CodeMalformed, or CodeTooLarge.
 func decodeV1JSON(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64, strict bool) int {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return CodeMediaType
+	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes))
 	var raw json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
@@ -107,6 +118,9 @@ func decodeV1JSON(w http.ResponseWriter, r *http.Request, dst any, maxBytes int6
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return CodeMalformed
 	}
+	if err := rejectDuplicateJSONNames(raw); err != nil {
+		return CodeMalformed
+	}
 	objectDecoder := json.NewDecoder(bytes.NewReader(raw))
 	if strict {
 		objectDecoder.DisallowUnknownFields()
@@ -115,6 +129,58 @@ func decodeV1JSON(w http.ResponseWriter, r *http.Request, dst any, maxBytes int6
 		return CodeMalformed
 	}
 	return CodeOK
+}
+
+// rejectDuplicateJSONNames rejects duplicate names at every object depth,
+// including duplicate OpenBTS keys inside PATCH /config values. encoding/json
+// otherwise silently keeps the last occurrence.
+func rejectDuplicateJSONNames(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	var walk func() error
+	walk = func() error {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, isDelim := token.(json.Delim)
+		if !isDelim {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := make(map[string]struct{})
+			for decoder.More() {
+				nameToken, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				name, ok := nameToken.(string)
+				if !ok {
+					return errors.New("JSON object name is not a string")
+				}
+				if _, duplicate := seen[name]; duplicate {
+					return fmt.Errorf("duplicate JSON name %q", name)
+				}
+				seen[name] = struct{}{}
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = decoder.Token()
+			return err
+		case '[':
+			for decoder.More() {
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = decoder.Token()
+			return err
+		default:
+			return errors.New("unexpected JSON delimiter")
+		}
+	}
+	return walk()
 }
 
 func jsonDecodeCode(err error) int {
@@ -128,6 +194,10 @@ func jsonDecodeCode(err error) int {
 func writeV1DecodeError(w http.ResponseWriter, r *http.Request, code int) {
 	if code == CodeTooLarge {
 		writeV1(w, r, code, "request body too large", nil)
+		return
+	}
+	if code == CodeMediaType {
+		writeV1(w, r, code, "Content-Type must be application/json", nil)
 		return
 	}
 	writeV1(w, r, CodeMalformed, "malformed JSON body", nil)
@@ -190,11 +260,11 @@ func authorized(r *http.Request) bool {
 	if want == "" {
 		return true
 	}
-	got := r.Header.Get("Authorization")
-	if !strings.HasPrefix(got, "Bearer ") {
+	fields := strings.Fields(r.Header.Get("Authorization"))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
 		return false
 	}
-	gotToken := strings.TrimSpace(strings.TrimPrefix(got, "Bearer "))
+	gotToken := fields[1]
 	wantHash := sha256.Sum256([]byte(want))
 	gotHash := sha256.Sum256([]byte(gotToken))
 	return subtle.ConstantTimeCompare(gotHash[:], wantHash[:]) == 1
@@ -204,6 +274,7 @@ func authorized(r *http.Request) bool {
 func methodOnly(method string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
+			w.Header().Set("Allow", method)
 			writeV1(w, r, CodeMethod, "method not allowed, want "+method, nil)
 			return
 		}

@@ -18,31 +18,34 @@ type SMS struct {
 }
 
 var (
-	reTime   = regexp.MustCompile(`(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d)`)
-	reText   = regexp.MustCompile(`Decoded text:\s*(.*)`)
-	reFrom   = regexp.MustCompile(`(?m)^From:\s*(\S+)`)
-	reTo     = regexp.MustCompile(`(?m)^To:\s*(\S+)`)
-	reContact = regexp.MustCompile(`Contact:\s*<sip:IMSI(\d{15})`)
-	reMsgTo   = regexp.MustCompile(`MESSAGE\s+sip:IMSI(\d{15})`)
+	reTime     = regexp.MustCompile(`(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d)`)
+	reText     = regexp.MustCompile(`Decoded text:\s*(.*)`)
+	reFrom     = regexp.MustCompile(`(?m)^From:\s*(\S+)`)
+	reTo       = regexp.MustCompile(`(?m)^To:\s*(\S+)`)
+	reContact  = regexp.MustCompile(`Contact:\s*<sip:IMSI(\d{15})`)
+	reMsgTo    = regexp.MustCompile(`MESSAGE\s+sip:IMSI(\d{15})`)
 	reFromIMSI = regexp.MustCompile(`From:\s*<sip:IMSI(\d{15})`)
 	reToIMSI   = regexp.MustCompile(`To:\s*<sip:IMSI(\d{15})`)
 	reCantSend = regexp.MustCompile(`Can't send your SMS to\s+(\S+)`)
 )
 
-// ParseSmqueueLog pairs `get_text: Decoded text` lines with the following
-// `Deliver message:` SIP blocks. It tolerates color escapes and version drift
-// (the legacy code used fixed line indexes; we use regex + prefix search).
+// ParseSmqueueLog only pairs text and addressing found in one delivery event.
+// A decoded line is accepted when it follows the event's "Request Message
+// Delivery" marker immediately before the SIP block. This intentionally drops
+// incomplete events rather than joining independent text/block lists by index,
+// which corrupts records when smqueue retries or log lines are missing.
 func ParseSmqueueLog(log string) []SMS {
-	texts := extractTexts(log)
-	blocks := extractDeliverBlocks(log)
-	n := len(texts)
-	if len(blocks) < n {
-		n = len(blocks)
-	}
+	clean := stripANSI(log)
+	parts := strings.Split(clean, "Deliver message:")
 	var out []SMS
-	for i := 0; i < n; i++ {
-		s := SMS{Time: texts[i].time, Text: texts[i].text}
-		parseDeliverInto(&s, blocks[i])
+	for i := 1; i < len(parts); i++ {
+		decoded, ok := decodedForDelivery(parts[i-1])
+		if !ok {
+			continue
+		}
+		block := deliveryBlock(parts[i])
+		s := SMS{Time: decoded.time, Text: decoded.text}
+		parseDeliverInto(&s, block)
 		out = append(out, s)
 	}
 	return out
@@ -52,37 +55,42 @@ type decodedLine struct {
 	time, text string
 }
 
-func extractTexts(log string) []decodedLine {
-	var out []decodedLine
-	for _, line := range strings.Split(log, "\n") {
-		if !strings.Contains(line, "get_text:") || !strings.Contains(line, "Decoded text") {
-			continue
-		}
-		t := ""
-		if m := reTime.FindStringSubmatch(line); m != nil {
-			t = m[1]
-		}
-		txt := ""
-		if m := reText.FindStringSubmatch(stripANSI(line)); m != nil {
-			txt = strings.TrimSpace(m[1])
-		}
-		out = append(out, decodedLine{time: t, text: txt})
+func decodedForDelivery(prelude string) (decodedLine, bool) {
+	marker := strings.LastIndex(prelude, "Request Message Delivery for ")
+	if marker < 0 {
+		return decodedLine{}, false
 	}
-	return out
+	window := prelude[marker:]
+	idx := strings.LastIndex(window, "Decoded text:")
+	if idx < 0 {
+		return decodedLine{}, false
+	}
+	line := window[idx:]
+	if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+		line = line[:nl]
+	}
+	t := ""
+	// Timestamp sits before "Decoded text", so read it from the full window.
+	for _, candidate := range strings.Split(window, "\n") {
+		if strings.Contains(candidate, "Decoded text:") {
+			if m := reTime.FindStringSubmatch(candidate); m != nil {
+				t = m[1]
+			}
+		}
+	}
+	m := reText.FindStringSubmatch(line)
+	if m == nil {
+		return decodedLine{}, false
+	}
+	return decodedLine{time: t, text: strings.TrimSpace(m[1])}, true
 }
 
-func extractDeliverBlocks(log string) []string {
-	clean := stripANSI(log)
-	parts := strings.Split(clean, "Deliver message:")
-	var out []string
-	for _, p := range parts[1:] {
-		lines := strings.Split(p, "\n")
-		if len(lines) > 14 {
-			lines = lines[:14]
-		}
-		out = append(out, strings.Join(lines, "\n"))
+func deliveryBlock(afterMarker string) string {
+	lines := strings.Split(afterMarker, "\n")
+	if len(lines) > 18 {
+		lines = lines[:18]
 	}
-	return out
+	return strings.Join(lines, "\n")
 }
 
 func parseDeliverInto(s *SMS, block string) {
