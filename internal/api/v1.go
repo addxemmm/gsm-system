@@ -429,7 +429,7 @@ func validateBindingNumber(number string) error {
 		return err
 	}
 	switch number {
-	case "111", "112", "911":
+	case "101", "411", "111", "112", "911", "2600", "2602":
 		return errors.New("reserved service number")
 	default:
 		return nil
@@ -572,7 +572,7 @@ func newSMSBindingIndex(registered []subscriber.Subscriber) smsBindingIndex {
 
 func isSMSServiceCode(number string) bool {
 	switch strings.TrimPrefix(number, "+") {
-	case "101", "411", "111", "112", "911":
+	case "101", "411", "111", "112", "911", "2600", "2602":
 		return true
 	default:
 		return false

@@ -1,7 +1,6 @@
 VERSION := $(strip $(shell cat VERSION))
 REVISION ?= $(strip $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown))
-GSM_IMAGE ?= gsm-system:$(VERSION)
-GSM_IMMUTABLE_IMAGE ?= gsm-system:$(VERSION)-$(REVISION)
+GSM_IMAGE := gsm-system:2.1
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.revision=$(REVISION)
 
 .PHONY: all build test vet clean linux docker docker-release docker-contract
@@ -24,12 +23,13 @@ clean:
 linux:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/gsm-system-linux-amd64 ./cmd/server
 
-# Build the immutable image without starting a container. / 仅构建不可变镜像。
+# Build the stable 2.1 runtime image without starting a container.
+# 构建固定的 2.1 运行镜像，但不启动容器。
 docker:
-	GSM_IMAGE="$(GSM_IMMUTABLE_IMAGE)" GSM_VERSION="$(VERSION)" GSM_REVISION="$(REVISION)" docker compose -p gsm-system-live -f deploy/docker/docker-compose.yml build
+	GSM_IMAGE="$(GSM_IMAGE)" GSM_VERSION="$(VERSION)" GSM_REVISION="$(REVISION)" docker compose -p gsm-system-live -f deploy/docker/docker-compose.yml build
 
-# Build, deploy, verify, then publish the mutable release alias.
-# 构建部署并验证后，才发布可变版本别名。
+# Build, deploy and verify the stable 2.1 runtime image, then clean old GSM objects.
+# 构建、部署及验收固定 2.1 运行镜像，再清理旧 GSM 对象。
 docker-release:
 	GSM_VERSION="$(VERSION)" GSM_REVISION="$(REVISION)" ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live
 

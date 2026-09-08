@@ -81,13 +81,7 @@ printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
   exit 2
 }
 
-IMAGE_WAS_SET=0
-if [ "${GSM_IMAGE+x}" = x ]; then IMAGE_WAS_SET=1; fi
 REVISION=${GSM_REVISION:-}
-if [ -z "$REVISION" ] && [ "$IMAGE_WAS_SET" -eq 1 ]; then
-  prefix=gsm-system:$VERSION-
-  case "$GSM_IMAGE" in "$prefix"*) REVISION=${GSM_IMAGE#"$prefix"} ;; esac
-fi
 if [ -z "$REVISION" ] && [ -f .release-revision ]; then
   REVISION=$(sed -n '1p' .release-revision | tr -d '[:space:]')
 fi
@@ -99,10 +93,12 @@ case "$REVISION" in
 esac
 [ "${#REVISION}" -eq 12 ] || { echo "revision must contain 12 characters: $REVISION" >&2; exit 2; }
 
-IMMUTABLE_IMAGE=gsm-system:$VERSION-$REVISION
-RELEASE_IMAGE=gsm-system:$VERSION
-GSM_IMAGE=${GSM_IMAGE:-$IMMUTABLE_IMAGE}
-case "$GSM_IMAGE" in ''|*[!A-Za-z0-9._:/-]*) echo "invalid GSM_IMAGE: $GSM_IMAGE" >&2; exit 2 ;; esac
+RUNTIME_IMAGE=gsm-system:2.1
+if [ "${GSM_IMAGE+x}" = x ] && [ "$GSM_IMAGE" != "$RUNTIME_IMAGE" ]; then
+  echo "GSM_IMAGE must remain $RUNTIME_IMAGE: $GSM_IMAGE" >&2
+  exit 2
+fi
+GSM_IMAGE=$RUNTIME_IMAGE
 GSM_VERSION=$VERSION
 GSM_REVISION=$REVISION
 export GSM_IMAGE GSM_VERSION GSM_REVISION
@@ -207,15 +203,62 @@ if [ "$VERIFY" -eq 1 ]; then
     sleep 1
   done
   echo
+  # HTTP 200 from /cell is not sufficient: the binary probe also rejects a
+  # transitioning/degraded running cell while accepting an intentionally
+  # stopped cell. /cell 的 200 不代表进程健康，清理前必须通过二进制探针。
+  docker exec "$HEALTH_CONTAINER" /usr/local/bin/gsm-system --healthcheck
 fi
 verify_containers
 
-if [ "$VERIFY" -eq 1 ] && [ "$IMAGE_WAS_SET" -eq 0 ]; then
-  # Publish the mutable release alias only after container and HTTP validation.
-  # 容器及 HTTP 验证完成后才更新可变版本别名。
-  docker image tag "$GSM_IMAGE" "$RELEASE_IMAGE"
-  immutable_id=$(docker image inspect --format '{{.Id}}' "$GSM_IMAGE")
-  release_id=$(docker image inspect --format '{{.Id}}' "$RELEASE_IMAGE")
-  [ "$immutable_id" = "$release_id" ] || { echo 'release alias image ID mismatch' >&2; exit 1; }
-  printf 'Published %s -> %s / 已发布版本别名\n' "$RELEASE_IMAGE" "$GSM_IMAGE"
+if [ "$VERIFY" -eq 1 ]; then
+  # Only a fully validated deployment may remove superseded GSM runtime
+  # objects. Exact image metadata and Compose/managed labels keep container
+  # and image cleanup away from LTE and unrelated workloads. Build cache has
+  # no repository namespace, so only Docker's unused cache is pruned; images,
+  # containers, networks and volumes are never passed to a system prune.
+  # 仅在完整验收后清理旧 GSM 对象；数据卷、LTE 镜像及容器均不参与清理。
+  current_image_id=$(docker image inspect --format '{{.Id}}' "$GSM_IMAGE")
+
+  managed_containers=$(docker ps -aq --filter 'label=com.gsm-system.managed=true')
+  for id in $managed_containers; do
+    case " $HEALTH_CONTAINER " in *" $id "*) continue ;; esac
+    running=$(docker inspect --format '{{.State.Running}}' "$id")
+    [ "$running" = true ] || docker rm "$id" >/dev/null
+  done
+
+  gsm_image_ids=$(docker image ls -aq --no-trunc \
+    --filter 'label=org.opencontainers.image.title=gsm-system' \
+    | sort -u)
+  for image_id in $gsm_image_ids; do
+    if [ "$image_id" != "$current_image_id" ]; then
+      containers=$(docker ps -aq --filter "ancestor=$image_id")
+      for id in $containers; do
+        running=$(docker inspect --format '{{.State.Running}}' "$id")
+        [ "$running" = true ] || docker rm "$id" >/dev/null
+      done
+      [ -z "$(docker ps -aq --filter "ancestor=$image_id")" ] || continue
+    fi
+
+    # Untag only this repository. If an image ID is shared with another
+    # repository, that unrelated tag and image remain intact.
+    # 仅删除 gsm-system 仓库 tag；共享同一 ID 的其他仓库不受影响。
+    repo_tags=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "$image_id")
+    for repo_tag in $repo_tags; do
+      case "$repo_tag" in
+        gsm-system:2.1) [ "$image_id" = "$current_image_id" ] && continue ;;
+        gsm-system:*) docker image rm "$repo_tag" >/dev/null ;;
+      esac
+    done
+
+    # A superseded dangling GSM image has no repository tag to remove. Delete
+    # it by ID only when no foreign tag remains.
+    if [ "$image_id" != "$current_image_id" ] && \
+       docker image inspect "$image_id" >/dev/null 2>&1; then
+      repo_tags=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "$image_id")
+      [ -n "$repo_tags" ] || docker image rm "$image_id" >/dev/null
+    fi
+  done
+  docker builder prune --all --force >/dev/null
+  printf 'Validated %s at revision %s; obsolete GSM objects and unused build cache cleaned / 已验收并清理\n' \
+    "$GSM_IMAGE" "$REVISION"
 fi

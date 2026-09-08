@@ -36,8 +36,14 @@
 
 - Message 信息：`<scope>: <what> / <中文说明>` (e.g. `api: retire root routes / 移除根路径旧接口`), one thing per commit.
 - Before push 推前必跑：`go test ./...` green 全绿 + `go vet ./...` + `git status` clean.
-- Release via `scripts/deploy_from_windows.ps1` (sync) then server `docker compose up -d --build`.
-  Current server policy keeps only the active GSM image ID and its validated
-  aliases; no old image or stopped rollback container is retained.
-  当前服务器仅保留在用 GSM 镜像 ID 及其已验证别名，不保留旧镜像或停止的回滚容器。
+- Release via `scripts/deploy_from_windows.ps1` (sync), then run
+  `scripts/deploy_to_ubuntu.sh` on the server; direct `compose up` bypasses the
+  mandatory revision/health/cleanup gates. Keep the release tag at `2.1` until
+  the operator explicitly instructs a version change.
+  The runtime image tag remains exactly `gsm-system:2.1`; source traceability
+  stays in OCI/binary revision metadata. After every healthy deployment, remove
+  stopped managed GSM containers, superseded GSM image IDs, and unused Docker
+  build cache. Never remove LTE objects or the external business-data volume.
+  运行镜像固定为 `gsm-system:2.1`，源码 revision 由 OCI/二进制元数据追踪；每次健康
+  验收后清理停止的 GSM 容器、旧 GSM 镜像及无用构建缓存，绝不删除 LTE 对象或业务数据卷。
 - Docs and commits are bilingual 文档与提交均为中英双语. GitHub repo is private 仓库私有。

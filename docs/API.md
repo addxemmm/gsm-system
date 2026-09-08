@@ -457,8 +457,10 @@ HTTP `200`: `data.subscriber` has `imsi`, nullable `number`, and
 ```
 
 Binds/replaces one number transactionally in persistent native registries.
-`111` (local voicemail) and `112`/`911` (reserved emergency codes) cannot be
-bound. The lab has no PSTN interconnection or real emergency-calling guarantee.
+`101`/`411` (SMS services), `111` (local voicemail), `112`/`911` (reserved
+emergency codes), and `2600`/`2602` (local voice diagnostics) are reserved and
+rejected with HTTP 422. 这些服务号码不可绑定到手机。The lab has no PSTN
+interconnection or real emergency-calling guarantee.
 HTTP `200`:
 
 ```json

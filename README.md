@@ -158,17 +158,18 @@ docker compose --env-file .env -p gsm-system-live \
 将 [`.env.example`](.env.example) 复制为项目根 `.env`：`GSM_API_TOKEN=`
 留空即关闭 Bearer 鉴权，填写非空值即启用；`.env` 已被 Git 忽略。
 
-The release script builds immutable `gsm-system:2.1.0-<12sha>`, validates the
-container and HTTP endpoint, then moves `gsm-system:2.1.0` to the same image ID.
-It never deletes the external `docker_gsm-data` volume. Read
+The release script builds only `gsm-system:2.1`, validates its OCI/binary source
+revision before deployment, then validates the container, HTTP endpoint, and
+state-aware health probe. After success it removes only obsolete GSM runtime
+objects and unused build cache; it never deletes the external `docker_gsm-data`
+volume or LTE containers/images. Read
 [`docs/DEPLOY.md`](docs/DEPLOY.md) before migrating or cleaning Docker objects.
 The Compose service is `gsm-system`; its container is `gsmsystem-uhd4`. The
-server currently retains only the active GSM image ID and its two tags; old
-images and stopped rollback containers were removed after acceptance.
+server retains only the active `gsm-system:2.1` runtime image; source identity
+is recorded by its OCI revision label rather than a revision-suffixed tag.
 
-发布脚本构建不可变 tag `gsm-system:2.1.0-<12sha>`，容器与 HTTP 验证通过后，
-再将 `gsm-system:2.1.0` 指向同一镜像 ID。脚本不删除外部数据卷。服务器当前只保留
-在用 GSM 镜像 ID 及两个标签，不保留旧镜像或停止的回滚容器。
+发布脚本仅构建 `gsm-system:2.1`，部署前核对 OCI/二进制 revision；容器、HTTP 与
+状态探针通过后才清理旧 GSM 对象及无用构建缓存，不删除业务数据卷或 LTE 对象。
 
 ## Documentation / 文档
 
@@ -177,6 +178,8 @@ images and stopped rollback containers were removed after acceptance.
 - [Operating rules / 运行规则](docs/RULES.md)
 - [SIM and number binding / SIM 与号码绑定](docs/SIM.md)
 - [SDR notes / SDR 说明](docs/SDR.md)
+- [Bounded UHD timeout recovery / UHD 有限超时恢复](docs/UHD-RX-RECOVERY.md)
+- [2600/2602 voice diagnostics / 语音诊断](docs/VOICE-DIAGNOSTICS.md)
 - [2.1 migration / 2.1 迁移](docs/MIGRATION.md)
 - [2.1 release notes / 2.1 发布说明](docs/RELEASE-2.1.md)
 - [Historical audit / 历史审计](docs/AUDIT-2026-09.md)

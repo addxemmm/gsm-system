@@ -3,7 +3,7 @@
 # 服务器镜像隔离冒烟测试：不使用射频、USB、host 网络或线上数据卷。
 set -eu
 
-IMAGE=${1:-gsm-system:2.1.0}
+IMAGE=${1:-gsm-system:2.1}
 TOKEN=gsm-image-smoke-token-fixture-v1
 LABEL=com.addx.gsm-system.image-smoke
 RUN_ID_RAW=$(od -An -N8 -tx1 /dev/urandom)

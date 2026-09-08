@@ -5,6 +5,8 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 *.sql text eol=lf
+# Unified patch context intentionally starts with a space before source tabs.
+*.patch text eol=lf -whitespace
 *.db binary
 *.bin binary
 *.hex binary

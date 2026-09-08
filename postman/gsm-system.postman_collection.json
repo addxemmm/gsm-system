@@ -865,6 +865,7 @@
         },
         {
           "name": "Number binding rejects reserved service number",
+          "description": "Reserved numbers: 101, 411, 111, 112, 911, 2600 (echo), 2602 (tone). Expect HTTP 422 when binding any of them. / 上述服务与语音诊断号码均不可绑定，返回 422。",
           "event": [
             {
               "listen": "test",

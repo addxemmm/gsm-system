@@ -11,8 +11,8 @@ Release 2.1 uses exactly:
 - Compose project `gsm-system-live`;
 - Compose service `gsm-system`, container `gsmsystem-uhd4`;
 - external volume `docker_gsm-data`;
-- immutable image `gsm-system:2.1.0-<12sha>` and validated release alias
-  `gsm-system:2.1.0`.
+- the single runtime image tag `gsm-system:2.1`; application/OCI version remains
+  `2.1.0`, and the exact source revision remains in OCI/binary metadata.
 
 The former `.uhd4` Docker/Compose definitions are retired. There is no Xenial
 production fallback for the Artix-7-compatible board. 旧 `.uhd4` 构建文件不再使用。
@@ -40,10 +40,12 @@ separate from the OpenBTS handset/GPRS pool `192.168.99.0/24`. 生产容器使�
 GPRS 网段均不重叠。
 
 The operator must have Docker access without interactive sudo. The current
-operator policy retains only the active GSM image ID and its two tags, not an
-old image or stopped rollback container. The external business-data volume is
-still retained. 当前策略只保留在用 GSM 镜像 ID 及两个标签，不保留旧镜像或停止的
-回滚容器；外部业务数据卷继续保留。
+operator policy retains only the active `gsm-system:2.1` image and no stopped
+rollback container. Every healthy deployment removes superseded GSM tags/images,
+stopped managed GSM containers, and unused Docker build cache. LTE containers,
+LTE images, and the external business-data volume remain untouched. 当前策略仅保留
+在用 `gsm-system:2.1` 镜像；每次健康验收后清理旧 GSM 对象及无用构建缓存，LTE
+容器/镜像和外部业务数据卷保持不变。
 
 ## 2. Vendor inputs / 上游源码缓存
 
@@ -97,7 +99,7 @@ From Windows PowerShell:
 
 ```powershell
 pwsh -NoProfile -File scripts/deploy_from_windows.ps1 -HostAlias vm-sdr
-# Optional remote immutable-image build; does not run compose up:
+# Optional remote gsm-system:2.1 build; does not run compose up:
 pwsh -NoProfile -File scripts/deploy_from_windows.ps1 -HostAlias vm-sdr -Build `
   -ComposeFile deploy/docker/docker-compose.yml -ProjectName gsm-system-live
 ```
@@ -156,12 +158,11 @@ must survive project replacement. 禁止将删卷作为普通升级或回滚步�
 ## 5. Build, start, and publish / 构建、启动与发布
 
 After the Windows `-Build` flow, run the no-RF image fixture first, then deploy
-the already-built immutable tag:
+the already-built stable runtime tag:
 
 ```bash
 cd ~/gsm-system
-revision=$(cat .release-revision)
-scripts/tests/test_image.sh "gsm-system:2.1.0-$revision"
+scripts/tests/test_image.sh gsm-system:2.1
 ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live --skip-build
 ```
 
@@ -179,13 +180,16 @@ cd ~/gsm-system
   --project-name gsm-system-live
 ```
 
-The script resolves `VERSION` and the 12-character source revision, builds the
-immutable tag, verifies OCI labels and `gsm-system --version`, verifies that the
-Compose containers use the expected image ID, starts the project, and polls the
-non-RF `/api/v1/cell` endpoint. Only after build + container + HTTP validation
-does it tag the same image ID as `gsm-system:2.1.0`.
+The script resolves `VERSION` and the 12-character source revision and builds
+only `gsm-system:2.1`. Before deployment it verifies the OCI version/revision
+labels and `gsm-system --version`; it then verifies the Compose image ID, polls
+the non-RF `/api/v1/cell` endpoint, and runs the state-aware binary health probe.
+Only after every gate passes does it delete stopped managed GSM containers,
+superseded GSM tags/images, and unused build cache. It never runs `system prune`
+or removes a volume, network, LTE container, or LTE image.
 
-脚本先验证不可变镜像、容器与 HTTP，再更新版本别名；失败不会把候选镜像标成已验证版本。
+脚本仅构建 `gsm-system:2.1`，启动前核对 OCI/二进制 revision；容器、HTTP 与状态感知
+健康探针全部通过后，才清理旧 GSM 对象及无用构建缓存，且不删除卷、网络或 LTE 对象。
 
 ### API authentication / API 鉴权
 
@@ -233,9 +237,10 @@ docker compose --env-file .env -p gsm-system-live \
   up -d --no-build --force-recreate gsm-system
 ```
 
-`--skip-build` selects an already-built explicitly supplied `GSM_IMAGE`;
-`--skip-health` deliberately omits HTTP validation and therefore does not
-publish the moving release alias. 跳过健康检查不构成发布成功。
+`--skip-build` selects the already-built `gsm-system:2.1` image and still checks
+its recorded revision before deployment. `--skip-health` deliberately omits
+health validation and therefore also skips all cleanup. 跳过健康检查不构成发布成功，
+也不会执行清理。
 
 Compose uses the binary's read-only `--healthcheck`: a stopped cell is healthy,
 and a running cell is healthy only when `ready=true`; `transitioning` and
@@ -260,17 +265,15 @@ acceptance. / Compose 使用只读 `--healthcheck`：小区停止时健康，运
 8. Stop the cell; recreate the container; verify profile/database/log/CDR
    persistence and that no cell auto-transmits.
 
-Record exact image ID/tag, revision, timestamps, API request IDs, and native
+Record exact image ID/tag (`gsm-system:2.1`), revision, timestamps, API request IDs, and native
 logs. Local tests or a successful HTTP probe alone do not prove RF readiness.
 The management plane was deployed and its non-RF acceptance completed on
 2026-09-08. Continue to distinguish that result from the pending handset/RF
 acceptance. 管理面已部署并完成非射频验收；真机与射频验收仍须单独记录。
 
-The current bridge/preset deployment uses runtime revision `36af25acf8db` and
-supersedes the earlier host-network image. The saved uplink was migrated to
-`eth0`; business database digests and LTE state stayed unchanged. 当前桥接与预设
-版本已部署，存档出口已迁移为 `eth0`；业务数据摘要与 LTE 状态保持不变。
-Exact evidence is in [`RELEASE-2.1.md`](RELEASE-2.1.md).
+For the latest deployed runtime revision and acceptance evidence, see
+[`RELEASE-2.1.md`](RELEASE-2.1.md). The saved uplink is `eth0`; business data
+and LTE state must remain unchanged across deployment and cleanup.
 
 Welcome-default migration and the state-aware container probe have offline
 coverage, but handset SMS transmit/receive and packet-data/DNS/Internet remain

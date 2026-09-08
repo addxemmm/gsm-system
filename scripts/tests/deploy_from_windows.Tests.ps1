@@ -72,7 +72,8 @@ exit /b 0
   $calls = Get-Content -Raw -LiteralPath $log
   $source = Get-Content -Raw -LiteralPath $script
   Assert-True ($output -match "excluded") "dirty HEAD-only sync warning should be visible"
-  Assert-True ($calls -match "gsm-system:2\.1\.0-abcdef123456") "immutable image must use VERSION plus 12-char revision"
+  Assert-True ($calls -match "GSM_IMAGE='gsm-system:2\.1'") "remote build must use the stable 2.1 runtime image"
+  Assert-True ($calls -notmatch "gsm-system:2\.1\.0-abcdef123456") "revision-suffixed image tags must not be created"
   Assert-True ($calls -match "docker compose -p 'gsm-system-live' -f 'deploy/docker/docker-compose\.yml' build") "single production Compose file must be the build default"
   Assert-True ($calls -match "docker compose --env-file .env -p 'gsm-system-live'") "existing root .env must be explicit during build"
   Assert-True ($calls -notmatch "compose .*up") "Windows sync/build must never run compose up"

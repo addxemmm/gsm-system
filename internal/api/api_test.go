@@ -238,7 +238,7 @@ func TestSubscriberConflictAndIntegrityClassification(t *testing.T) {
 
 func TestSubscriberBindingRejectsReservedServiceNumbers(t *testing.T) {
 	_, server := testServer(t)
-	for _, number := range []string{"111", "112", "911"} {
+	for _, number := range []string{"101", "411", "111", "112", "911", "2600", "2602"} {
 		recorder := serve(t, server, http.MethodPut,
 			"/api/v1/subscribers/001010123456780/number", "application/json",
 			`{"number":"`+number+`"}`)

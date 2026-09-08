@@ -7,7 +7,7 @@ TMP=${TMPDIR:-/tmp}/gsm-deploy-test-$$
 BIN=$TMP/bin
 LOG=$TMP/native.log
 REVISION=$(git -C "$ROOT" rev-parse --short=12 HEAD)
-IMAGE=gsm-system:2.1.0-$REVISION
+IMAGE=gsm-system:2.1
 mkdir -p "$BIN"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT HUP INT TERM
@@ -28,8 +28,16 @@ case " $* " in
   *" volume inspect "*) exit 0 ;;
   *" image inspect "*"org.opencontainers.image.version"*) echo "${FAKE_LABEL_VERSION:-$GSM_VERSION}" ;;
   *" image inspect "*"org.opencontainers.image.revision"*) echo "${FAKE_LABEL_REVISION:-$GSM_REVISION}" ;;
+  *" image inspect "*"range .RepoTags"*" sha256:fixture "*) printf '%s\n' 'gsm-system:2.1' 'gsm-system:2.1.0' ;;
+  *" image inspect "*"range .RepoTags"*" sha256:old "*) printf '%s\n' 'gsm-system:2.1.0' 'gsm-system:2.1.0-oldrevision' ;;
+  *" image inspect "*"range .RepoTags"*" sha256:shared "*) printf '%s\n' 'gsm-system:legacy' 'lte:preserve' ;;
+  *" image inspect "*"range .RepoTags"*" sha256:dangling "*) : ;;
+  *" image ls -aq --no-trunc "*)
+    [ "${FAKE_CLEANUP_FIXTURES:-0}" = 1 ] && printf '%s\n' sha256:fixture sha256:old sha256:shared sha256:dangling || echo sha256:fixture
+    ;;
   *" image inspect "*) echo 'sha256:fixture' ;;
   *" run --rm --entrypoint /usr/local/bin/gsm-system "*) echo "gsm-system $GSM_VERSION ($GSM_REVISION)" ;;
+  *" exec fixture-current /usr/local/bin/gsm-system --healthcheck "*) [ "${FAKE_BINARY_HEALTH_FAIL:-0}" != 1 ] ;;
   *" exec fixture-current sh -c "*)
     [ "${FAKE_EXEC_FAIL:-0}" != 1 ] || exit 22
     if [ "${FAKE_REQUIRE_CONTAINER_TOKEN:-0}" = 1 ]; then
@@ -42,8 +50,17 @@ case " $* " in
     ;;
   *"{{.State.Running}}"*" rollback-orphan "*) echo "${FAKE_ORPHAN_RUNNING:-false}" ;;
   *"{{.State.Running}}"*" fixture-current "*) echo "${FAKE_CURRENT_RUNNING:-true}" ;;
+  *"{{.State.Running}}"*" old-stopped "*) echo false ;;
   *"{{.Image}}"*" rollback-orphan "*) echo "${FAKE_ORPHAN_IMAGE:-sha256:rollback}" ;;
   *"{{.Image}}"*" fixture-current "*) echo "${FAKE_CURRENT_IMAGE:-sha256:fixture}" ;;
+  *" ps -aq --filter label=com.gsm-system.managed=true "*)
+    [ "${FAKE_CLEANUP_FIXTURES:-0}" = 1 ] && [ ! -f "$FAKE_DEPLOY_STATE/old-removed" ] && echo old-stopped || :
+    ;;
+  *" ps -aq --filter ancestor=sha256:old "*|*" ps -aq --filter ancestor=sha256:shared "*)
+    [ ! -f "$FAKE_DEPLOY_STATE/old-removed" ] && echo old-stopped || :
+    ;;
+  *" ps -aq --filter ancestor="*) : ;;
+  *" rm old-stopped "*) mkdir -p "$FAKE_DEPLOY_STATE"; : >"$FAKE_DEPLOY_STATE/old-removed" ;;
   *) exit 0 ;;
 esac
 EOF
@@ -67,7 +84,7 @@ chmod +x "$BIN/docker" "$BIN/curl" "$BIN/sleep"
 
 # A global Compose ps would expose the stopped rollback orphan and fail. The
 # deploy must query only the service declared by the current Compose config.
-PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG HEALTH_RETRIES=2 \
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state HEALTH_RETRIES=2 \
   FAKE_ORPHAN_RUNNING=false FAKE_ORPHAN_IMAGE=sha256:rollback \
   "$ROOT/scripts/deploy_to_ubuntu.sh"
 grep -F "image=$IMAGE version=2.1.0 revision=$REVISION compose -p gsm-system-live -f deploy/docker/docker-compose.yml build" "$LOG" >/dev/null
@@ -78,10 +95,11 @@ grep -F 'exec fixture-current sh -c' "$LOG" >/dev/null
 grep -F 'printf "Authorization: Bearer %s\n" "$GSM_API_TOKEN"' "$LOG" >/dev/null
 grep -F 'curl -fsS --max-time 30 -H @-' "$LOG" >/dev/null
 grep -F 'http://127.0.0.1:8082/api/v1/cell' "$LOG" >/dev/null
-grep -F "image tag $IMAGE gsm-system:2.1.0" "$LOG" >/dev/null
+grep -F 'exec fixture-current /usr/local/bin/gsm-system --healthcheck' "$LOG" >/dev/null
+grep -F 'builder prune --all --force' "$LOG" >/dev/null
 curl_line=$(grep -n 'exec fixture-current sh -c' "$LOG" | tail -1 | cut -d: -f1)
-tag_line=$(grep -n "image tag $IMAGE gsm-system:2.1.0" "$LOG" | cut -d: -f1)
-[ "$tag_line" -gt "$curl_line" ] || { echo 'release alias was tagged before HTTP validation' >&2; exit 1; }
+cleanup_line=$(grep -n 'builder prune --all --force' "$LOG" | cut -d: -f1)
+[ "$cleanup_line" -gt "$curl_line" ] || { echo 'cleanup ran before HTTP validation' >&2; exit 1; }
 if grep -E ' ps --all -q$' "$LOG" >/dev/null || grep -F 'rollback-orphan' "$LOG" >/dev/null; then
   echo 'retained rollback orphan was included in deployment verification' >&2
   exit 1
@@ -114,8 +132,8 @@ if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_EXEC_FAIL=1 HEALTH_RETRIES=1 \
   "$ROOT/scripts/deploy_to_ubuntu.sh"; then
   echo 'failed HTTP readiness incorrectly passed' >&2; exit 1
 fi
-if grep -F ' image tag ' "$LOG" >/dev/null; then
-  echo 'release alias was tagged after failed HTTP readiness' >&2; exit 1
+if grep -F ' builder prune ' "$LOG" >/dev/null; then
+  echo 'cleanup ran after failed HTTP readiness' >&2; exit 1
 fi
 
 # A token that exists only in the Compose env file must be consumed inside the
@@ -125,7 +143,7 @@ fi
 TOKEN_ENV=$TMP/token.env
 TOKEN_FIXTURE=fixture-token-do-not-log
 printf 'GSM_API_TOKEN=%s\n' "$TOKEN_FIXTURE" >"$TOKEN_ENV"
-env -u GSM_API_TOKEN "PATH=$BIN:$PATH" "FAKE_DEPLOY_LOG=$LOG" \
+env -u GSM_API_TOKEN "PATH=$BIN:$PATH" "FAKE_DEPLOY_LOG=$LOG" "FAKE_DEPLOY_STATE=$TMP/state" \
   "GSM_ENV_FILE=$TOKEN_ENV" FAKE_REQUIRE_CONTAINER_TOKEN=1 \
   "FAKE_CONTAINER_TOKEN=$TOKEN_FIXTURE" \
   "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build
@@ -135,23 +153,56 @@ if grep -F "$TOKEN_FIXTURE" "$LOG" >/dev/null; then
   echo 'container token leaked into deployment log' >&2; exit 1
 fi
 
-# Explicit immutable images are rollback inputs: infer their revision and never
-# repoint the mutable release alias. / 回滚镜像自动推导 revision，且不更新别名。
+# The runtime image tag is fixed for release 2.1; revision-suffixed overrides
+# are rejected before Docker is called. / 2.1 运行 tag 固定，禁止 revision 后缀。
 : >"$LOG"
-PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG GSM_IMAGE=gsm-system:2.1.0-aaaaaaaaaaaa \
-  "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build --skip-health
-grep -F 'revision=aaaaaaaaaaaa' "$LOG" >/dev/null
-if grep -F ' image tag ' "$LOG" >/dev/null; then
-  echo 'rollback unexpectedly changed the release alias' >&2; exit 1
+if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG GSM_IMAGE=gsm-system:2.1.0-aaaaaaaaaaaa \
+  "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build --skip-health; then
+  echo 'revision-suffixed image override unexpectedly passed' >&2; exit 1
 fi
 
 echo "PASS test_deploy_to_ubuntu.sh / Ubuntu 部署脚本测试通过"
 
 : >"$LOG"
-PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_COMPOSE_VOLUME=fixture-env-volume \
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state FAKE_COMPOSE_VOLUME=fixture-env-volume \
   "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build
 grep -F 'volume inspect fixture-env-volume' "$LOG" >/dev/null
 if grep -F 'fixture-secret-not-printed' "$LOG" >/dev/null; then
   echo 'Compose environment secret leaked' >&2; exit 1
 fi
 echo 'PASS resolved Compose data volume / 使用 Compose 实际数据卷'
+
+# OCI revision and binary health must pass before up/cleanup respectively.
+: >"$LOG"
+if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state \
+  FAKE_LABEL_REVISION=bbbbbbbbbbbb "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build; then
+  echo 'mismatched build revision unexpectedly deployed' >&2; exit 1
+fi
+if grep -F ' up -d' "$LOG" >/dev/null; then
+  echo 'compose up ran before build revision validation' >&2; exit 1
+fi
+
+: >"$LOG"
+if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state \
+  FAKE_BINARY_HEALTH_FAIL=1 "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build; then
+  echo 'failed binary health probe unexpectedly passed' >&2; exit 1
+fi
+if grep -F ' builder prune ' "$LOG" >/dev/null; then
+  echo 'cleanup ran after failed binary health probe' >&2; exit 1
+fi
+
+# A healthy deployment removes only stopped managed/GSM objects and obsolete
+# gsm-system tags; it preserves foreign tags and never operates on volumes.
+: >"$LOG"
+rm -rf "$TMP/state"
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state \
+  FAKE_CLEANUP_FIXTURES=1 "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build
+grep -F 'rm old-stopped' "$LOG" >/dev/null
+grep -F 'image rm gsm-system:2.1.0-oldrevision' "$LOG" >/dev/null
+grep -F 'image rm gsm-system:legacy' "$LOG" >/dev/null
+grep -F 'image rm sha256:dangling' "$LOG" >/dev/null
+grep -F 'image rm gsm-system:2.1.0' "$LOG" >/dev/null
+if grep -F 'image rm lte:preserve' "$LOG" >/dev/null || grep -F 'volume rm' "$LOG" >/dev/null || grep -F 'system prune' "$LOG" >/dev/null; then
+  echo 'cleanup escaped GSM runtime scope' >&2; exit 1
+fi
+echo 'PASS post-health GSM cleanup / 健康验收后清理 GSM 对象'

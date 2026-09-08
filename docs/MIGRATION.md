@@ -95,7 +95,7 @@ Use SQLite `.backup` for OpenBTS, sipauthserve, smqueue, and Asterisk; also copy
 
 Never delete `docker_gsm-data` during migration. 迁移期间严禁删除数据卷。
 
-## 5. Deploy immutable image / 部署不可变镜像
+## 5. Deploy the stable runtime image / 部署固定运行镜像
 
 ```bash
 cd ~/gsm-system
@@ -103,13 +103,13 @@ docker volume inspect docker_gsm-data >/dev/null
 ./scripts/deploy_to_ubuntu.sh --project-name gsm-system-live
 ```
 
-The script builds `gsm-system:2.1.0-<12sha>`. Only after container/HTTP
-validation does it tag the same image as `gsm-system:2.1.0`. After acceptance,
-the operator chose to retain only the active image ID and its two tags; old
-images, the stopped rollback container, and old host backup directories were
-removed while the external business-data volume was kept. 验收后按当前策略只保留
-在用镜像 ID 及两个标签；旧镜像、停止的回滚容器及主机旧备份目录已删除，外部业务
-数据卷仍保留。
+The script builds only `gsm-system:2.1` and records the 12-character source
+revision in OCI/binary metadata. Only after container, HTTP, and binary-health
+validation does it remove superseded GSM runtime objects and unused build cache.
+After acceptance, only the active `gsm-system:2.1` image remains; stopped GSM
+rollback containers are removed while the external business-data volume is
+kept. 验收后仅保留在用 `gsm-system:2.1` 镜像；停止的 GSM 回滚容器会被清理，
+外部业务数据卷继续保留。
 
 ## 6. Validate in order / 按顺序验收
 

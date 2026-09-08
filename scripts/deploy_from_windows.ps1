@@ -94,7 +94,7 @@ try {
   if ($revision -notmatch '^[0-9a-f]{12}$') {
     throw "Git revision must be 12 lowercase hexadecimal characters / Git revision 必须为 12 位小写十六进制"
   }
-  $immutableImage = "gsm-system:$version-$revision"
+  $runtimeImage = "gsm-system:2.1"
   Invoke-CheckedNative -Command "git" `
     -Arguments @("archive", "--format=tar.gz", "-o", $tgz, "HEAD") `
     -Action "Create archive / 创建归档"
@@ -139,8 +139,9 @@ else
 fi
 test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$GSM_IMAGE")" = "$GSM_VERSION"
 test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$GSM_IMAGE")" = "$GSM_REVISION"
-docker run --rm --entrypoint /usr/local/bin/gsm-system "$GSM_IMAGE" --version
-'@.Replace("__VERSION__", $version).Replace("__REVISION__", $revision).Replace("__IMAGE__", $immutableImage).Replace("__PROJECT__", $ProjectName).Replace("__COMPOSE__", $ComposeFile).Replace("`r", "")
+test "$(docker run --rm --entrypoint /usr/local/bin/gsm-system "$GSM_IMAGE" --version)" = \
+  "gsm-system $GSM_VERSION ($GSM_REVISION)"
+'@.Replace("__VERSION__", $version).Replace("__REVISION__", $revision).Replace("__IMAGE__", $runtimeImage).Replace("__PROJECT__", $ProjectName).Replace("__COMPOSE__", $ComposeFile).Replace("`r", "")
     Invoke-CheckedRemoteSh -RemoteHost $HostAlias -Script $buildCommand `
       -Action "Remote compose build / 远端 Compose 构建"
     Write-Host "Build complete; no container was started / 构建完成，未启动容器"

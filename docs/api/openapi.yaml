@@ -594,7 +594,7 @@ components:
           type: string
           pattern: '^[0-9]{2,15}$'
           example: '10000'
-          description: Unique; 111, 112, and 911 are reserved and rejected / 保留号码不可绑定
+          description: Unique; 101, 411, 111, 112, 911, 2600, and 2602 are reserved and rejected / 短信服务、语音诊断及其他保留号码不可绑定
     SMSSubmit:
       type: object
       required: [imsi, sender, text]

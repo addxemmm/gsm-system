@@ -1,0 +1,201 @@
+From: gsm-system compatibility maintainers
+Subject: Retry transient UHD RX timeouts without accepting sample gaps
+
+A single empty 100 ms UHD receive timeout is transient on some USB paths.
+Retry up to ten consecutive waits or one second, without restarting the RF
+stream or device clock. The first resumed packet must start exactly at the
+previous accepted packet end so a timestamp gap cannot expose stale I/Q data.
+
+diff --git a/Transceiver52M/UHDDevice.cpp b/Transceiver52M/UHDDevice.cpp
+index d52be55..c39c1dd 100644
+--- a/Transceiver52M/UHDDevice.cpp
++++ b/Transceiver52M/UHDDevice.cpp
+@@ -27,6 +27,7 @@
+ #include <uhd/usrp/multi_usrp.hpp>
+ #include <uhd/utils/thread_priority.hpp>
+ #include <uhd/utils/msg.hpp>
++#include <chrono>
+ 
+ #ifdef HAVE_CONFIG_H
+ #include "config.h"
+@@ -260,6 +261,7 @@ public:
+ 		ERROR_TIMING = -1,
+ 		ERROR_UNRECOVERABLE = -2,
+ 		ERROR_UNHANDLED = -3,
++		ERROR_TIMEOUT = -4,
+ 	};
+ 
+ private:
+@@ -285,6 +287,8 @@ private:
+ 	size_t rx_pkt_cnt;
+ 	size_t drop_cnt;
+ 	uhd::time_spec_t prev_ts;
++	TIMESTAMP rx_pkt_end_ts;
++	bool rx_pkt_end_valid;
+ 
+ 	TIMESTAMP ts_offset;
+ 	smpl_buf *rx_smpl_buf;
+@@ -295,7 +299,8 @@ private:
+ 	int set_rates(double tx_rate, double rx_rate);
+ 	bool parse_dev_type();
+ 	bool flush_recv(size_t num_pkts);
+-	int check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls);
++	int check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls,
++			    bool require_contiguous, TIMESTAMP requested_ts);
+ 
+ 	std::string str_code(uhd::rx_metadata_t metadata);
+ 	std::string str_code(uhd::async_metadata_t metadata);
+@@ -340,7 +345,8 @@ uhd_device::uhd_device(int sps, bool skip_rx)
+ 	  rx_gain(0.0), rx_gain_min(0.0), rx_gain_max(0.0),
+ 	  tx_freq(0.0), rx_freq(0.0), tx_spp(0), rx_spp(0),
+ 	  started(false), aligned(false), rx_pkt_cnt(0), drop_cnt(0),
+-	  prev_ts(0,0), ts_offset(0), rx_smpl_buf(NULL)
++	  prev_ts(0,0), rx_pkt_end_ts(0), rx_pkt_end_valid(false),
++	  ts_offset(0), rx_smpl_buf(NULL)
+ {
+ 	this->sps = sps;
+ 	this->skip_rx = skip_rx;
+@@ -640,6 +646,7 @@ bool uhd_device::flush_recv(size_t num_pkts)
+ void uhd_device::restart(uhd::time_spec_t ts)
+ {
+ 	uhd::stream_cmd_t cmd = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
++	rx_pkt_end_valid = false;
+ 	rx_stream->issue_stream_cmd(cmd);
+ 
+ 	flush_recv(50);
+@@ -697,22 +704,21 @@ void uhd_device::setPriority()
+ 	return;
+ }
+ 
+-int uhd_device::check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls)
++int uhd_device::check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls,
++				bool require_contiguous, TIMESTAMP requested_ts)
+ {
+ 	uhd::time_spec_t ts;
+ 
+ 	if (!num_smpls) {
+-		LOG(ERR) << str_code(md);
+-
+ 		switch (md.error_code) {
+ 		case uhd::rx_metadata_t::ERROR_CODE_TIMEOUT:
+-			LOG(ALERT) << "UHD: Receive timed out";
+-			return ERROR_UNRECOVERABLE;
++			return ERROR_TIMEOUT;
+ 		case uhd::rx_metadata_t::ERROR_CODE_OVERFLOW:
+ 		case uhd::rx_metadata_t::ERROR_CODE_LATE_COMMAND:
+ 		case uhd::rx_metadata_t::ERROR_CODE_BROKEN_CHAIN:
+ 		case uhd::rx_metadata_t::ERROR_CODE_BAD_PACKET:
+ 		default:
++			LOG(ERR) << str_code(md);
+ 			return ERROR_UNHANDLED;
+ 		}
+ 	}
+@@ -724,17 +730,40 @@ int uhd_device::check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls)
+ 	}
+ 
+ 	ts = md.time_spec;
++	TIMESTAMP packet_ts = ts.to_ticks(rx_rate);
++
++	// A timeout is harmless only if the resumed packet is exactly contiguous.
++	// 超时恢复后的首包必须连续，避免把环形缓冲区空洞作为 I/Q 样本读取。
++	if (require_contiguous && rx_pkt_end_valid &&
++	    packet_ts != rx_pkt_end_ts) {
++		LOG(ALERT) << "UHD: Discontinuous receive after timeout";
++		LOG(ALERT) << "Expected tick " << rx_pkt_end_ts
++			   << ", received tick " << packet_ts;
++		return ERROR_UNRECOVERABLE;
++	}
++	if (require_contiguous && !rx_pkt_end_valid &&
++	    packet_ts > requested_ts) {
++		LOG(ALERT) << "UHD: First receive after timeout starts too late";
++		LOG(ALERT) << "Requested tick " << requested_ts
++			   << ", received tick " << packet_ts;
++		return ERROR_UNRECOVERABLE;
++	}
+ 
+ 	// Monotonicity check
+ 	if (ts < prev_ts) {
+ 		LOG(ALERT) << "UHD: Loss of monotonic time";
+ 		LOG(ALERT) << "Current time: " << ts.get_real_secs() << ", " 
+ 			   << "Previous time: " << prev_ts.get_real_secs();
++		if (require_contiguous)
++			return ERROR_UNRECOVERABLE;
+ 		return ERROR_TIMING;
+ 	} else {
+ 		prev_ts = ts;
+ 	}
+ 
++	rx_pkt_end_ts = packet_ts + num_smpls;
++	rx_pkt_end_valid = true;
++
+ 	return 0;
+ }
+ 
+@@ -745,6 +774,10 @@ int uhd_device::readSamples(short *buf, int len, bool *overrun,
+ 	uhd::time_spec_t ts;
+ 	uhd::rx_metadata_t metadata;
+ 	uint32_t pkt_buf[rx_spp];
++	const size_t max_rx_timeouts = 10;
++	const std::chrono::milliseconds max_rx_wait(1000);
++	size_t consecutive_timeouts = 0;
++	std::chrono::steady_clock::time_point timeout_started;
+ 
+ 	if (skip_rx)
+ 		return 0;
+@@ -768,6 +801,8 @@ int uhd_device::readSamples(short *buf, int len, bool *overrun,
+ 
+ 	// Receive samples from the usrp until we have enough
+ 	while (rx_smpl_buf->avail_smpls(timestamp) < len) {
++		std::chrono::steady_clock::time_point recv_started =
++			std::chrono::steady_clock::now();
+ 		size_t num_smpls = rx_stream->recv(
+ 					(void*)pkt_buf,
+ 					rx_spp,
+@@ -776,8 +811,45 @@ int uhd_device::readSamples(short *buf, int len, bool *overrun,
+ 					true);
+ 		rx_pkt_cnt++;
+ 
+-		// Check for errors 
+-		rc = check_rx_md_err(metadata, num_smpls);
++		// Check for errors. A resumed stream must not leave an unread gap.
++		rc = check_rx_md_err(metadata, num_smpls,
++				     consecutive_timeouts != 0, timestamp);
++		if (rc == ERROR_TIMEOUT) {
++			if (!consecutive_timeouts) {
++				timeout_started = recv_started;
++				LOG(WARNING) << "UHD: Receive timed out; waiting up to "
++					     << max_rx_timeouts << " attempts or "
++					     << max_rx_wait.count() << " ms";
++			}
++
++			consecutive_timeouts++;
++			std::chrono::steady_clock::duration waited =
++				std::chrono::steady_clock::now() - timeout_started;
++			if (consecutive_timeouts < max_rx_timeouts &&
++			    waited < max_rx_wait)
++				continue;
++
++			LOG(ALERT) << "UHD: Receive timeout persisted for "
++				   << consecutive_timeouts << " attempts and "
++				   << std::chrono::duration_cast<
++					      std::chrono::milliseconds>(waited).count()
++				   << " ms";
++			rc = ERROR_UNRECOVERABLE;
++		} else if (consecutive_timeouts) {
++			std::chrono::steady_clock::duration waited =
++				std::chrono::steady_clock::now() - timeout_started;
++			if (!rc) {
++				LOG(INFO) << "UHD: Receive recovered after "
++					  << consecutive_timeouts << " timeout(s)";
++				consecutive_timeouts = 0;
++			} else if (waited >= max_rx_wait) {
++				LOG(ALERT) << "UHD: Receive did not return valid data "
++					   << "within " << max_rx_wait.count()
++					   << " ms after a timeout";
++				rc = ERROR_UNRECOVERABLE;
++			}
++		}
++
+ 		switch (rc) {
+ 		case ERROR_UNRECOVERABLE:
+ 			LOG(ALERT) << "UHD: Version " << uhd::get_version_string();

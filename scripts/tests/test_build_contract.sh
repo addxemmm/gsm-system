@@ -27,8 +27,20 @@ grep -Fx 'contactpermit=127.0.0.1/255.255.255.255' deploy/docker/sip-contact-acl
 [ "$(grep -c '^contactpermit=' deploy/docker/sip-contact-acl.conf)" -eq 1 ] || fail 'unexpected contact allow expansion'
 grep -F '0003-smqueue-keyed-sms-observation.patch' deploy/docker/Dockerfile >/dev/null || fail 'keyed native SMS observation patch is not applied'
 grep -F 'GSM_SMS_V1' compat/patches/0003-smqueue-keyed-sms-observation.patch >/dev/null || fail 'keyed native SMS observation format missing'
+grep -F 'patch -p1 < /app/compat/patches/0005-uhd-rx-timeout-retry.patch' deploy/docker/Dockerfile >/dev/null || fail 'UHD RX timeout retry patch is not applied'
+grep -F 'sh /app/compat/tests/test-uhd-rx-timeout.sh Transceiver52M/UHDDevice.cpp' deploy/docker/Dockerfile >/dev/null || fail 'patched UHD RX timeout harness is not run'
+[ -f compat/patches/0005-uhd-rx-timeout-retry.patch ] || fail 'UHD RX timeout retry patch missing'
+[ -f compat/tests/test-uhd-rx-timeout.sh ] || fail 'UHD RX timeout harness missing'
 
-grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1.0}"' deploy/docker/docker-compose.yml >/dev/null || fail 'release image default missing'
+grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1}"' deploy/docker/docker-compose.yml >/dev/null || fail '2.1 runtime image default missing'
+grep -F 'com.gsm-system.managed: "true"' deploy/docker/docker-compose.yml >/dev/null || fail 'managed GSM cleanup label missing'
+grep -F 'RUNTIME_IMAGE=gsm-system:2.1' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'stable deploy image missing'
+grep -F "label=org.opencontainers.image.title=gsm-system" scripts/deploy_to_ubuntu.sh >/dev/null || fail 'GSM-scoped image cleanup missing'
+grep -F 'docker builder prune --all --force' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'post-validation build-cache cleanup missing'
+grep -F 'docker exec "$HEALTH_CONTAINER" /usr/local/bin/gsm-system --healthcheck' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'binary health cleanup gate missing'
+if grep -Eq 'gsm-system:2\.1\.0-[0-9a-f]|GSM_IMMUTABLE_IMAGE' Makefile scripts/deploy_to_ubuntu.sh scripts/deploy_from_windows.ps1; then
+  fail 'revision-suffixed runtime image scheme remains in release scripts'
+fi
 grep -F 'container_name: gsmsystem-uhd4' deploy/docker/docker-compose.yml >/dev/null || fail 'collision-free container name missing'
 grep -F 'external: true' deploy/docker/docker-compose.yml >/dev/null || fail 'data volume is not external'
 grep -F 'test: ["CMD", "/usr/local/bin/gsm-system", "--healthcheck"]' deploy/docker/docker-compose.yml >/dev/null || fail 'state-aware Go health probe missing'

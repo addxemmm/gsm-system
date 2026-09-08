@@ -7,10 +7,15 @@ services:
       args:
         VERSION: "${GSM_VERSION:-2.1.0}"
         REVISION: "${GSM_REVISION:-unknown}"
-    image: "${GSM_IMAGE:-gsm-system:2.1.0}"
+    # The operator-visible/runtime tag stays at the release line. Source
+    # traceability lives in the OCI revision label, not in extra image tags.
+    # 运行镜像固定使用发布线 tag；源码追踪由 OCI revision 标签承载。
+    image: "${GSM_IMAGE:-gsm-system:2.1}"
     # Stable production identity retained across release recreations.
     # 发布重建时保持稳定的生产容器名。
     container_name: gsmsystem-uhd4
+    labels:
+      com.gsm-system.managed: "true"
     # One explicit bridge gives the runtime one stable uplink name: eth0.
     # The Go `network` field and MASQUERADE endpoint refer to this container
     # interface, never to a host NIC such as ens33.

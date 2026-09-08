@@ -105,6 +105,8 @@ RUN cd openbts \
  && patch -p1 < /app/compat/patches/0002-sip-ortp-bctbx-loghook.patch \
  && patch -p1 < /app/compat/patches/0004-gmm-optional-tv-ies.patch \
  && sh /app/compat/tests/test-gmm-optional-ies.sh SGSNGGSN/GPRSL3Messages.cpp \
+ && patch -p1 < /app/compat/patches/0005-uhd-rx-timeout-retry.patch \
+ && sh /app/compat/tests/test-uhd-rx-timeout.sh Transceiver52M/UHDDevice.cpp \
  && sed -i 's/<<os <</<<os.str()<</g' Control/L3StateMachine.cpp \
  && sed -i 's/<<this<<os;/<<this<<os.str();/' GPRS/MSInfo.cpp \
  && sed -i 's/"<<ss)/"<<ss.str())/g' SGSNGGSN/Sgsn.cpp

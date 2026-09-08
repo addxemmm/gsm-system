@@ -4,7 +4,7 @@
 # Asterisk 主叫身份隔离测试：不启动 OpenBTS/射频，不使用主机网络或生产库。
 set -eu
 
-IMAGE=${1:-gsm-system:2.1.0}
+IMAGE=${1:-gsm-system:2.1}
 LABEL=com.addx.gsm-system.callerid-test
 RUN_ID_RAW=$(od -An -N8 -tx1 /dev/urandom)
 RUN_ID=$(printf '%s' "$RUN_ID_RAW" | tr -d ' \n')
@@ -201,6 +201,30 @@ if docker exec "$CONTAINER" grep -Eq \
   fail ENTRY "to-openBTS still clears caller ID unconditionally"
 fi
 pass ENTRY "phones and from-openBTS use trusted peer identity initialization"
+
+for pair in 2600:Echo 2602:Milliwatt; do
+  number=${pair%:*}
+  application=${pair#*:}
+  for context in phones default from-openBTS; do
+    docker exec "$CONTAINER" asterisk -rx \
+      "channel originate Local/$number@$context/n application Wait 15" >/dev/null
+    attempt=0
+    while [ "$attempt" -lt 10 ]; do
+      channels=$(docker exec "$CONTAINER" asterisk -rx 'core show channels concise')
+      if printf '%s\n' "$channels" | grep -F "!gsm-diagnostics!$number!" | \
+          grep -F "!Up!$application!" >/dev/null; then
+        break
+      fi
+      attempt=$((attempt + 1))
+      sleep 1
+    done
+    [ "$attempt" -lt 10 ] || fail DIAGNOSTICS "$number@$context did not reach answered $application"
+    # This container holds synthetic Local calls only, never live radio calls.
+    docker exec "$CONTAINER" asterisk -rx 'channel request hangup all' >/dev/null
+    sleep 1
+    pass DIAGNOSTICS "$number@$context reached $application without SIP/RF"
+  done
+done
 
 docker exec "$CONTAINER" asterisk -rx 'core stop now' >/dev/null
 ASTERISK_STARTED=0
