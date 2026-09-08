@@ -266,6 +266,24 @@ This lab dialplan provides no PSTN interconnection and makes no real emergency
 calling guarantee. Reserved-code handling only prevents accidental subscriber
 assignment. 本实验系统不接入真实 PSTN，也不保证真实紧急呼叫；保留号码仅用于防误绑定。
 
+## Caller-number display / 来电号码显示
+
+Both the realtime `phones` entry and `from-openBTS` initialize caller identity
+from the configured peer resolved by `chan_sip`, then look up its bound number
+through ODBC. Caller-controlled `P-IMSI`/display-name headers are not registry
+lookup keys. Only a valid 2–15 digit mapping replaces caller ID and CDR identity;
+unknown peers or invalid/empty mappings preserve the original values. The
+outbound handset path no longer overwrites caller ID with an empty CDR field.
+实时签约进入的 `phones` 与 `from-openBTS` 均通过 SIP 驱动解析的配置 peer 查
+权威号码，不使用主叫自报的 IMSI 头或显示名；仅合法的 2–15 位数字映射更新来电
+显示及 CDR。未知 peer、空值或异常映射保留原值，出局路径不再用空 CDR 覆盖号码。
+
+`scripts/tests/test_callerid_image.sh` exercises the resolver with isolated
+Asterisk Local channels and synthetic registry data, without RF or the live
+database. This does not replace handset-to-handset incoming-number acceptance.
+隔离 Asterisk Local 通道测试验证解析器及合成签约，不使用射频或生产库；仍须
+两台手机互拨确认来电号码，不能只凭拨通或 Local 通道测试判定空口显示通过。
+
 ## Unbind a number / 解绑号码
 
 ```http
