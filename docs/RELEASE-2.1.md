@@ -142,3 +142,54 @@ were removed, and the live container was unchanged.
   requests together. Add management-only PowerShell smoke tests and an isolated
   image test with a disabled hardware detector. 同步中英双语文档、接口契约和测试文件；
   测试区分真实管理 API 验收与尚未执行的手机/射频全链路验收。
+
+### Deployment acceptance, 2026-09-08 / 本次部署验收
+
+The active runtime now supersedes the earlier `16986725daa9` deployment:
+当前运行版本取代上文旧部署，但保留历史记录：
+
+| Evidence / 证据 | Result / 结果 |
+|---|---|
+| Runtime source / 运行源码 | `36af25acf8db` (preset feature / 预设功能 `4d7a73e`) |
+| Immutable image / 不可变镜像 | `gsm-system:2.1.0-36af25acf8db` |
+| Release alias / 版本别名 | `gsm-system:2.1.0`, same image / 同一镜像 |
+| Image ID / 镜像 ID | `sha256:02a82de72e1db03519d184cd605883807a763e85dc7ee4800499a5097edea497` |
+| Container / 容器 | `gsmsystem-uhd4`, healthy / 健康 |
+| Network / 网络 | `gsm-system-live_gsm-bridge`, bridge driver, `eth0`, `172.31.240.0/24` |
+| Published ports / 映射端口 | TCP 8082 bound to the operator's LAN address only / 仅绑定用户局域网地址 |
+| Authentication / 鉴权 | `.env` Token remains empty; no Token needed / 保持空值、免令牌 |
+| Cell / 小区 | `stopped`; all five native process flags false / 五个原生进程均未启动 |
+
+Acceptance performed / 已执行验收：
+
+1. Reverified pinned native sources and rebuilt UHD/OpenBTS and the complete
+   runtime through the official deployment script. The discovered zsh `NOMATCH`
+   sync failure was fixed by explicit POSIX `sh` stdin execution, with Windows
+   regression and a real-server check. 重新校验依赖并完整构建；修复真实服务器
+   zsh 通配符展开导致的同步失败，完成脚本回归与服务器验证。
+2. The isolated image test passed preset CRUD, omitted descriptions, file mode
+   `0600`, restart persistence, and both start modes. Its detector was fixed to
+   `/bin/false`; both valid starts returned `503`, with no USB, privileges or
+   published ports. 独立镜像测试通过预设持久化与双启动路径；硬件检测固定关闭，
+   未将此测试描述为真实小区启动成功。
+3. LAN PowerShell smoke passed CRUD, duplicate `409`, missing `404`, mixed
+   selector/invalid update `422`, and cleanup. The final preset list was empty:
+   no test records or old carrier defaults remain. 局域网冒烟通过，测试配置已删除，
+   未导入旧运营商默认配置。
+4. Migrated only saved-profile `network` from the host NIC to `eth0`. OpenBTS
+   and subscriber SQL-dump SHA-256 digests matched before/after, and LTE identity,
+   image, state and timestamps were unchanged. 仅迁移存档网卡；配置及签约数据摘要、
+   LTE 状态均保持一致。
+5. Two stopped-state `PUT /api/v1/network` calls returned `changed:true` then
+   `false`; forwarding and the rule were true. `persisted:false` remains the
+   documented contract: reapply after recreation. 停止态 NAT 连续设置验证幂等；
+   容器重建后仍需重新执行网络 PUT。
+6. Removed the superseded GSM image and temporary native builder image after
+   acceptance, then pruned unused build cache to `0 B`. Only the current GSM
+   image ID and its two aliases remain; business volumes and LTE were preserved.
+   验收后删除旧镜像与临时构建镜像、清空构建缓存，保留业务卷和 LTE。
+
+Both feature and runtime-source GitHub CI runs passed. RF attach, handset SMS
+delivery and live voice testing were not performed in this management-only
+release. 两次功能/运行源码 CI 均通过；此次仅验收管理面，未执行射频入网、手机
+短信送达或实时通话测试。

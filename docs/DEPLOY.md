@@ -225,9 +225,11 @@ The management plane was deployed and its non-RF acceptance completed on
 2026-09-08. Continue to distinguish that result from the pending handset/RF
 acceptance. 管理面已部署并完成非射频验收；真机与射频验收仍须单独记录。
 
-The recorded deployment used runtime revision `16986725daa9`; a later
-deployment-script orphan fix `8d361a0` was rerun successfully without changing
-the runtime image identity. Exact evidence is in [`RELEASE-2.1.md`](RELEASE-2.1.md).
+The current bridge/preset deployment uses runtime revision `36af25acf8db` and
+supersedes the earlier host-network image. The saved uplink was migrated to
+`eth0`; business database digests and LTE state stayed unchanged. 当前桥接与预设
+版本已部署，存档出口已迁移为 `eth0`；业务数据摘要与 LTE 状态保持不变。
+Exact evidence is in [`RELEASE-2.1.md`](RELEASE-2.1.md).
 
 Offline build/deploy contract checks / 离线构建与部署契约检查：
 
