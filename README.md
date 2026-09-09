@@ -180,6 +180,11 @@ is recorded by its OCI revision label rather than a revision-suffixed tag.
 发布脚本仅构建 `gsm-system:2.1`，部署前核对 OCI/二进制 revision；容器、HTTP 与
 状态探针通过后才清理旧 GSM 对象及无用构建缓存，不删除业务数据卷或 LTE 对象。
 
+The container uses `restart: "no"`, not boot/exit autostart. After reboot, start
+the existing container manually with `docker start gsmsystem-uhd4`; then inspect
+state and start the cell explicitly through its API. 容器不开机自启，退出也不自动重启；
+需要时手动启动管理容器，再按流程启动小区。详见 [启动策略](docs/DEPLOY.md)。
+
 ## Documentation / 文档
 
 - [Quick start / 快速开始](docs/QUICKSTART.md)

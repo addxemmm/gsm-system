@@ -29,7 +29,9 @@ services:
       # GPRS packets enter via sgsntun and leave via eth0 in this namespace.
       net.ipv4.ip_forward: "1"
     privileged: true
-    restart: unless-stopped
+    # Manual start only: do not launch after host/Docker restart or process exit.
+    # 仅手动启动：宿主机/Docker 重启或容器退出后均不自动拉起。
+    restart: "no"
     init: true
     stop_grace_period: 90s
     healthcheck:

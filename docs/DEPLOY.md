@@ -17,6 +17,31 @@ Release 2.1 uses exactly:
 The former `.uhd4` Docker/Compose definitions are retired. There is no Xenial
 production fallback for the Artix-7-compatible board. 旧 `.uhd4` 构建文件不再使用。
 
+### Manual container startup / 容器仅手动启动
+
+Compose sets `restart: "no"`: the GSM container does not start automatically
+after host/Docker restart or automatically restart after exit. Docker itself and
+unrelated containers keep their existing policies. An explicit deployment still
+starts the management container; it does not automatically start the radio cell.
+容器不随开机或 Docker 重启启动，退出后也不自动重启；Docker 服务和其他容器策略不变。
+显式执行部署脚本仍会启动管理容器，但不自动启动射频小区。
+
+For an existing container, change only the restart policy without interrupting
+its current run, then verify it / 已有容器可无中断修改并查询策略：
+
+```bash
+docker update --restart=no gsmsystem-uhd4
+docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' gsmsystem-uhd4
+# Expected / 预期: no
+```
+
+After a reboot, manually start the existing container when needed:
+`docker start gsmsystem-uhd4`. Then follow [QUICKSTART.md](QUICKSTART.md) to inspect
+state, reapply stopped-state NAT if needed, and explicitly start the cell via API.
+For new code/configuration deployment, use the gated release script instead.
+重启后需要使用时手动启动已有容器，再检查状态、按需恢复停止态 NAT，并通过 API 显式
+启动小区；发布新代码或配置仍使用带验收门禁的部署脚本。
+
 ## 1. Preconditions / 前置检查
 
 On `HOST`:
