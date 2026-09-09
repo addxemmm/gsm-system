@@ -2,6 +2,47 @@
 
 Version / 版本：`2.1.0`
 
+## Published: 2026-09-09 14:11 +08:00 / 已实际发布
+
+- [GitHub Release v2.1.0](https://github.com/addxemmm/gsm-system/releases/tag/v2.1.0)
+  is published, not a draft. [Docker Hub](https://hub.docker.com/r/addxemmm/gsm-system/tags)
+  exposes both `2.1.0` (full version) and `2.1` (release-line alias), verified active
+  for `linux/amd64`. No `latest` or revision-suffix tag was published.
+  / GitHub Release 已正式发布；Docker Hub 的固定版本与发布线别名均已独立查询确认，
+  当前平台为 linux/amd64，未发布 latest 或提交号尾缀标签。
+- Both tags resolve to manifest digest / 两个标签指向同一 manifest 摘要：
+  `sha256:d17e13b6c39fb9664b8b80f8310f6b56b59d577f531da23435ab1836f957be17`.
+  Source tag `v2.1.0` remains at / 源码 tag 固定于
+  `351e30d9239656bbc3cbfdf7672883926ce727aa`.
+  Later workflow/documentation commits do not move this tag or rebuild its image.
+  / 后续流程和文档提交不会移动此 tag 或重建此版本镜像。
+- [Dry-run](https://github.com/addxemmm/gsm-system/actions/runs/34315574776)
+  and [source CI](https://github.com/addxemmm/gsm-system/actions/runs/34316591206)
+  passed. The [initial publication](https://github.com/addxemmm/gsm-system/actions/runs/34317058657)
+  built and tested the final image in all five isolated suites and uploaded `2.1.0`,
+  then failed at GitHub draft lookup. The draft-aware workflow fix at `f3209b3`
+  [resumed successfully](https://github.com/addxemmm/gsm-system/actions/runs/34317890735)
+  without rebuilding or overwriting the full-version image.
+  / 预演及源码 CI 通过；首次正式运行完成构建、五组最终镜像测试和固定标签上传，
+  但草稿查询失败。修正草稿查询后，复用已验收镜像完成续发，没有覆盖固定版本。
+- An actual [repeat invocation](https://github.com/addxemmm/gsm-system/actions/runs/34318117326)
+  passed preflight and skipped publication: no rebuild, duplicate upload or Release
+  replacement. / 实际重复执行通过预检并跳过发布，已验证幂等，不重复构建、上传或覆盖 Release。
+- All nine Release attachments were downloaded for verification. Every entry in
+  `SHA256SUMS.txt`, `PUBLISHED-SHA256SUMS.txt` and the source archive checksum matched.
+  The source archive includes reconstruction instructions, source revision and clean
+  seed databases; archive listing found no `.git` directory or `.env` file.
+  / 九个附件已下载验收，三份校验清单全部匹配；源码包包含重建说明、源码版本和干净
+  种子数据库，目录检查未发现 .git 或 .env。附件同时记录镜像摘要、构建检查点及上游版本。
+- This publication did not restart, deploy to or clean the running server, change
+  LTE, or perform RF/handset/GPRS acceptance. The deployment record below remains
+  separate from this registry publication. / 本轮只完成镜像仓库发版，未部署、重启或清理
+  运行服务器，未修改 LTE，也未重新进行射频、手机或 GPRS 实测；下方部署记录独立保留。
+
+```sh
+docker pull addxemmm/gsm-system:2.1
+```
+
 ## Publication pipeline: 2026-09-09 / 自动发版流程
 
 This iteration adds tagged cloud builds, isolated final-image tests, Docker Hub
