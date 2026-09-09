@@ -1,169 +1,171 @@
-# Release workflow / 发布、版本记录与镜像同步
+# Releases and Docker Hub / 版本、自动发版与镜像同步
 
-## Current boundary / 当前边界
+## Version policy / 版本规则
 
-- Source remains **2.1.0**, production image remains **gsm-system:2.1**. Nothing here
-  changes deployment, creates a tag, changes repository visibility, or uploads on commit.
-  源码仍为 **2.1.0**，运行镜像仍为 **gsm-system:2.1**；本流程不改部署、不自动建 tag、
-  不改变仓库可见性，也不在提交时上传。
-- Docker Hub publication is feasible **after** the operator supplies a namespace,
-  creates/reviews a **private** repository, enables immutable tags, and supplies credentials.
-  DockerHub 上传技术上可行；先由操作者确定 namespace、创建并审核**私有仓库**、启用
-  immutable tags、配置凭据。当前没有已上传镜像或成功发布的承诺。
-- The Dockerfile requires untracked `third_party/` sources and a pinned manifest.
-  `scripts/prefetch_vendor.sh` verifies pinned upstream commits/submodules and the archive
-  checksum on the server. A GitHub checkout alone is **not** a build context.
-  Dockerfile 依赖未入 Git 的服务器 `third_party/` 和固定供应链清单；云端 checkout
-  不具备完整构建上下文。本流程只推送服务器已验收的最终镜像，不在云端重新构建。
-- No self-hosted runner, PR trigger, automatic `latest`, image tar upload, container
-  `commit/export`, volume export, or repository visibility change is configured.
-  不配置自管 runner、不监听 PR、不推 latest、不上传镜像 tar、不导出容器或数据卷。
-
-## Identity contract / 版本与追踪契约
-
-| Identity / 标识 | Rule / 规则 |
+| Item / 项目 | Contract / 契约 |
 | --- | --- |
-| Source / 源码 | `VERSION` must match explicit input, currently `2.1.0` / 必须匹配输入 |
-| GitHub release/tag | `v2.1.0`, **first creation only**, tag must already point to the exact accepted commit / 仅首次创建、既有 tag 对应验收提交 |
-| Docker Hub artifact tag | `v2.1.0-<12-char revision>` / 同版本迭代使用内部 revision tag |
-| Durable artifact / 持久产物 | `docker.io/NAMESPACE/REPOSITORY@sha256:...` / 记录 manifest digest |
-| Runtime / 运行 | exactly `gsm-system:2.1`; no automatic retag or redeploy / 保持不变 |
+| Release line / 发布线 | **2.1**, unchanged until explicitly requested / 用户明确要求后才升级 |
+| Source version / 源码版本 | `VERSION`, currently **2.1.0**, reviewed changes only, never automatic / 审核后修改，不自动升版 |
+| Git tag and GitHub Release | **v2.1.0**, bound to one exact commit / 对应唯一提交 |
+| Fixed version image / 固定版本镜像 | **addxemmm/gsm-system:2.1.0**, never replace with a different artifact / 不以新产物覆盖 |
+| Release-line alias / 发布线别名 | **addxemmm/gsm-system:2.1**, promoted after verification / 验证通过后更新 |
+| Durable identity / 持久标识 | Manifest `sha256` digest + full Git commit / 镜像摘要与完整提交 |
+| Existing server / 现有服务器 | **gsm-system:2.1**, explicit deployment only / 仅显式部署 |
 
-The content digest binds the manifest and config; the verifier checks linux/amd64 and
-OCI version/revision. Existing builds encode only 12 revision characters; this is
-operator-linked provenance, **not** a signed build attestation or reproducible-build proof.
-内容摘要校验 manifest/config、linux/amd64 和 OCI 元数据。现有构建只编码 12 位 revision；
-完整 SHA 由操作者输入、工作流与 Git tag 核对，属于操作链追踪，不冒充签名构建证明。
+No `latest`, revision-suffixed public tags, automatic version bumps or automatic
+server restarts. Ordinary commits run CI, not a Docker Hub release. A future
+explicitly approved patch such as `2.1.1` produces `v2.1.1`, image `2.1.1` and
+updates alias `2.1`. Older full-version images and release records remain.
 
-For another accepted 2.1.0 iteration, publish a new internal revision image tag and add
-a dated bilingual entry to `docs/RELEASE-2.1.md` before committing. Keep the previous
-`v2.1.0` release and its digest unchanged. A new GitHub version requires the operator's
-explicit version-change instruction, coordinated `VERSION`/build-contract/docs updates,
-and fresh validation; the workflow never invents suffix versions or rewrites releases.
-同一 2.1.0 迭代可上传新的内部 revision 镜像 tag，并在提交前补充带日期的双语发布记录；
-原 `v2.1.0` Release/digest 永久保留。新 GitHub 版本需用户明确升版后同步修改版本、
-构建契约和文档并重新验收；流程不自动造版本、不覆盖旧 Release。
+不发布 latest 或奇怪尾号，不自动升版或重启服务器。普通提交只跑 CI；以后用户明确
+升级为例如 2.1.1 时，创建对应 tag、固定版本镜像并更新 2.1。服务器缓存清理不等于
+删除注册中心历史版本。
 
-## One-time preparation / 一次性准备
+## Pipeline / 自动化流程
 
-1. Verify GitHub visibility and review the staged source for public disclosure;
-   never assume a source repository is private. On Docker Hub explicitly create the private destination and
-   enable immutable tags (all tags, or a regex covering every version/revision tag).
-   The preflight existence check is not a race lock; registry immutability is required.
-   核验 GitHub 可见性并审查待提交源码，不假定源码仓库私有；显式创建私有 Hub 仓库并启用 immutable tags。脚本的存在性检查
-   不是并发锁，真正防覆盖依赖 registry 不可变规则。
-   [Docker immutable tags](https://docs.docker.com/docker-hub/repos/manage/hub-images/immutable-tags/).
-2. Review **all final-image layers**, included seed databases, Asterisk configs and
-   firmware redistribution rights before upload. OpenBTS, UHD, Asterisk and bundled firmware
-   have their own licenses/source-offer/redistribution obligations; the project's MIT license
-   does not replace or automatically satisfy them. Inspect locally on the server without
-   saving live subscriber/Ki/IMSI, tokens, logs or data volumes into artifacts. Private
-   repository status does not replace this review. The tool requires an explicit review
-   acknowledgement but does not certify that an image is secret-free or query Hub visibility.
-   上传前审核最终镜像所有层、种子数据库、Asterisk 配置及固件分发权；OpenBTS、UHD、
-   Asterisk 和自带固件各自的许可证/源码提供/再分发义务不被项目 MIT 自动覆盖；私有不替代审查。
-   不把现网签约数据、Ki/IMSI、令牌、日志、数据卷打入产物。审核参数为人工确认，
-   脚本不冒充内容无密检测或 Hub 私有性 API 检查。
-   Primary license references / 上游许可资料：
-   [OpenBTS](https://github.com/RangeNetworks/openbts),
-   [UHD licensing](https://kb.ettus.com/Licensing_FAQ),
-   [Asterisk licensing](https://docs.asterisk.org/About-the-Project/License-Information/).
-   The bundled clone-board firmware provenance file identifies a vendor bundle, not a
-   redistribution grant; obtain the vendor's terms before external publication.
-   自带克隆板固件的 provenance 文件仅说明 vendor bundle 来源，不是再分发许可；
-   外部分发前补齐供应商条款。
-3. Configure GitHub environment **release**: required reviewer(s), default-branch-only
-   deployment rule, environment secrets `DOCKERHUB_USER` and **read-only**
-   `DOCKERHUB_READ_TOKEN`. Protect the default branch and release tags from force-update
-   and deletion. Environment protection is an operator setup step, not created by YAML.
-   配置 release environment 的审核人、仅默认分支规则及只读 Hub 凭据；保护默认分支和
-   tag 禁止强推/删除。YAML 不会代替操作者创建审核保护。不要让 PR 取得发布密钥。
-4. The server needs Docker CLI, Go (compatible with go.mod), HTTPS access to Docker Hub,
-   and a Hub credential with write access to this repository. Use a credential store or
-   stdin login, never PAT in arguments, Git, YAML or logs. Workflow uses a separate read PAT.
-   服务器需 Docker CLI、Go、Hub HTTPS 网络和该仓库写权限；凭据走 credential store/stdin，
-   云端使用独立只读 PAT。
-   [Docker login](https://docs.docker.com/reference/cli/docker/login/).
-
-## Publish an accepted server image / 上传已验收服务器镜像
-
-Run from the repository root **on the SDR server**, after the normal Windows sync and
-`scripts/deploy_to_ubuntu.sh` gates, source CI, and documented hardware/SMS/voice/GPRS
-acceptance. The sync writes `.release-revision`; an archive deployment need not contain Git.
-只在 SDR 服务器项目根执行，前提是正常同步/部署门禁、源码 CI 与实机验收已通过。
-同步生成 `.release-revision`，服务器归档目录不要求有 Git。
-
-```sh
-# Replace values; REVISION is the full accepted source SHA / 替换实际值，使用完整 SHA。
-VERSION=2.1.0
-REVISION=FULL_40_CHARACTER_ACCEPTED_COMMIT
-HUB_REPOSITORY=NAMESPACE/REPOSITORY
-
-# Offline plan; also allowed on the development machine / 离线计划，开发机可执行。
-go run ./scripts/release --version "$VERSION" --revision "$REVISION" \
-  --repository "$HUB_REPOSITORY"
-
-# Obtain secrets interactively or via the server secret manager, not shell history.
-# 从交互输入/服务器密钥管理器导出 DOCKERHUB_USER、DOCKERHUB_TOKEN，不把字面 PAT 写入命令。
-printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin
-
-# Explicit upload. No build/start/restart or volume operation / 显式上传，不构建/重启/操作卷。
-go run ./scripts/release --mode publish --version "$VERSION" --revision "$REVISION" \
-  --repository "$HUB_REPOSITORY" --acceptance-passed --private-repo-reviewed \
-  --immutable-tags-confirmed
-unset DOCKERHUB_TOKEN
+```text
+reviewed master commit / master 已审核提交
+       │
+       ├─ dry-run / 可选全流程预检（不上传）
+       └─ push vX.Y.Z / 推送版本 tag
+                ↓
+       validate tag + VERSION + ancestry / 版本与源码校验
+                ↓
+       fetch pinned native sources / 核验固定上游源码
+                ↓
+       Go + Web + Postman + contracts / 源码与契约测试
+                ↓
+       build + five isolated image suites / 构建与隔离验收
+                ↓
+       push the tested image ID / 上传同一个已测试镜像
+                ↓
+       verify digest + promote 2.1 / 核验摘要并更新别名
+                ↓
+       bilingual Release + source bundle / 双语记录与源码包
 ```
 
-The command checks deployment marker, current managed container health, local image ID,
-OCI labels and running binary version. It tags the **image ID** (not a mutable local alias)
-and pushes exactly one new remote tag. It then hashes the downloaded remote manifest/config
-and verifies the remote config digest equals the accepted local image ID. Record the emitted
-JSON digest in the bilingual release entry or internal acceptance record; never paste secrets.
-命令核对部署标记、容器健康、镜像 ID、OCI 与运行二进制版本，以镜像 ID 推送单一新 tag，
-再核验远端 manifest/config 与本地 ID 一致。将输出 digest 保存到双语迭代/内部验收记录。
+`.github/workflows/release.yml` runs on ephemeral GitHub Linux runners. A fresh
+checkout is completed by `scripts/prefetch_vendor.sh`, verifying pinned commits,
+submodules and the coredumper archive checksum. Builder caching speeds later
+runs. No live container, volume, log or operator `.env` is exported. No self-hosted
+runner is installed on the SDR server and no USB/RF access is used.
 
-If push succeeds but later verification fails, the upload may already exist. Investigate by
-digest and use `--mode verify`; never remove or overwrite it just to rerun. A race is stopped
-by Hub immutable tags. Only a registry HTTP 404 counts as absence; auth/network failures stop.
-若推送成功而后置校验失败，远端可能已经存在；按 digest 调查并 verify，不删改 tag 以重跑。
-只有明确 404 视为不存在，认证/限流/网络错误均停止。工具不自动清理任何 GSM/LTE 镜像。
+工作流在临时 GitHub Linux runner 执行，先预取并核验完整原生依赖，不依赖服务器未提交
+目录。缓存加速后续构建；不导出现网容器、数据卷、日志或站点配置，不安装射频服务器
+自管 runner，不接 USB 或启动射频。
 
-## Record the first GitHub release / 首次 GitHub Release
+Five final-image suites cover caller ID, persistence/Asterisk/ODBC/timezone, SMS,
+presets and Web. They do **not** prove handset RF, call quality, SMS latency or
+GPRS Internet connectivity. Hardware acceptance stays separate in
+[2.1 history](RELEASE-2.1.md).
 
-The pipeline must be committed to the default branch and present in the accepted commit.
-Create and push `vVERSION` manually **only after explicit operator approval**; it must point
-to that same commit. The workflow itself never creates/moves tags, and `gh release create`
-uses `--verify-tag`. No tag or release is created by following the plan command above.
-流程文件需已提交至默认分支并包含在验收提交中。仅经用户明确批准后手工建立/推送对应
-tag；workflow 不创建/移动 tag，Release 强制 `--verify-tag`。
-[GitHub release CLI](https://cli.github.com/manual/gh_release_create).
+五套镜像测试覆盖主叫号码、持久化/Asterisk/ODBC/时区、短信、预设和 Web；不替代手机
+射频、通话质量、短信时延或 GPRS 真机验收。
 
-In Actions select **release / 手动发布记录** on the default branch. Supply source version,
-full revision, private Hub repository, pushed manifest digest, and acceptance confirmation.
-Leave `create_release=false` for a verification-only run. Review the bilingual job summary;
-then explicitly dispatch with `create_release=true` for the first release. The workflow runs
-Go tests/vet and offline deployment contracts, verifies the remote image, and creates one
-release without assets or `latest` promotion. It fails if that release already exists.
-在默认分支手动触发，填写版本、完整 SHA、Hub 仓库、digest 和验收确认；默认只校验。
-审核双语 summary 后，显式选择 create_release 才首次建 Release。旧 Release 已存在则停止。
-不上传源码/日志/镜像 tar 附件，不标记 latest，不自动拉取或部署到服务器。
-[Manual workflow dispatch](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+## GitHub configuration / GitHub 配置
 
-This is **explicit promotion with automated checks and record synchronization**, not an
-unattended deployment loop. For rollback retain the prior digest/version/revision and use
-the existing deployment gates and matching source checkout; do not bypass them with Compose.
-这是**人工批准后自动校验/同步记录**，不是无人值守部署。回滚保留上一 digest/版本/revision，
-配合匹配源码走既有部署门禁；不要直接 Compose 启动。
+Repository **addxemmm/gsm-system** → Settings → Secrets and variables → Actions:
 
-## Offline validation / 离线测试
+| Kind / 类型 | Name / 名称 | Value / 含义 |
+| --- | --- | --- |
+| Secret | `DOCKERHUB_USERNAME` | Docker Hub account / Hub 用户名 |
+| Secret | `DOCKERHUB_TOKEN` | Repository read/write PAT / 该镜像仓库读写 PAT |
+| Variable | `DOCKERHUB_IMAGE` | `addxemmm/gsm-system` |
+
+Do not put token values in Git, command arguments, Postman or release notes.
+PRs do not receive publication credentials. Visibility is not changed by YAML.
+令牌值不进入 Git、命令参数、Postman 或发布记录。PR 不获得发布密钥，工作流不改仓库可见性。
+
+For registry-enforced immutability, configure a Hub immutable-tag rule for full
+versions only, e.g. `^[0-9]+\.[0-9]+\.[0-9]+$`; keep `2.1` mutable. The workflow
+also serializes publication and checks existing artifacts. Protect `master` and
+`v*` tags against unreviewed changes, force-push and deletion. These account
+settings are separate from the workflow file.
+
+建议 Hub 不可变规则仅匹配三段固定版本，不锁定 2.1 别名；工作流另有串行发布与既有
+产物检查。对 master 和版本 tag 设置审核及禁止强推/删除；账号保护不由 YAML 自动创建。
+[Docker immutable tags](https://docs.docker.com/docker-hub/repos/manage/hub-images/immutable-tags/).
+
+## Day-to-day release / 后续发版
+
+1. Update code, bilingual docs and dated history. Change `VERSION` **only when
+   explicitly approved**. 完成功能、双语文档和日期记录；用户批准升版后才改 VERSION。
+2. Test, commit, push and merge to `master`. In Actions run release with
+   `dry_run=true` for full cloud build/tests without uploading.
+   测试提交并进入 master，可先 dry-run 完整云构建验收而不上传。
+3. From a clean checkout of the accepted commit / 在已验收提交的干净工作区：
+
+   ```sh
+   sh scripts/tag_release.sh --plan
+   sh scripts/tag_release.sh --push
+   ```
+
+   The helper reads **committed** VERSION, verifies master contains the commit,
+   and creates/pushes an annotated tag. It never bumps versions or moves tags.
+   `GSM_GIT_REMOTE` defaults to `github`.
+   脚本读取已提交 VERSION，确认 master 已含该提交，再推注解 tag；不改版本或移动 tag。
+4. Follow Actions → release. Success produces bilingual notes, digest and source
+   artifacts. Deployment to the SDR server remains a separate explicit action.
+   查看 Actions；成功后生成双语记录、摘要和源码附件，部署到 SDR 仍需单独显式操作。
+
+The tag must be pushed with a user/app credential. A workflow's GITHUB_TOKEN tag
+push does not trigger another push workflow; no hidden automatic version-bump
+job is used here. tag 使用用户凭据推送，不依赖隐藏自动升版任务。
+[GitHub triggers](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+## Retry and recovery / 重试与故障处理
+
+- Re-run a failed Actions run or dispatch for the **existing** version tag. Never
+  delete/move a published tag just to rerun. 重跑失败任务或选择既有 tag，不删改已发版本。
+- Authentication, rate-limit and network errors are not proof a version is absent.
+  Existing content must match before retrying. 认证/限流/网络失败不视为版本不存在。
+- Push success followed by release creation failure can leave an image without a
+  Release. Resume the same version; do not overwrite it with a rebuilt artifact.
+  上传后 Release 失败时续跑同一版本，不用重建产物覆盖旧版本。
+- Older-version retries must not move `2.1` backwards. Source changes after a
+  publication need an explicitly approved new patch version. Fix a failed dry-run
+  before creating an immutable version tag. 旧版重试不回退 2.1，已发布后改源码需显式新版本。
+
+## Pull and deploy / 拉取与部署
 
 ```sh
-go test ./scripts/release
-go vet ./scripts/release
+docker pull addxemmm/gsm-system:2.1
+# Exact version / 固定版本
+docker pull addxemmm/gsm-system:2.1.0
+# For a digest-pinned pull, copy the command from the GitHub Release.
+# 按不可变 digest 拉取可复制 GitHub Release 中的命令。
 ```
 
-Tests cover strict input handling, side-effect-free plan, manifest/config tampering, OCI
-mismatch and untested multi-platform rejection. These tests do not demonstrate real Hub
-credentials, repository configuration, registry reachability, Actions approval or RF success.
-离线测试覆盖严格输入、无副作用计划、摘要篡改、OCI 错配和多平台拒收；不代表已验证
-真实 Hub 凭据/配置/连通性、Actions 审批或射频效果。
+Pulling does not start a container. Deployment still uses existing gates and site
+configuration, preserving the external business volume. Default Web is 8080;
+independent API 8082 requires the overlay. Publication does not change the current
+test server's dual-port settings. See [deployment](DEPLOY.md) and [Web](WEB-CONSOLE.md).
+
+拉取不启动容器；部署仍走既有门禁与站点配置，保留外部业务卷。默认 Web 8080，独立 API
+8082 需 overlay；发布不改变当前测试服务器双端口设置。
+
+## Publication contents / 分发内容
+
+Seed databases are reconstructed before entering the final image, excluding
+subscriber/message data and deleted SQLite pages. Native notices and a
+corresponding-source bundle accompany publication, including pinned sources,
+local compatibility changes and build instructions, not live operator data.
+Checks cover explicit structures/allowlists, not a universal secret-free or
+license-compliance certification.
+
+种子库先重建再进入最终镜像，排除用户/短信数据与 SQLite 已删除页。发布带原生许可
+声明及对应源码包，包含固定源码、本地兼容修改和构建说明，不含现网数据。结构检查
+不等同全面无密或法律认证。
+
+OpenBTS, UHD, Asterisk and firmware have their own terms; project MIT does not
+replace them. Clone-board firmware has vendor provenance but no included
+redistribution grant. See [third-party inventory](THIRD-PARTY.md).
+OpenBTS、UHD、Asterisk 与固件各适用自身条款；克隆板固件有来源记录但项目未附供应商
+再分发授权文本，不将其冒充许可认证。
+
+## Legacy tooling / 旧手动工具
+
+`go run ./scripts/release` remains for historic server-image promotion and digest
+verification. Its internal revision tags/manual flags are **not** the normal
+new-release path. Use the workflow and tag helper above.
+旧 Go 工具保留历史手动镜像核验兼容性，其内部 revision 标签与人工参数不是新发版入口。

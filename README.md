@@ -1,6 +1,7 @@
 # gsm-system 2.1
 
 ![CI](https://github.com/addxemmm/gsm-system/actions/workflows/ci.yml/badge.svg)
+[![Release](https://github.com/addxemmm/gsm-system/actions/workflows/release.yml/badge.svg)](https://github.com/addxemmm/gsm-system/actions/workflows/release.yml)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Go](https://img.shields.io/badge/go-1.22%2B-blue)
 ![OpenBTS](https://img.shields.io/badge/OpenBTS-5.0-orange)
@@ -25,6 +26,15 @@ management code.
 > 版本继续使用 2.1，双语操作说明见 [Web 管理台](docs/WEB-CONSOLE.md)。
 
 ## Highlights / 主要特性
+
+- Tagged releases build/test one image, publish to
+  [Docker Hub](https://hub.docker.com/r/addxemmm/gsm-system), then create bilingual
+  [GitHub Releases](https://github.com/addxemmm/gsm-system/releases) with image
+  digests and corresponding sources. Use `addxemmm/gsm-system:2.1` for the release
+  line or a full version/digest for a fixed artifact. No automatic version bump
+  or server restart. See [release guide](docs/RELEASING.md).
+  版本 tag 触发构建、镜像验收、Hub 上传和双语 Release；包含摘要与对应源码包。
+  发布线使用 2.1，固定产物使用完整版本或 digest，不自动升版或重启服务器。
 
 - A bilingual, responsive Web console ships inside the Go binary and the same
   container. Open `http://HOST:8080`; no CDN, Node runtime or extra proxy service.

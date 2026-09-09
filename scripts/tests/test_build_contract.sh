@@ -6,7 +6,8 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 fail() { echo "FAIL [BUILD-CONTRACT] $1" >&2; exit 1; }
 
-[ "$(tr -d '[:space:]' <VERSION)" = 2.1.0 ] || fail 'VERSION is not 2.1.0'
+version=$(tr -d '[:space:]' <VERSION)
+printf '%s\n' "$version" | grep -Eq '^2\.1\.(0|[1-9][0-9]*)$' || fail 'VERSION must stay on the explicitly supported 2.1 release line'
 [ "$(find deploy/docker -maxdepth 1 -type f -name 'Dockerfile*' | wc -l | tr -d '[:space:]')" = 1 ] || \
   fail 'multiple Dockerfiles remain'
 [ "$(find deploy/docker -maxdepth 1 -type f -name 'docker-compose*.yml' | wc -l | tr -d '[:space:]')" = 2 ] || \
@@ -111,9 +112,9 @@ TMP=${TMPDIR:-/tmp}/gsm-build-contract-$$
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP"
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags '-s -w -X main.version=2.1.0 -X main.revision=0123456789ab' \
+  -ldflags "-s -w -X main.version=$version -X main.revision=0123456789ab" \
   -o "$TMP/gsm-system" ./cmd/server
-[ "$("$TMP/gsm-system" --version)" = 'gsm-system 2.1.0 (0123456789ab)' ] || \
+[ "$("$TMP/gsm-system" --version)" = "gsm-system $version (0123456789ab)" ] || \
   fail 'Go binary version metadata mismatch'
 
 echo 'PASS test_build_contract.sh / 2.1 构建发布契约通过'

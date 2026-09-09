@@ -22,6 +22,16 @@
 ARG VERSION=2.1.0
 ARG REVISION=unknown
 
+# Reconstruct seeds before final layers: empty legacy DBs may retain deleted pages.
+# 在独立构建阶段重建种子，避免空表的历史残留页进入最终镜像。
+FROM golang:1.26.8-bookworm AS clean-seeds
+RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /publication
+COPY scripts/release/publication/main.go /publication/prepare-publication.go
+COPY configs/seeds/TMSITable_init.db configs/seeds/sqlite3_init.db /publication/configs/seeds/
+RUN go run prepare-publication.go --seeds-only --output-seeds /clean-seeds
+
 # Fail before the expensive native build if the host cache is not the pinned,
 # prefetch-verified source set. The manifest is also shipped for provenance.
 FROM ubuntu:22.04 AS source-manifest
@@ -56,6 +66,8 @@ RUN cmake ../ -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OF
  && make -j$(nproc) \
  && make install \
  && ldconfig
+COPY scripts/release/collect_notices.sh /collect-notices.sh
+RUN sh /collect-notices.sh /src/uhd /upstream-notices/uhd
 
 # ---------- stage 2: OpenBTS family on gcc-11 ----------
 FROM ubuntu:22.04 AS openbts4-builder
@@ -133,12 +145,20 @@ RUN cd subscriberRegistry \
 # Normalize Debian-packaged libs for the runtime COPY + fail loudly if absent.
 RUN for f in /usr/lib/liba53* /usr/lib/libcoredumper* /usr/lib/x86_64-linux-gnu/liba53* /usr/lib/x86_64-linux-gnu/libcoredumper*; do [ -e "$f" ] && cp -P "$f" /usr/local/lib/; done; ldconfig; ls /usr/local/lib/liba53* /usr/local/lib/libcoredumper*
 RUN ls -l /OpenBTS/OpenBTS /OpenBTS/transceiver /usr/local/sbin/sipauthserve /usr/local/sbin/smqueue
+COPY scripts/release/collect_notices.sh /collect-notices.sh
+RUN sh /collect-notices.sh /src /upstream-notices/native
+# cppzmq is copied as headers, so retain its license directly from the source tree.
+# cppzmq 仅复制头文件，因此另外收集其上游许可。
+COPY third_party/cppzmq /notice-sources/cppzmq
+RUN sh /collect-notices.sh /notice-sources/cppzmq /upstream-notices/cppzmq
 
 # ---------- stage 3: Go API server (same as main line) ----------
 FROM golang:1.26.8-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
+COPY scripts/release/collect_notices.sh /collect-notices.sh
+RUN sh /collect-notices.sh /go/pkg/mod /upstream-notices/go
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 ARG VERSION
@@ -184,11 +204,19 @@ RUN sed -i '/^\[general\][[:space:]]*$/a #include sip-contact-acl.conf' /etc/ast
 RUN sed -i '/^[[:space:]]*noload[[:space:]]*=>[[:space:]]*res_config_odbc\.so/s/^/;/' /etc/asterisk/modules.conf
 COPY deploy/docker/odbc.ini /etc/odbc.ini
 COPY deploy/docker/odbcinst.ini /etc/odbcinst.ini
-COPY configs/seeds/TMSITable_init.db configs/seeds/sqlite3_init.db /OpenBTS/
+COPY --from=clean-seeds /clean-seeds/ /OpenBTS/
 COPY --from=openbts4-builder /src/openbts/apps/OpenBTS.example.sql /app/seeds/OpenBTS.example.sql
 COPY --from=go-builder /out/gsm-system /usr/local/bin/gsm-system
 COPY --from=source-manifest /verified/REVISION_MANIFEST.tsv /usr/share/doc/gsm-system/VENDOR-REVISIONS.tsv
-COPY configs/ /app/configs/
+COPY --from=uhd4-builder /upstream-notices/ /usr/share/doc/gsm-system/upstream-notices/
+COPY --from=openbts4-builder /upstream-notices/ /usr/share/doc/gsm-system/upstream-notices/
+COPY --from=go-builder /upstream-notices/ /usr/share/doc/gsm-system/upstream-notices/
+COPY LICENSE /usr/share/doc/gsm-system/LICENSE
+COPY docs/THIRD-PARTY.md /usr/share/doc/gsm-system/THIRD-PARTY.md
+COPY firmware/uhd/README.md /usr/share/doc/gsm-system/FIRMWARE-PROVENANCE.md
+COPY configs/app.yaml.example /app/configs/app.yaml.example
+COPY configs/seeds/OpenBTSDo /app/configs/seeds/OpenBTSDo
+COPY --from=clean-seeds /clean-seeds/ /app/configs/seeds/
 RUN cp /app/configs/app.yaml.example /app/configs/app.yaml \
  && mkdir -p /data/conf /data/log /etc/OpenBTS /var/run /var/lib/asterisk/sqlite3dir
 COPY deploy/docker/entrypoint.sh /entrypoint.sh

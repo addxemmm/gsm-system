@@ -23,6 +23,8 @@ jobs:
       - run: sh scripts/tests/test_prefetch_vendor.sh
       - run: sh scripts/tests/test_deploy_to_ubuntu.sh
       - run: sh scripts/tests/test_build_contract.sh
+      - run: sh scripts/tests/test_tag_release.sh
+      - run: sh scripts/tests/test_publication_inputs.sh
       - run: REVISION=$(git rev-parse --short=12 HEAD) make linux && ./bin/gsm-system-linux-amd64 --version
 
   windows-deploy:

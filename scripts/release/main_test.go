@@ -156,7 +156,7 @@ func TestNotesKeepRuntimeVersionAndDigest(t *testing.T) {
 	}
 }
 
-func TestWorkflowRemainsManualAndGated(t *testing.T) {
+func TestWorkflowBuildsTestsAndPublishesTaggedSource(t *testing.T) {
 	b, err := os.ReadFile("../../.github/workflows/release.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -165,29 +165,35 @@ func TestWorkflowRemainsManualAndGated(t *testing.T) {
 		On          map[string]any    `yaml:"on"`
 		Permissions map[string]string `yaml:"permissions"`
 		Jobs        map[string]struct {
-			RunsOn      string `yaml:"runs-on"`
-			Needs       string `yaml:"needs"`
-			Environment string `yaml:"environment"`
+			RunsOn string `yaml:"runs-on"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(b, &workflow); err != nil {
 		t.Fatal(err)
 	}
-	if len(workflow.On) != 1 || workflow.On["workflow_dispatch"] == nil {
-		t.Fatal("release must remain manually dispatched")
+	if len(workflow.On) != 2 || workflow.On["workflow_dispatch"] == nil || workflow.On["push"] == nil {
+		t.Fatal("release must support tag push and explicit dry-run/redispatch")
 	}
 	if workflow.Permissions["contents"] != "read" {
 		t.Fatal("default permission must remain read-only")
-	}
-	if workflow.Jobs["record"].Needs != "test" || workflow.Jobs["record"].Environment != "release" {
-		t.Fatal("release must wait for tests and protected environment")
 	}
 	for name, job := range workflow.Jobs {
 		if job.RunsOn != "ubuntu-latest" {
 			t.Errorf("%s unexpectedly uses a different runner", name)
 		}
 	}
-	for _, forbidden := range []string{"docker build", "docker commit", "docker export", "git tag ", "git push ", "--clobber"} {
+	for _, required := range []string{
+		"git merge-base --is-ancestor", "docker/build-push-action@", "load: true", "test_callerid_image.sh gsm-system:2.1",
+		"test_image.sh gsm-system:2.1", "test_sms_image.sh gsm-system:2.1",
+		"test_presets_image.sh gsm-system:2.1", "test_web_image.sh gsm-system:2.1",
+		"docker push \"$version_ref\"", "docker push \"$stable_ref\"", "gh release create",
+		"Physical GPRS handset", "scripts/release/source_bundle.sh",
+	} {
+		if !strings.Contains(string(b), required) {
+			t.Errorf("workflow lacks %s", required)
+		}
+	}
+	for _, forbidden := range []string{"docker commit", "docker export", "git tag ", "git push ", "--clobber", ":latest"} {
 		if strings.Contains(string(b), forbidden) {
 			t.Errorf("workflow contains %s", forbidden)
 		}

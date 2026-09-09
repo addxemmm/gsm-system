@@ -1,8 +1,11 @@
 # AGENTS.md — gsm-system dev rules 开发规范 (bilingual 双语)
 
 > Dev machine 开发机 only edits code/docs/git; **never runs RF, docker, resident
-> services 不跑射频/docker/常驻服务**. All image builds, cell bring-up, UE/SMS/voice
-> verification run on the SDR server (`vm-sdr`). 一切构建/拉起/验证都在SDR服务器上执行。
+> services 不跑射频/docker/常驻服务**. Image builds and no-RF isolated tests may run
+> on the SDR build server or ephemeral GitHub-hosted release runners. Real cell
+> bring-up and UE/SMS/voice verification run only on `vm-sdr`.
+> 镜像构建及无射频隔离测试可在 SDR 构建服务器或临时 GitHub 发布 runner 执行，
+> 真正小区启动和手机业务验证仅在 SDR 服务器上执行，不安装自管 runner 到射频服务器。
 
 ## 1. Parallelism 并发与 subagent
 
@@ -36,6 +39,13 @@
 -瘦身：never commit `*.log/*.pcap/bin/__pycache__/crash/*_run.conf`; samples only `docs/samples/`.
 
 ## 5. Submit & release 提交与发布
+
+- Registry publication is separate from live deployment: reviewed `vX.Y.Z` tags
+  trigger `.github/workflows/release.yml` to test/publish full versions and the
+  `2.1` alias, with bilingual GitHub Releases. No automatic VERSION bump, `latest`
+  tag, server access or RF start. Use dry-run before creating a new immutable tag.
+  镜像发版与现网部署分离；版本 tag 驱动云端验收、Hub 上传和双语 Release，默认可先
+  dry-run，不自动改 VERSION、不推 latest、不访问服务器或开启射频。
 
 - Message 信息：`<scope>: <what> / <中文说明>` (e.g. `api: retire root routes / 移除根路径旧接口`), one thing per commit.
 - Before push 推前必跑：`go test ./...` green 全绿 + `go vet ./...` + `git status` clean.

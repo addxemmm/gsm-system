@@ -2,6 +2,27 @@
 
 Version / 版本：`2.1.0`
 
+## Publication pipeline: 2026-09-09 / 自动发版流程
+
+This iteration adds tagged cloud builds, isolated final-image tests, Docker Hub
+publication to `addxemmm/gsm-system` and bilingual GitHub Release assets. Full
+version `2.1.0` is distinct from moving alias `2.1`; neither the source version
+nor the running server is automatically upgraded. A dry-run precedes the first
+tag publication. Success/failure of actual uploads is recorded by the linked
+Actions run and GitHub Release, not inferred from offline tests.
+
+本轮增加版本 tag 驱动的云构建、最终镜像隔离验收、Docker Hub 上传和双语 Release
+附件。固定版本 2.1.0 与发布线别名 2.1 分离，不自动升版或更新运行服务器；首次建 tag
+前先 dry-run。真实上传结果以 Actions 与 Release 记录为准，不由离线测试推断。
+
+Publication inputs now use reconstructed clean SQLite seeds rather than copying
+historical free pages. Original native notices and corresponding sources are
+included. Existing GPRS/handset acceptance limitations below remain unchanged.
+See [release operations](RELEASING.md) and [third-party notes](THIRD-PARTY.md).
+
+分发改为重建干净 SQLite 种子，避免复制历史空闲页，同时附原生许可与对应源码。
+下方 GPRS/手机实测限制仍然保留。本轮发布流程工作不操作现网容器或 LTE。
+
 ## Latest deployment: 2026-09-09 12:37 +08:00 / 最新部署：双语 Web 管理台
 
 - Runtime / 运行镜像: **`gsm-system:2.1`**, source revision **`8d02b2b670b1`**.

@@ -1,5 +1,6 @@
-// Release promotes an accepted server image; it never builds or deploys.
-// 发布工具仅推送已验收的服务器镜像，不构建、不部署、不修改运行 tag。
+// Legacy/manual server promotion and registry verification utility.
+// Normal releases use .github/workflows/release.yml; this never builds/deploys.
+// 手动服务器发布/摘要校验备用工具；正常发版使用 release 工作流。
 package main
 
 import (
@@ -314,8 +315,8 @@ func releaseNotes(o options, tag string) string {
 ## Validation / 验证
 - Workflow source tests and remote manifest/config digest + OCI checks passed.
   工作流源码测试与远端 manifest/config 摘要及版本校验通过。
-- Operator confirmed server/hardware/SMS/voice/GPRS acceptance before dispatch.
-  操作者已确认服务器、硬件、短信、语音及 GPRS 验收；云端未重跑硬件测试。
+- These checks do not prove handset RF, SMS, voice or GPRS acceptance.
+  以上检查不证明手机射频、短信、语音或 GPRS 实机业务验收通过；云端未重跑硬件测试。
 
 ## Rollback / 回滚
 Use the previous release digest through the server deployment gates; preserve business data.
