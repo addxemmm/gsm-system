@@ -45,6 +45,10 @@ require 'DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}'
 require 'DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}'
 require 'sh scripts/ci-release.sh inspect "$HUB_REPOSITORY" "$VERSION"'
 require 'sh scripts/ci-release.sh inspect "$HUB_REPOSITORY" "$LINE"'
+require 'gh release view "$TAG" --json isDraft,assets'
+if grep -F 'gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG"' "$WORKFLOW" >/dev/null; then
+  fail 'REST release-by-tag lookup cannot see drafts'
+fi
 
 # The official build action loads one full Dockerfile build; both remote tags
 # then point at the inspected and tested image ID.
@@ -135,6 +139,9 @@ case "$3" in
   *) exit 2 ;;
 esac
 SH
+cat >"$TMP/release-index.json.fixture" <<'JSON'
+[{"tagName":"v2.1.0","isDraft":true}]
+JSON
 cat >"$TMP/release.json.fixture" <<'JSON'
 {"draft":true,"assets":[{"name":"BUILD-CHECKPOINT.txt"}]}
 JSON
@@ -148,7 +155,10 @@ EOF
 cat >"$TMP/bin/gh" <<'SH'
 #!/bin/sh
 case "$1:$2" in
-  api:*) cat "$MOCK_ROOT/release.json.fixture" ;;
+  release:list) cat "$MOCK_ROOT/release-index.json.fixture" ;;
+  release:view)
+    printf 'view\n' >>"$MOCK_ROOT/lookups.log"
+    cat "$MOCK_ROOT/release.json.fixture" ;;
   release:download)
     pattern=
     while [ "$#" -gt 0 ]; do
@@ -165,6 +175,7 @@ SH
 cat >"$TMP/bin/jq" <<'SH'
 #!/bin/sh
 if [ "$1" = -r ] && [ "$2" = .draft ]; then printf 'true\n'; exit; fi
+if [ "$1" = --arg ] && [ "$2" = tag ]; then printf '1\n'; exit; fi
 if [ "$1" = -er ] && [ "$2" = --arg ] && [ "$3" = key ]; then
   key=$4
   body=$(cat)
@@ -187,6 +198,7 @@ chmod +x "$TMP/bin/gh" "$TMP/bin/jq" "$TMP/scripts/ci-release.sh"
     bash "$TMP/preflight.sh"
 )
 grep -Fx 'action=resume_finalize' "$TMP/output" >/dev/null || fail 'post-push/pre-marker interruption is not resumable'
+grep -Fx 'view' "$TMP/lookups.log" >/dev/null || fail 'draft-aware gh release view was not used'
 if grep -Fx 'IMAGE-DIGEST.txt' "$TMP/downloads.log" >/dev/null; then
   fail 'resume preflight tried to require the not-yet-written completion marker'
 fi

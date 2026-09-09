@@ -135,6 +135,11 @@ jobs:
     needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Draft releases are visible only to a token with push-level repository
+    # access; no mutation is performed in this job.
+    # 草稿 Release 需要具备推送级仓库权限的 token 才可见；本任务仍只读查询。
+    permissions:
+      contents: write
     outputs:
       action: ${{ steps.dry.outputs.action || steps.registry.outputs.action }}
       digest: ${{ steps.registry.outputs.digest }}
@@ -177,17 +182,17 @@ jobs:
           stable_state=$(printf '%s' "$stable" | field state)
 
           release_state=absent
-          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" >"$RUNNER_TEMP/release.json" 2>"$RUNNER_TEMP/release.err"; then
+          gh release list --limit 1000 --json tagName,isDraft >"$RUNNER_TEMP/release-index.json"
+          release_count=$(jq --arg tag "$TAG" '[.[] | select(.tagName == $tag)] | length' "$RUNNER_TEMP/release-index.json")
+          [[ "$release_count" -le 1 ]]
+          if [[ "$release_count" -eq 1 ]]; then
+            gh release view "$TAG" --json isDraft,assets \
+              --jq '{draft:.isDraft, assets:.assets}' >"$RUNNER_TEMP/release.json"
             if [[ "$(jq -r '.draft' "$RUNNER_TEMP/release.json")" == true ]]; then
               release_state=draft
             else
               release_state=published
             fi
-          elif grep -Fq 'HTTP 404' "$RUNNER_TEMP/release.err"; then
-            release_state=absent
-          else
-            cat "$RUNNER_TEMP/release.err" >&2
-            exit 1
           fi
 
           checkpoint=false
@@ -539,7 +544,9 @@ jobs:
             name=$1
             path=$2
             release_json="$RUNNER_TEMP/release-assets-$name.json"
-            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" >"$release_json"
+            gh release view "$TAG" --json isDraft,assets \
+              --jq '{draft:.isDraft, assets:.assets}' >"$release_json"
+            [[ "$(jq -r '.draft' "$release_json")" == true ]]
             count=$(jq --arg name "$name" '[.assets[] | select(.name == $name)] | length' "$release_json")
             if [[ "$count" -eq 0 ]]; then
               gh release upload "$TAG" "$path"
@@ -566,7 +573,8 @@ jobs:
         run: |
           set -euo pipefail
           release_json="$RUNNER_TEMP/complete-release.json"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" >"$release_json"
+          gh release view "$TAG" --json isDraft,assets \
+            --jq '{draft:.isDraft, assets:.assets}' >"$release_json"
           [[ "$(jq -r '.draft' "$release_json")" == true ]]
           for required in \
             BUILD-CHECKPOINT.txt \
