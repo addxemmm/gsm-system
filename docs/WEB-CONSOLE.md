@@ -118,6 +118,10 @@ must not silently trigger mutation or radio operations.
 
 ## Troubleshooting / 排错
 
+The UI formats timestamps in the browser's local timezone; API timestamps retain
+their server-supplied offset. Container/native/API timezone is configured by `TZ`.
+页面按浏览器本地时区格式化日期；API 原始时间保留服务端偏移，容器/原生/API 时区由 `TZ` 控制。
+
 - `401`: check the token in this browser session; both ports use the same token.
   401 检查浏览器会话令牌，两入口规则相同。
 - Web works but Postman 8082 fails: check `GSM_EXPOSE_API` and recreate with the

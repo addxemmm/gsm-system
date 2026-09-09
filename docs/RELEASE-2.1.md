@@ -2,6 +2,63 @@
 
 Version / 版本：`2.1.0`
 
+## Latest deployment: 2026-09-09 12:37 +08:00 / 最新部署：双语 Web 管理台
+
+- Runtime / 运行镜像: **`gsm-system:2.1`**, source revision **`8d02b2b670b1`**.
+  Image ID / 镜像 ID: `sha256:51807bbde23dcb9826309aca6495e603d5ae84c715a7a828eda382c95d4d010a`.
+  Subsequent acceptance-only documentation commits do not change this binary.
+  后续仅验收文档的提交不会改变此运行程序身份。
+- The Go binary embeds the bilingual responsive console and serves Web plus the
+  same authenticated API in one container. Dashboard/process topology, three
+  explicit start sources, stop, presets, bindings, SMS, calls, NAT and field
+  guidance are available. / Go 内嵌双语响应式前端，同容器提供页面与统一 API；
+  覆盖仪表盘/进程拓扑、三种显式启动、停止、预设、号码绑定、短信、通话、NAT 与指南。
+- Default deployment publishes only Web `8080`, with the independent API bound
+  to container loopback. This test installation explicitly enables both `8080`
+  and `8082` on its LAN address. Both health endpoints return the same version
+  and revision; optional token is currently blank. Bridge mode, `restart=no`
+  and `Asia/Shanghai` (`+0800`) remain intact. / 默认仅 Web，测试站点显式开放
+  两端口，双入口版本一致；当前令牌留空，保留 bridge、不自启及东八区。
+- Windows Go tests/vet, Linux race/vet, Windows/Ubuntu deployment contracts,
+  Postman contracts and 11 browser-source checks passed. The source commit's
+  [GitHub CI](https://github.com/addxemmm/gsm-system/actions/runs/34311325333)
+  passed Go 1.22, Go 1.26.8 and Windows jobs.
+  Windows/Linux Go、竞态、部署、Postman 与 11 项前端检查通过，云端 CI 全绿。
+- All five final-image suites passed: caller ID/2600/2602 isolated routing,
+  runtime persistence/timezone/auth/CDR, current-start SMS and deduplication,
+  presets, and Web/API Compose/auth/Origin/health. These tests do not transmit RF.
+  五组最终镜像隔离测试全部通过，含来显/测试号码、持久化/时区/鉴权/话单、
+  当次短信与去重、预设、Web/API 端口合并和同鉴权；未进行射频发射。
+- Real-browser checks covered Chinese/English, 390-pixel responsive layout,
+  preset creation/deletion, confirmation followed by Escape cancellation,
+  failed deletion with request ID, token clearing/reload and draft retention
+  across refresh/language changes. No browser console errors were observed.
+  浏览器实测双语、390px、预设增删、确认后 Esc 取消、失败提示、清令牌与草稿保护，
+  未观察到控制台错误；写入测试仅使用无业务卷、无 USB 的预览容器。
+- Before/after recreation, subscriber SQL, OpenBTS configuration SQL and raw
+  smqueue log digests matched. SQLite integrity was OK; all three subscribers
+  and three number bindings remained. LTE identity and start/finish timestamps
+  were unchanged. / 重建前后签约库、OpenBTS 配置及短信原始日志摘要一致，
+  数据库完整，三用户三绑定保留，LTE 身份与起止时间未变。
+- Removed preview/old GSM containers, superseded GSM images, the exact warmed
+  builder image and unused build cache. Final inventory: current GSM and LTE
+  only, two business volumes retained, build cache **0 B**.
+  清理预览、旧 GSM、预热构建镜像与无用缓存；最终仅 GSM/LTE 两镜像、两容器，
+  两个业务卷保留，构建缓存 **0 B**。
+
+**The management container is healthy; the cell was intentionally left stopped
+after the upgrade.** Start from the Web cell-control page when ready. Existing
+handset GPRS reliability findings below are not claimed fixed by a UI release.
+**管理容器健康，小区在升级后明确保持停止。** 可从 Web 小区控制页显式启动；
+本次不将前端升级或管理健康误称为下文手机 GPRS 可靠性问题已解决。
+
+Docker Hub publication tooling and manual release-record gates are prepared;
+no Hub upload, Git tag, Release or secret was created. Destination, visibility,
+image-content/licensing review and credentials remain operator setup steps.
+Docker Hub 发布工具与手动发版门禁已准备，未上传、建 tag/Release 或配置密钥；
+仓库目标、可见性、镜像内容/许可证审核及凭据仍须由操作者确定。
+See [Web tour](WEB-CONSOLE.md) and [release procedure](RELEASING.md).
+
 ## Follow-up: PDP established, radio reliability trial / 后续：PDP 已建立，继续无线可靠性对照
 
 At approximately 10:16–10:24 +08:00 on September 9, a handset reached registered
@@ -21,11 +78,11 @@ LTE object was changed by this task.
 配置、原值及边界详见上方文档。本次仅改站点运行配置和文档，未改变代码或镜像，
 仍为 2.1 / 19a03406d30e，关闭自启；诊断容器已自动删除，无抓包文件，本任务未动 LTE。
 
-## Latest deployment: 2026-09-09 09:56 +08:00 / 最新部署
+## Previous deployment: 2026-09-09 09:56 +08:00 / 历史部署
 
-This summary supersedes older deployment identities below; the older sections
-are historical records, not the current container/image inventory.
-以下为当前部署摘要；后文旧标签、回滚容器及部署身份仅是历史记录，不代表当前库存。
+This historical summary describes the earlier radio-fix deployment. The latest
+Web deployment identity is recorded above; older sections are not current inventory.
+本节为此前无线修复部署历史；最新 Web 部署身份见上方，不将旧记录视为当前库存。
 
 - Runtime / 运行版本: `gsm-system:2.1`, binary revision `19a03406d30e`.
 - Image / 镜像: `sha256:b5c0523289d5ce5d23b9b5df79a5e3dcbc6c94820e4353be77ebaf4ecbd50d31`.
