@@ -1,0 +1,148 @@
+name: release / 手动发布记录
+
+# No PR, push, automatic version bump, server access or cloud Docker build.
+# 不监听 PR/push，不自动升版，不访问服务器，不假设云端有 third_party 缓存。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing source VERSION / 已提交版本，例如 2.1.0'
+        required: true
+        type: string
+      revision:
+        description: 'Accepted source commit / 已验收的完整 40 位 Git SHA'
+        required: true
+        type: string
+      repository:
+        description: 'Private Docker Hub namespace/name / 私有镜像仓库'
+        required: true
+        type: string
+      digest:
+        description: 'Published manifest sha256:... / 已推送镜像的 manifest 摘要'
+        required: true
+        type: string
+      acceptance_passed:
+        description: 'Server/hardware/SMS/voice/GPRS accepted; image contents reviewed / 实机验收及镜像内容审查通过'
+        required: true
+        default: false
+        type: boolean
+      create_release:
+        description: 'Create first release for existing vVERSION tag / 为已存在 tag 创建首次 Release'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ inputs.version }}
+      REVISION: ${{ inputs.revision }}
+      HUB_REPOSITORY: ${{ inputs.repository }}
+      DIGEST: ${{ inputs.digest }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      ACCEPTED: ${{ inputs.acceptance_passed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate exact source and pre-existing tag / 校验精确源码与已存在 tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HUB_REPOSITORY" =~ ^[a-z0-9]+([._-][a-z0-9]+)*/[a-z0-9]+([._-][a-z0-9]+)*$ ]]
+          [[ ${#HUB_REPOSITORY} -le 200 ]]
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$ACCEPTED" == true ]]
+          [[ "$(git rev-parse "refs/tags/v${VERSION}^{commit}")" == "$REVISION" ]]
+          git merge-base --is-ancestor "$REVISION" "refs/remotes/origin/$DEFAULT_BRANCH"
+          [[ "$(git show "$REVISION:VERSION" | tr -d '\r\n')" == "$VERSION" ]]
+          git checkout --detach "$REVISION"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep sqlite3
+      - run: go vet ./...
+      - run: go test -race ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Browser and Postman offline contracts / 浏览器与 Postman 离线契约
+        run: |
+          node scripts/tests/web_ui.test.cjs
+          node scripts/tests/postman_start_modes.test.cjs
+      - name: Offline deployment contracts / 离线部署契约
+        run: |
+          sh deploy/docker/test-persistent-state.sh
+          sh deploy/docker/test-timezone.sh
+          sh scripts/tests/test_prefetch_vendor.sh
+          sh scripts/tests/test_deploy_to_ubuntu.sh
+          sh scripts/tests/test_build_contract.sh
+
+  record:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Configure reviewers + default-branch-only protection before first use.
+    # 首次使用前配置审核人及仅默认分支规则；密钥仅放此 environment。
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      REVISION: ${{ inputs.revision }}
+      HUB_REPOSITORY: ${{ inputs.repository }}
+      DIGEST: ${{ inputs.digest }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+      - name: Verify private repository and prevent replacement / 校验私有仓库且禁止覆盖
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(gh api "repos/$GH_REPO" --jq '.private')" == true ]]
+          [[ "$(git rev-parse "refs/tags/v${VERSION}^{commit}")" == "$REVISION" ]]
+          tags=$(gh api "repos/$GH_REPO/releases" --paginate --jq '.[].tag_name')
+          if grep -Fxq "v$VERSION" <<< "$tags"; then
+            echo 'Release already exists / Release 已存在，保留原记录'
+            exit 1
+          fi
+      - name: Verify immutable image and generate notes / 校验镜像并生成双语记录
+        env:
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_READ_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$DOCKERHUB_USER" && -n "$DOCKERHUB_TOKEN" ]]
+          go run ./scripts/release --mode verify --version "$VERSION" \
+            --revision "$REVISION" --repository "$HUB_REPOSITORY" --digest "$DIGEST" \
+            --notes "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Create release only when explicitly selected / 仅显式选择后创建 Release
+        if: inputs.create_release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" --verify-tag --latest=false \
+            --title "gsm-system v$VERSION / GSM 系统 v$VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
