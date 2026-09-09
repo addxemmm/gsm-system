@@ -100,6 +100,16 @@ managed processes are alive, not RF/handset acceptance. `started_at` is optional
 
 ### `POST /cell`
 
+Every explicit start form shares a pre-radio network gate: after parameter and
+hardware checks, the manager idempotently ensures the GSM `192.168.99.0/24`
+MASQUERADE rule on the selected container interface. A missing rule is added;
+an existing rule is not duplicated. Failure returns `503` before launching native
+services. This does not enable sysctl, prove Internet reachability or create
+automatic container/RF startup. Explicit stopped-state `PUT /network` remains.
+所有显式启动形式共用网络前置检查：参数及硬件检查后、原生进程启动前，幂等补齐选定
+容器网卡上的 GSM 出口规则；失败返回 503，不拉起射频。它不改 sysctl、不证明上网、
+不增加容器或射频自启；停止态显式 PUT /network 仍保留。
+
 ```json
 {
   "arfcns": "1",
@@ -766,7 +776,11 @@ requests do not append duplicates. The cell must be stopped. HTTP `200`:
 {"iface":"eth0","rule_present":true,"changed":false,"ipv4_forwarding":true,"persisted":false}
 ```
 
-`persisted:false` means host firewall resets/reboots may require reapplication.
+`persisted:false` means the rule remains runtime-only. Every subsequent explicit
+cell start now checks/repairs it automatically; if a firewall reset occurs while
+the cell is running, stop it before explicit reapplication or restart.
+`persisted:false` 仍表示运行态规则；下一次显式小区启动自动检查并恢复。运行中防火墙
+被重置时，先停止再显式补规则或重新启动。
 Running/transitioning cell: `409`; invalid interface: `422`; iptables unavailable
 or command failure: `503`. `POST /network` is removed and returns `405` with
 `Allow: GET, PUT`.

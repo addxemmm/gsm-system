@@ -38,6 +38,12 @@ paths:
       tags: [cell]
       operationId: startCell
       summary: Start explicitly, from a preset, or by reusing the last profile / 启动小区
+      description: |
+        After input/hardware checks and before native radio launch, all start forms
+        idempotently ensure the GSM MASQUERADE rule on the selected container interface.
+        Rule setup failure returns 503; no sysctl or automatic RF-start policy is changed.
+        参数及硬件检查后、原生射频进程启动前，三种启动形式统一幂等补齐 GSM 出口 NAT。
+        规则失败返回 503，不改 sysctl 或新增自启；停止态显式 PUT /network 保留。
       requestBody:
         required: true
         content:

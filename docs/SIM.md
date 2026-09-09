@@ -94,6 +94,10 @@ smqueue 数据库，不受 `GET/PATCH /api/v1/config` 管理。
 
 ## Reattach after an open-registration deployment / 开放注册部署后重新接入
 
+For the temporary-identity attachment deadlock and automatic NAT repair on
+explicit start, see [GPRS-RECOVERY.md](GPRS-RECOVERY.md).
+临时身份附着阻塞与显式启动自动补齐 NAT 的修复边界见上述文档。
+
 On this pinned OpenBTS build, the built-in SGSN/GGSN parses but does not select
 or reject a route by APN, and allocates IPv4 addresses. Configure the handset:
 本项目固定版本的内置 SGSN/GGSN 解析 APN，但不按 APN 选择或拒绝路由，分配 IPv4。

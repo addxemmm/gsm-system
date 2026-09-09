@@ -1,0 +1,28 @@
+--- a/GPRS/TBF.cpp
++++ b/GPRS/TBF.cpp
+@@ -497,8 +497,10 @@
+ 	MSInfo *ms = tbf->mtMS;
+ 	string imsi = ms->sgsnFindImsiByHandle(ms->msGetHandle());
+ 	if (imsi.empty()) {
+-		LOG(ERR) << "Attempt to send TBF assignment on CCCH to MS without an IMSI?";
+-		return;	// This is a disaster.  I dont know what is going to happen to this TBF; will it ever timeout?  Just hope this never happens.
++		// A P-TMSI attach needs a downlink Identity Request before IMSI is known.
++		// The public-release CCCH pager sends mImmAssign by TLLI, not by IMSI.
++		// Do not block that identity exchange or borrow a CS registration identity.
++		LOG(DEBUG) << "Sending TLLI-addressed GPRS assignment before IMSI is known";
+ 	}
+ 	// Set an ack time far far in the future to keep the caller (mtServiceDownlink) from trying
+ 	// to start another assignment.  This ack time will be updated to the real value by gprsPageCcchSetTime().
+--- a/Control/PagingEntry.h
++++ b/Control/PagingEntry.h
+@@ -31,8 +31,8 @@
+ 	// Each page has to be sent twice to make sure the handset hears it.
+ 	Int_z mSendCount;	// Number of times this page has been sent.
+ 
+-	// These fields are needed for all pages:
+-	std::string mImsi;		// Always provided.
++	// Required for GSM pages; may be empty for TLLI-addressed GPRS assignments.
++	std::string mImsi;
+ 
+ 	// For GSM pages we need the following fields:
+ 	TMSI_t mTmsi;			// A place for the pager to cache the tmsi if it finds one.

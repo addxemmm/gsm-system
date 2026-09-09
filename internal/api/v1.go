@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/addxemmm/gsm-system/internal/gsm"
+	"github.com/addxemmm/gsm-system/internal/networkrule"
 	"github.com/addxemmm/gsm-system/internal/parser"
 	"github.com/addxemmm/gsm-system/internal/subscriber"
 	"github.com/addxemmm/gsm-system/internal/telephony"
@@ -148,6 +149,9 @@ func (s *Server) handleCellStart(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, gsm.ErrCellRunning):
 			writeV1(w, r, CodeConflict, "cell already running or transitioning", nil)
+		case errors.Is(err, gsm.ErrNetworkRuleUnavailable):
+			log.Printf("rid=%s cell start network setup failed: %v", RequestID(r), err)
+			writeV1(w, r, CodeNoHardware, "network rule setup unavailable", nil)
 		case strings.Contains(err.Error(), "not connected"):
 			writeV1(w, r, CodeNoHardware, "no SDR device attached", nil)
 		default:
@@ -774,7 +778,7 @@ func (s *Server) handleNetworkGet(w http.ResponseWriter, r *http.Request) {
 		writeValidation(w, r, []FieldError{{Field: "iface", Reason: err.Error()}})
 		return
 	}
-	present, err := networkRulePresent(r.Context(), s.cfg.IptablesBin, iface)
+	present, err := networkrule.Present(r.Context(), s.cfg.IptablesBin, iface)
 	if err != nil {
 		log.Printf("rid=%s iptables check failed: %v", RequestID(r), err)
 		writeV1(w, r, CodeNoHardware, "network rule query unavailable", nil)
@@ -802,7 +806,7 @@ func (s *Server) handleNetworkPut(w http.ResponseWriter, r *http.Request) {
 	var changed bool
 	err := s.mgr.WithStoppedCell(func() error {
 		var operationErr error
-		changed, operationErr = ensureNetworkRule(r.Context(), s.cfg.IptablesBin, iface)
+		changed, operationErr = networkrule.Ensure(r.Context(), s.cfg.IptablesBin, iface)
 		return operationErr
 	})
 	if err != nil {

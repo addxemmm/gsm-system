@@ -13,7 +13,7 @@ cleanup() {
   trap - EXIT HUP INT TERM
   docker rm -f "$name" >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
-  rm -f "$tmp/app.yaml" "$tmp/smqueue.log" "$tmp/uhd-fixture" "$tmp/service-fixture"
+  rm -f "$tmp/app.yaml" "$tmp/smqueue.log" "$tmp/uhd-fixture" "$tmp/service-fixture" "$tmp/iptables-fixture"
   rmdir "$tmp"
   exit "$rc"
 }
@@ -30,6 +30,7 @@ sipauthserve_bin: /fixture/service-fixture
 smqueue_bin: /fixture/service-fixture
 asterisk_bin: /fixture/service-fixture
 openbts_cli_bin: /bin/true
+iptables_bin: /fixture/iptables-fixture
 syslog_socket: ""
 asterisk_db_path: /data/asterisk.db
 openbts_db_path: /data/OpenBTS.db
@@ -37,6 +38,20 @@ YAML
 printf '#!/bin/sh\nprintf "B210 inert fixture, no hardware probe\\n"\n' >"$tmp/uhd-fixture"
 printf '#!/bin/sh\nprintf "system ready\\n"\nexec /bin/sleep 600\n' >"$tmp/service-fixture"
 chmod 755 "$tmp/uhd-fixture" "$tmp/service-fixture"
+# Model only the existing GSM rule; no real firewall capability is used.
+# 仅模拟本项目 NAT 规则，不操作真实防火墙或授予网络权限。
+cat >"$tmp/iptables-fixture" <<'SH'
+#!/bin/sh
+case "$*" in
+  '-t nat -C POSTROUTING -s 192.168.99.0/24 -o lo -j MASQUERADE')
+    [ -f /data/nat.fixture ] ;;
+  '-t nat -A POSTROUTING -s 192.168.99.0/24 -o lo -j MASQUERADE')
+    touch /data/nat.fixture
+    printf 'added\n' >> /data/nat-additions.fixture ;;
+  *) exit 2 ;;
+esac
+SH
+chmod 755 "$tmp/iptables-fixture"
 docker volume create "$volume" >/dev/null
 # Seed only the isolated test volume. The deliberately present 101 row proves
 # that a service shortcode is not resolved as a subscriber even in a bad legacy DB.
@@ -74,6 +89,7 @@ start_cell() {
     http://127.0.0.1:8082/api/v1/cell
 }
 stop_cell() { docker exec "$name" curl -fsS --max-time 45 -X DELETE http://127.0.0.1:8082/api/v1/cell; }
+additions() { docker exec "$name" sh -c 'wc -l < /data/nat-additions.fixture' | tr -d '[:space:]'; }
 hex() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
 sender=$(hex IMSI001010000000001)
 receiver=$(hex 10002)
@@ -97,6 +113,7 @@ response=$(get_sms)
 printf '%s' "$response" | grep -Fq '"session":null'
 printf '%s' "$response" | grep -Fq '"total":0'
 start_cell >/dev/null
+[ "$(additions)" -eq 1 ]
 response=$(get_sms)
 printf '%s' "$response" | grep -Fq '"total":0'
 printf '%s' "$response" | grep -Fq '"scope":"current_start"'
@@ -124,12 +141,18 @@ response=$(get_sms)
 printf '%s' "$response" | grep -Fq '"state":"stopped"'
 printf '%s' "$response" | grep -Fq '"total":3'
 start_cell >/dev/null
+[ "$(additions)" -eq 1 ]
 response=$(get_sms)
 printf '%s' "$response" | grep -Fq '"total":0'
 head -n 1 "$tmp/smqueue.log" | docker exec -i "$name" sh -c 'cat >> /data/log/smqueue.log'
 response=$(get_sms)
 printf '%s' "$response" | grep -Fq '"total":1'
 stop_cell >/dev/null
+docker exec "$name" rm /data/nat.fixture
+start_cell >/dev/null
+[ "$(additions)" -eq 2 ]
+stop_cell >/dev/null
+echo 'PASS startup NAT creation, idempotence and missing-rule repair using an inert firewall fixture / 惰性防火墙样本验证启动 NAT 创建、幂等与丢失修复'
 docker restart "$name" >/dev/null
 wait_api
 response=$(get_sms)

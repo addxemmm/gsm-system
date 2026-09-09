@@ -266,6 +266,34 @@ func TestStartPropagatesDependencyExitAndRollsBackOwnedChildren(t *testing.T) {
 	assertFixturePIDsStopped(t, pidFile)
 }
 
+func TestStartNetworkRuleFailurePreventsNativeStartupAndStopStillWorks(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process fixture is Linux-only")
+	}
+	dir := t.TempDir()
+	sqlite := writeShell(t, dir, "sqlite-fixture", "cat >/dev/null\n")
+	cfg := testConfig(t, dir, sqlite)
+	cfg.UHDFindBin = writeShell(t, dir, "uhd-fixture", "echo 'type: B210'\n")
+	cfg.IptablesBin = writeShell(t, dir, "iptables-failure", "if [ \"$3\" = -C ]; then exit 1; fi\necho denied >&2\nexit 42\n")
+	nativeMarker := filepath.Join(dir, "native-started")
+	native := writeShell(t, dir, "native-fixture", "echo started > "+shellQuote(nativeMarker)+"\nexec sleep 30\n")
+	cfg.SipAuthServeBin = native
+	cfg.SmqueueBin = native
+	cfg.AsteriskBin = native
+	cfg.OpenBTSBin = native
+	m := New(cfg)
+	err := m.Start(context.Background(), validStartParams())
+	if !errors.Is(err, ErrNetworkRuleUnavailable) || !strings.Contains(err.Error(), "iptables add") {
+		t.Fatalf("network failure was not classified: %v", err)
+	}
+	if _, statErr := os.Stat(nativeMarker); !os.IsNotExist(statErr) {
+		t.Fatalf("native startup ran after NAT failure: %v", statErr)
+	}
+	if m.Stop() {
+		t.Fatal("stop reported a cell after failed pre-start NAT repair")
+	}
+}
+
 func TestStopBoundsOpenBTSCLI(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("process fixture is Linux-only")
@@ -319,6 +347,7 @@ func testConfig(t *testing.T, dir, sqlite string) config.Config {
 	cfg.LogDir = filepath.Join(dir, "log")
 	cfg.OpenBTSDbPath = filepath.Join(dir, "OpenBTS.db")
 	cfg.Sqlite3Bin = sqlite
+	cfg.IptablesBin = writeShell(t, dir, "iptables-fixture", "exit 0\n")
 	if err := os.WriteFile(cfg.OpenBTSDbPath, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}

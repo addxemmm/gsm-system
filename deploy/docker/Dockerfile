@@ -107,6 +107,8 @@ RUN cd openbts \
  && sh /app/compat/tests/test-gmm-optional-ies.sh SGSNGGSN/GPRSL3Messages.cpp \
  && patch -p1 < /app/compat/patches/0005-uhd-rx-timeout-retry.patch \
  && sh /app/compat/tests/test-uhd-rx-timeout.sh Transceiver52M/UHDDevice.cpp \
+ && patch -p1 < /app/compat/patches/0007-gprs-pre-imsi-ccch-assignment.patch \
+ && sh /app/compat/tests/test-gprs-pre-imsi.sh . \
  && sed -i 's/<<os <</<<os.str()<</g' Control/L3StateMachine.cpp \
  && sed -i 's/<<this<<os;/<<this<<os.str();/' GPRS/MSInfo.cpp \
  && sed -i 's/"<<ss)/"<<ss.str())/g' SGSNGGSN/Sgsn.cpp

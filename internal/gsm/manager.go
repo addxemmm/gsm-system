@@ -18,6 +18,7 @@ import (
 
 	"github.com/addxemmm/gsm-system/internal/config"
 	"github.com/addxemmm/gsm-system/internal/logsink"
+	"github.com/addxemmm/gsm-system/internal/networkrule"
 	"github.com/addxemmm/gsm-system/internal/sdr"
 	"github.com/addxemmm/gsm-system/internal/sysop"
 )
@@ -29,6 +30,8 @@ var (
 	// ErrCellRunning is returned when a config/start operation races a live cell.
 	ErrCellRunning   = errors.New("cell is running")
 	ErrInvalidConfig = errors.New("invalid radio configuration")
+	// ErrNetworkRuleUnavailable classifies a failed pre-start GSM NAT repair.
+	ErrNetworkRuleUnavailable = errors.New("network rule unavailable")
 	// ErrDatabaseNotFound classifies a missing configured sqlite database.
 	ErrDatabaseNotFound = errors.New("database file not found")
 )
@@ -171,9 +174,9 @@ func (m *Manager) CheckUSRP() bool {
 // DetectUSRP returns the configured detector result for health endpoints.
 func (m *Manager) DetectUSRP() sdr.Detection { return sdr.DetectWith(m.cfg.UHDFindBin) }
 
-// Start validates, refuses when running, checks USRP, applies DB config,
-// launches sipauthserve -> smqueue -> asterisk -> OpenBTS (direct exec,
-// no systemctl: containers have no systemd), clears tmsis.
+// Start validates, refuses when running, checks USRP, repairs the managed NAT
+// rule, applies DB config, then launches sipauthserve -> smqueue -> asterisk ->
+// OpenBTS (direct exec, no systemctl: containers have no systemd), clears tmsis.
 func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	if err := p.Validate(); err != nil {
 		return err
@@ -202,6 +205,9 @@ func (m *Manager) Start(ctx context.Context, p StartParams) (err error) {
 	}
 	if !m.DetectUSRP().UHD_B210 {
 		return fmt.Errorf("device is not connected, please connect usrp device.")
+	}
+	if _, err := networkrule.Ensure(ctx, m.cfg.IptablesBin, p.Network); err != nil {
+		return fmt.Errorf("%w: %w", ErrNetworkRuleUnavailable, err)
 	}
 	// Best-effort stale pid cleanup (legacy `rm /var/run/OpenBTS.pid`).
 	_ = os.Remove("/var/run/OpenBTS.pid")

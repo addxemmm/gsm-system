@@ -197,6 +197,7 @@ state and start the cell explicitly through its API. 容器不开机自启，退
 - [Bounded UHD timeout recovery / UHD 有限超时恢复](docs/UHD-RX-RECOVERY.md)
 - [2600/2602 voice diagnostics / 语音诊断](docs/VOICE-DIAGNOSTICS.md)
 - [Chinese SMS decoding / 中文短信解码](docs/SMS-UNICODE.md)
+- [GPRS identity and NAT recovery / GPRS 身份交换与 NAT 恢复](docs/GPRS-RECOVERY.md)
 - [2.1 migration / 2.1 迁移](docs/MIGRATION.md)
 - [2.1 release notes / 2.1 发布说明](docs/RELEASE-2.1.md)
 - [Historical audit / 历史审计](docs/AUDIT-2026-09.md)

@@ -542,7 +542,7 @@
               }
             },
             "url": "{{baseUrl}}/api/v1/cell",
-            "description": "Set start_preset_id to any stored preset ID (0 by default); send only preset_id. This never edits that preset. Click Send to start directly after parameter validation. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / start_preset_id 可填任意已有预设 ID，默认 0；只传 preset_id，不修改预设。参数通过校验后点击 Send 直接发送；发送会启动射频，未发送原因见 Postman Console。"
+            "description": "Set start_preset_id to any stored preset ID (0 by default); send only preset_id. This never edits that preset. Each explicit start ensures the selected-interface GSM NAT rule before native radio launch; setup failure returns 503. / 每次显式启动在原生射频拉起前补齐所选网卡 NAT，失败返回 503。 Click Send to start directly after parameter validation. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / start_preset_id 可填任意已有预设 ID，默认 0；只传 preset_id，不修改预设。参数通过校验后点击 Send 直接发送；发送会启动射频，未发送原因见 Postman Console。"
           }
         },
         {
@@ -594,7 +594,7 @@
               }
             },
             "url": "{{baseUrl}}/api/v1/cell",
-            "description": "Fill all nine custom variables; no preset_id and no fallback/merge with saved or preset values. band and short_name are editable variables, not hardcoded. Click Send to start directly after parameter validation. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / 完整填写九项自定义变量，不传 preset_id、不混合或回退至存档。频段和名称均可配置；参数通过校验后点击 Send 直接发送，发送会启动射频，未发送原因见 Console。"
+            "description": "Fill all nine custom variables; no preset_id and no fallback/merge with saved or preset values. band and short_name are editable variables, not hardcoded. Each explicit start ensures the selected-interface GSM NAT rule before native radio launch; setup failure returns 503. / 每次显式启动在原生射频拉起前补齐所选网卡 NAT，失败返回 503。 Click Send to start directly after parameter validation. Sending starts RF; inspect the Postman Console for NOT SENT diagnostics. / 完整填写九项自定义变量，不传 preset_id、不混合或回退至存档。频段和名称均可配置；参数通过校验后点击 Send 直接发送，发送会启动射频，未发送原因见 Console。"
           }
         }
       ]

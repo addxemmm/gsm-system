@@ -40,8 +40,9 @@ curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/profile"; echo
 means all five managed processes are alive; neither value proves RF, attach,
 SMS delivery, or voice quality. 健康与进程就绪均不等于射频/真机验收。
 
-After every container recreation, while the cell is still stopped, inspect and
-idempotently apply the runtime NAT rule to the container bridge interface:
+Each explicit cell start now checks/repairs the runtime NAT rule before radio
+launch. You can also inspect and apply it while stopped for diagnostics:
+每次显式启动会在射频拉起前检查并补齐 NAT，也可在停止态提前查询/配置：
 
 ```bash
 curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/network?iface=eth0"; echo
@@ -49,9 +50,10 @@ curl -fsS -X PUT "$BASE/network" ${AUTH:+-H "$AUTH"} \
   -H 'Content-Type: application/json' -d '{"iface":"eth0"}'
 ```
 
-`persisted:false` is expected: repeat this stopped-state `PUT` after each
-recreation/firewall reset before any preset or explicit cell start. 容器重建后、
-任何预设或显式启动前，必须在小区停止态对 `eth0` 执行此幂等 PUT。
+`persisted:false` is expected: the rule itself is runtime-only, but preset,
+custom and saved-profile starts all restore it if missing. A rule setup failure
+returns 503 before RF launch. / 规则本身仍为运行态，但三种显式启动都会补齐缺失规则；
+规则配置失败时返回 503，不启动射频。
 
 ## 2. Start one legal test cell / 启动合法测试小区
 

@@ -1,5 +1,5 @@
-// Helpers for bounded native commands, pagination, tail reads, and the one
-// project-owned iptables rule. All commands use argv; none invoke a shell.
+// Helpers for bounded native commands, pagination, and tail reads.
+// All commands use argv; none invoke a shell.
 package api
 
 import (
@@ -24,7 +24,6 @@ const (
 	defaultPageLimit = 100
 	maxPageLimit     = 500
 	maxPageOffset    = 1_000_000
-	managedDataCIDR  = "192.168.99.0/24"
 )
 
 type pageRequest struct {
@@ -189,40 +188,4 @@ func ipv4Forwarding() *bool {
 		return nil
 	}
 	return &enabled
-}
-
-func networkRulePresent(ctx context.Context, bin, iface string) (bool, error) {
-	if bin == "" {
-		bin = "iptables"
-	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "-t", "nat", "-C", "POSTROUTING",
-		"-s", managedDataCIDR, "-o", iface, "-j", "MASQUERADE").CombinedOutput()
-	if err == nil {
-		return true, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		return false, nil
-	}
-	return false, fmt.Errorf("iptables check: %w: %s", err, strings.TrimSpace(string(out)))
-}
-
-func ensureNetworkRule(ctx context.Context, bin, iface string) (bool, error) {
-	present, err := networkRulePresent(ctx, bin, iface)
-	if err != nil || present {
-		return false, err
-	}
-	if bin == "" {
-		bin = "iptables"
-	}
-	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(cmdCtx, bin, "-t", "nat", "-A", "POSTROUTING",
-		"-s", managedDataCIDR, "-o", iface, "-j", "MASQUERADE").CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("iptables add: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return true, nil
 }

@@ -33,6 +33,9 @@ grep -F 'patch -p1 < /app/compat/patches/0005-uhd-rx-timeout-retry.patch' deploy
 grep -F 'sh /app/compat/tests/test-uhd-rx-timeout.sh Transceiver52M/UHDDevice.cpp' deploy/docker/Dockerfile >/dev/null || fail 'patched UHD RX timeout harness is not run'
 [ -f compat/patches/0005-uhd-rx-timeout-retry.patch ] || fail 'UHD RX timeout retry patch missing'
 [ -f compat/tests/test-uhd-rx-timeout.sh ] || fail 'UHD RX timeout harness missing'
+grep -F 'patch -p1 < /app/compat/patches/0007-gprs-pre-imsi-ccch-assignment.patch' deploy/docker/Dockerfile >/dev/null || fail 'GPRS pre-IMSI assignment patch missing'
+grep -F 'sh /app/compat/tests/test-gprs-pre-imsi.sh .' deploy/docker/Dockerfile >/dev/null || fail 'GPRS pre-IMSI regression is not run'
+[ -f compat/tests/gprs-pre-imsi.cpp ] || fail 'GPRS pre-IMSI native test missing'
 
 grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1}"' deploy/docker/docker-compose.yml >/dev/null || fail '2.1 runtime image default missing'
 grep -F 'com.gsm-system.managed: "true"' deploy/docker/docker-compose.yml >/dev/null || fail 'managed GSM cleanup label missing'

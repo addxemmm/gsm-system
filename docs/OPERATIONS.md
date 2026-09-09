@@ -27,10 +27,11 @@ kernel clock. CDR storage remains UTC and API display uses the project zone.
 
 1. Read `GET /health`, `GET /cell`, `GET /profile` and `GET /presets`.
    / 先查管理面、小区、存档与预设，不凭容器 Up 判定业务正常。
-2. After container recreation/firewall reset, while stopped, call
-   `PUT /network` with `{"iface":"eth0"}`. Check `rule_present` and read-only
-   `ipv4_forwarding`; repeat PUT should return `changed:false`.
-   / 重建或防火墙重置后，在停止态配置出口 NAT 并复查；规则存在不等于转发已开启。
+2. Inspect `/network?iface=eth0`; each explicit start repairs missing NAT before
+   radio launch. For stopped-state diagnostics, `PUT /network` with
+   `{"iface":"eth0"}` remains available; repeat PUT returns `changed:false`.
+   Inspect read-only `ipv4_forwarding` separately.
+   / 显式启动自动恢复缺失 NAT；停止态仍可手动配置并验证幂等，转发状态另行检查。
 3. Choose one `POST /cell` form: `{"preset_id":"0"}`, a complete custom
    profile, or `{}` for an existing valid saved profile. Never mix forms.
    Preset CRUD saves configuration without starting RF.

@@ -270,14 +270,15 @@ health validation and therefore also skips all cleanup. 跳过健康检查不构
 也不会执行清理。
 
 Compose recreates the service when the effective environment changes; an
-unchanged invocation need not recreate it. After recreation, apply stopped-state
-`PUT /api/v1/network` with `{"iface":"eth0"}` again and verify its idempotence.
+unchanged invocation need not recreate it. Each later explicit cell start checks
+and restores missing NAT before radio launch. Stopped-state `PUT /api/v1/network`
+with `{"iface":"eth0"}` remains available for independent verification.
 A docs-only update requires neither an image build nor a container restart:
 sync only documentation if needed. Full `deploy_from_windows.ps1` sync records
 HEAD as `.release-revision`, so follow a full sync with a matching build rather
 than editing labels to pass the mismatch check.
-有效环境变化时 Compose 会重建容器，配置未变则未必重建；重建后在停止态重新配置
-出口 NAT 并验证幂等。纯文档更新不需要构建/重启，可仅同步文档；全量同步会记录 HEAD，
+有效环境变化时 Compose 会重建容器，配置未变则未必重建；后续显式启动在拉起射频前
+自动补齐 NAT，停止态也可独立检查。纯文档更新不需要构建/重启，可仅同步文档；全量同步会记录 HEAD，
 因此全量同步后应构建对应镜像，不伪改标签绕过版本核对。
 
 Compose uses the binary's read-only `--healthcheck`: a stopped cell is healthy,
