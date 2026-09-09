@@ -7,6 +7,7 @@ cd "$ROOT"
 fail() { echo "FAIL [BUILD-CONTRACT] $1" >&2; exit 1; }
 
 version=$(tr -d '[:space:]' <VERSION)
+grep -F '[ "$IMAGE_VERSION" = "$EXPECTED_VERSION" ]' scripts/tests/test_image.sh >/dev/null || fail 'image smoke test must track VERSION, not a hard-coded patch release'
 if git ls-files --stage | grep -Eq '^160000 .*gsmsystem/a2billing$'; then
   fail 'retired a2billing gitlink breaks clean authenticated checkout'
 fi

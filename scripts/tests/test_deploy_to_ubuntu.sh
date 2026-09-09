@@ -7,6 +7,7 @@ TMP=${TMPDIR:-/tmp}/gsm-deploy-test-$$
 BIN=$TMP/bin
 LOG=$TMP/native.log
 REVISION=$(git -C "$ROOT" rev-parse --short=12 HEAD)
+EXPECTED_VERSION=$(tr -d '\r\n' <"$ROOT/VERSION")
 IMAGE=gsm-system:2.1
 mkdir -p "$BIN"
 cleanup() { rm -rf "$TMP"; }
@@ -88,7 +89,7 @@ chmod +x "$BIN/docker" "$BIN/curl" "$BIN/sleep"
 PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state HEALTH_RETRIES=2 \
   FAKE_ORPHAN_RUNNING=false FAKE_ORPHAN_IMAGE=sha256:rollback \
   "$ROOT/scripts/deploy_to_ubuntu.sh"
-grep -F "image=$IMAGE version=2.1.0 revision=$REVISION compose -p gsm-system-live -f deploy/docker/docker-compose.yml build" "$LOG" >/dev/null
+grep -F "image=$IMAGE version=$EXPECTED_VERSION revision=$REVISION compose -p gsm-system-live -f deploy/docker/docker-compose.yml build" "$LOG" >/dev/null
 grep -F "compose -p gsm-system-live -f deploy/docker/docker-compose.yml config --services" "$LOG" >/dev/null
 grep -F "compose -p gsm-system-live -f deploy/docker/docker-compose.yml ps --all -q gsm-system" "$LOG" >/dev/null
 grep -F "compose -p gsm-system-live -f deploy/docker/docker-compose.yml up -d" "$LOG" >/dev/null

@@ -4,6 +4,8 @@
 set -eu
 
 IMAGE=${1:-gsm-system:2.1}
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
+EXPECTED_VERSION=$(tr -d '\r\n' <"$ROOT/VERSION")
 TOKEN=gsm-image-smoke-token-fixture-v1
 LABEL=com.addx.gsm-system.image-smoke
 RUN_ID_RAW=$(od -An -N8 -tx1 /dev/urandom)
@@ -63,7 +65,7 @@ command -v docker >/dev/null 2>&1 || fail PREREQ "docker command not found"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || fail PREREQ "image not found: $IMAGE"
 IMAGE_VERSION=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$IMAGE")
 IMAGE_REVISION=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")
-[ "$IMAGE_VERSION" = 2.1.0 ] || fail IDENTITY "unexpected OCI version: $IMAGE_VERSION"
+[ "$IMAGE_VERSION" = "$EXPECTED_VERSION" ] || fail IDENTITY "unexpected OCI version: $IMAGE_VERSION (expected $EXPECTED_VERSION)"
 case "$IMAGE_REVISION" in ''|*[!0-9a-f]*) fail IDENTITY "invalid OCI revision: $IMAGE_REVISION" ;; esac
 [ "${#IMAGE_REVISION}" -eq 12 ] || fail IDENTITY "OCI revision is not 12 characters: $IMAGE_REVISION"
 [ "$(docker run --rm --entrypoint /usr/local/bin/gsm-system "$IMAGE" --version)" = \
