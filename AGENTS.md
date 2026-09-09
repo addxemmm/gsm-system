@@ -27,8 +27,11 @@
 - Read→Grep/Glob→Edit(minimal diff)→Bash(`workdir`=repo root, no `cd`).
 - API change must sync API改必同步 `docs/API.md` + `docs/api/openapi.yaml` +
   `postman/` + `internal/contract/*_test.go`.
-- Public endpoints live only under `/api/v1` (envelope + HTTP status). Retired
-  root routes must stay unregistered and return `404`; do not restore them.
+- Public management API endpoints live only under `/api/v1` (envelope + HTTP
+  status). The Web listener additionally serves known embedded static assets
+  and secret-free `/web-meta.json`; this never restores retired root API routes.
+  Unknown/legacy routes remain real `404`, not an SPA fallback. 管理 API 仍只在
+  `/api/v1`；Web 静态入口不恢复旧根接口，未知路径必须返回真实 404。
 - Secrets out of git: real IMSIs/Ki/volumes/IPs → `.example` only.
 -瘦身：never commit `*.log/*.pcap/bin/__pycache__/crash/*_run.conf`; samples only `docs/samples/`.
 
@@ -46,4 +49,6 @@
   build cache. Never remove LTE objects or the external business-data volume.
   运行镜像固定为 `gsm-system:2.1`，源码 revision 由 OCI/二进制元数据追踪；每次健康
   验收后清理停止的 GSM 容器、旧 GSM 镜像及无用构建缓存，绝不删除 LTE 对象或业务数据卷。
-- Docs and commits are bilingual 文档与提交均为中英双语. GitHub repo is private 仓库私有。
+- Docs and commits are bilingual 文档与提交均为中英双语. Check GitHub repository
+  visibility before publication; never assume it is private. 推送前核验仓库可见性，
+  不假定仓库私有；密钥、站点环境与业务数据始终禁止提交。

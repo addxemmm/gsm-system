@@ -8,7 +8,8 @@ Usage and result interpretation / 使用与结果解读：
 
 ## 1. Conventions / 通用约定
 
-- Base URL / 基地址：`http://HOST:8082/api/v1`
+- Base URL / 基地址：`http://HOST:8080/api/v1` (Web default / Web 默认入口);
+  optional independent API / 可选独立 API：`http://HOST:8082/api/v1`.
 - JSON media type: mutations require `Content-Type: application/json`.
 - Optional auth / 可选鉴权：when `GSM_API_TOKEN` is configured, send
   `Authorization: Bearer TOKEN`; otherwise omit it.
@@ -814,3 +815,10 @@ optional Bearer authentication as other endpoints.
 HTTP 200 与 ok:true 仅说明管理面可响应，即使内部小区 degraded 也可能返回成功；
 须另外检查 cell 状态。容器探针仅接受停止态或完全就绪的运行态，拒绝切换/降级状态。
 两者均不证明真机短信送达、音质或上网；健康接口同样受可选 Bearer 鉴权保护。
+# Web entry point / Web 同源入口
+
+The same `/api/v1` API is available at the Web listener (default `8080`) with
+identical Bearer-token rules. The independent `8082` port is published only when
+explicitly selected at deployment. Hiding that port does not remove the Web API.
+同一 API 默认也通过 Web 8080 同源提供，Bearer 规则相同；独立 8082 仅在部署时显式
+发布。隐藏独立端口不等于禁用 Web API。详见 [Web guide](WEB-CONSOLE.md)。

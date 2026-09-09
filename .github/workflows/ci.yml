@@ -29,5 +29,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - run: pwsh -NoProfile -File scripts/tests/deploy_from_windows.Tests.ps1
       - run: node scripts/tests/postman_start_modes.test.cjs
+      - run: node scripts/tests/web_ui.test.cjs

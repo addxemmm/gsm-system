@@ -5,7 +5,7 @@
 - Source remains **2.1.0**, production image remains **gsm-system:2.1**. Nothing here
   changes deployment, creates a tag, changes repository visibility, or uploads on commit.
   源码仍为 **2.1.0**，运行镜像仍为 **gsm-system:2.1**；本流程不改部署、不自动建 tag、
-  不改变仓库私有性，也不在提交时上传。
+  不改变仓库可见性，也不在提交时上传。
 - Docker Hub publication is feasible **after** the operator supplies a namespace,
   creates/reviews a **private** repository, enables immutable tags, and supplies credentials.
   DockerHub 上传技术上可行；先由操作者确定 namespace、创建并审核**私有仓库**、启用
@@ -46,10 +46,11 @@ and fresh validation; the workflow never invents suffix versions or rewrites rel
 
 ## One-time preparation / 一次性准备
 
-1. Keep GitHub private. On Docker Hub explicitly create the private destination and
+1. Verify GitHub visibility and review the staged source for public disclosure;
+   never assume a source repository is private. On Docker Hub explicitly create the private destination and
    enable immutable tags (all tags, or a regex covering every version/revision tag).
    The preflight existence check is not a race lock; registry immutability is required.
-   保持 GitHub 私有；显式创建私有 Hub 仓库并启用 immutable tags。脚本的存在性检查
+   核验 GitHub 可见性并审查待提交源码，不假定源码仓库私有；显式创建私有 Hub 仓库并启用 immutable tags。脚本的存在性检查
    不是并发锁，真正防覆盖依赖 registry 不可变规则。
    [Docker immutable tags](https://docs.docker.com/docker-hub/repos/manage/hub-images/immutable-tags/).
 2. Review **all final-image layers**, included seed databases, Asterisk configs and

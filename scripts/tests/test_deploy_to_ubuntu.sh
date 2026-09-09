@@ -19,6 +19,7 @@ printf 'docker image=%s version=%s revision=%s %s\n' \
 case " $* " in
   *" compose "*" config --environment "*)
     printf 'GSM_DATA_VOLUME=%s\nGSM_API_TOKEN=fixture-secret-not-printed\n' "${FAKE_COMPOSE_VOLUME:-${GSM_DATA_VOLUME:-docker_gsm-data}}"
+    printf 'GSM_EXPOSE_API=%s\n' "${FAKE_COMPOSE_EXPOSE_API:-false}"
     ;;
   *" compose "*" build "*) [ "${FAKE_BUILD_FAIL:-0}" != 1 ] ;;
   *" compose "*" config --images "*) echo "$GSM_IMAGE" ;;
@@ -206,3 +207,25 @@ if grep -F 'image rm lte:preserve' "$LOG" >/dev/null || grep -F 'volume rm' "$LO
   echo 'cleanup escaped GSM runtime scope' >&2; exit 1
 fi
 echo 'PASS post-health GSM cleanup / 健康验收后清理 GSM 对象'
+
+# Exposure is an explicit env-file/Compose-resolved choice, never eval/source.
+# 独立 API 端口仅由明确配置启用；环境文件不得执行。
+: >"$LOG"
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state \
+  FAKE_COMPOSE_EXPOSE_API=true "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build
+grep -F -- '-f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.api.yml up -d' "$LOG" >/dev/null
+: >"$LOG"
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state \
+  FAKE_COMPOSE_EXPOSE_API=false "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build
+if grep -F 'docker-compose.api.yml' "$LOG" >/dev/null; then
+  echo 'default deployment unexpectedly published separate API' >&2; exit 1
+fi
+: >"$LOG"
+if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_COMPOSE_EXPOSE_API=invalid \
+  "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build; then
+  echo 'invalid API exposure flag accepted' >&2; exit 1
+fi
+if grep -F ' up -d' "$LOG" >/dev/null; then
+  echo 'invalid exposure configuration started a container' >&2; exit 1
+fi
+echo 'PASS explicit API exposure and default Web-only policy / 显式 API 暴露及默认仅 Web 策略通过'

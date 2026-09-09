@@ -9,6 +9,7 @@ HEALTH_RETRIES=${HEALTH_RETRIES:-30}
 ENV_FILE=${GSM_ENV_FILE:-.env}
 BUILD=1
 VERIFY=1
+EXPOSE_API=0
 
 usage() {
   cat <<'EOF'
@@ -68,10 +69,15 @@ cd "$(dirname "$0")/.."
 # deployment independent of Compose's implicit .env lookup rules.
 # 将项目根环境文件直接交给 Compose，不在当前 shell 中 source/eval。
 compose() {
-  if [ -f "$ENV_FILE" ]; then
-    docker compose --env-file "$ENV_FILE" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+  if [ "$EXPOSE_API" = 1 ]; then
+    set -- -p "$PROJECT_NAME" -f "$COMPOSE_FILE" -f deploy/docker/docker-compose.api.yml "$@"
   else
-    docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+    set -- -p "$PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+  fi
+  if [ -f "$ENV_FILE" ]; then
+    docker compose --env-file "$ENV_FILE" "$@"
+  else
+    docker compose "$@"
   fi
 }
 
@@ -108,6 +114,15 @@ export GSM_IMAGE GSM_VERSION GSM_REVISION
 # 从 Compose 读取实际插值输入，确保 .env 卷名与预检一致；不输出环境或令牌。
 compose_environment=$(compose config --environment)
 DATA_VOLUME=$(printf '%s\n' "$compose_environment" | sed -n 's/^GSM_DATA_VOLUME=//p')
+expose_api=$(printf '%s\n' "$compose_environment" | sed -n 's/^GSM_EXPOSE_API=//p')
+case "${expose_api:-false}" in
+  true|1) EXPOSE_API=1 ;;
+  false|0) EXPOSE_API=0 ;;
+  *) echo 'GSM_EXPOSE_API must be true/false or 1/0' >&2; exit 2 ;;
+esac
+if [ "$EXPOSE_API" = 1 ]; then
+  [ -f deploy/docker/docker-compose.api.yml ] || { echo 'API Compose overlay missing' >&2; exit 2; }
+fi
 unset compose_environment
 DATA_VOLUME=${DATA_VOLUME:-docker_gsm-data}
 case "$DATA_VOLUME" in

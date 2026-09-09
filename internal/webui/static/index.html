@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f2ea">
+  <title>GSM Console</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content" data-i18n="skip">跳至主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="主导航" data-i18n-aria-label="mainNav">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 44 44" role="img"><path d="M9 29.5a18 18 0 0 1 26 0"/><path d="M14 24a11.5 11.5 0 0 1 16 0"/><path d="M19.5 18.5a4 4 0 0 1 5 0"/><circle cx="22" cy="33" r="2.7"/></svg>
+        </span>
+        <span><strong>GSM Console</strong><small data-i18n="brandSub">蜂窝管理平面</small></span>
+      </div>
+      <nav class="nav-list">
+        <button class="nav-item is-active" type="button" data-route="dashboard" aria-current="page"><span class="nav-icon">⌁</span><span data-i18n="navDashboard">仪表盘</span></button>
+        <button class="nav-item" type="button" data-route="cell"><span class="nav-icon">◉</span><span data-i18n="navCell">小区控制</span></button>
+        <button class="nav-item" type="button" data-route="presets"><span class="nav-icon">◇</span><span data-i18n="navPresets">配置预设</span></button>
+        <button class="nav-item" type="button" data-route="subscribers"><span class="nav-icon">♙</span><span data-i18n="navSubscribers">连接与签约</span></button>
+        <button class="nav-item" type="button" data-route="sms"><span class="nav-icon">▱</span><span data-i18n="navSms">短信</span></button>
+        <button class="nav-item" type="button" data-route="calls"><span class="nav-icon">⌕</span><span data-i18n="navCalls">通话</span></button>
+        <button class="nav-item" type="button" data-route="network"><span class="nav-icon">⌘</span><span data-i18n="navNetwork">网络</span></button>
+        <button class="nav-item" type="button" data-route="help"><span class="nav-icon">?</span><span data-i18n="navHelp">帮助</span></button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="security-note"><span class="status-dot status-dot--muted"></span><span><strong data-i18n="authOptional">可选鉴权</strong><small id="auth-state" data-i18n="authNone">未设置令牌</small></span></div>
+        <button class="button button--quiet button--full" type="button" id="open-token"><span data-i18n="configureToken">配置访问令牌</span></button>
+      </div>
+    </aside>
+
+    <div class="mobile-scrim" id="mobile-scrim" hidden></div>
+    <main id="main-content" tabindex="-1">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="menu-button" type="button" aria-label="打开导航" data-i18n-aria-label="openNav" aria-expanded="false" aria-controls="sidebar">☰</button>
+        <div class="page-heading"><p id="page-kicker" data-i18n="overview">总览</p><h1 id="page-title" data-i18n="dashboardTitle">网络运行中心</h1></div>
+        <div class="topbar-actions">
+          <div class="api-indicator" id="api-indicator" title="API"><span class="status-dot status-dot--muted"></span><span id="api-indicator-text" data-i18n="statusUnknown">状态未知</span></div>
+          <button class="lang-switch" id="lang-switch" type="button" aria-label="切换语言" data-i18n-aria-label="switchLanguage"><span id="lang-primary">中</span><span class="lang-divider">/</span><span id="lang-secondary">EN</span></button>
+          <button class="icon-button" id="refresh-button" type="button" aria-label="刷新当前页面" data-i18n-aria-label="refreshPage">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="view is-active" data-view="dashboard" aria-labelledby="dashboard-heading">
+          <div class="hero-panel">
+            <div class="hero-copy">
+              <span class="eyebrow"><span class="eyebrow-line"></span><span data-i18n="liveControl">实时控制面</span></span>
+              <h2 id="dashboard-heading" data-i18n="heroTitle">清晰掌握每一条蜂窝链路</h2>
+              <p data-i18n="heroBody">从射频进程到短信与语音服务，在一个可信视图中观察真实状态。</p>
+              <div class="hero-actions">
+                <button class="button button--primary" type="button" data-go="cell" data-i18n="manageCell">管理小区</button>
+                <button class="button button--secondary" type="button" data-go="help" data-i18n="readGuide">查看接入指南</button>
+              </div>
+            </div>
+            <div class="signal-art" aria-hidden="true">
+              <div class="signal-orbit signal-orbit--one"></div><div class="signal-orbit signal-orbit--two"></div><div class="signal-orbit signal-orbit--three"></div>
+              <div class="signal-core"><span></span><span></span><span></span><i></i></div>
+              <span class="signal-label signal-label--top">GSM</span><span class="signal-label signal-label--right">IP</span><span class="signal-label signal-label--left">SIP</span>
+            </div>
+          </div>
+
+          <div class="metric-grid" id="metric-grid" aria-live="polite">
+            <article class="metric-card"><span class="metric-icon metric-icon--teal">⌁</span><div><p data-i18n="controlPlane">控制面</p><strong id="metric-health">—</strong><small id="metric-time" data-i18n="awaitingData">等待数据</small></div></article>
+            <article class="metric-card"><span class="metric-icon metric-icon--blue">◉</span><div><p data-i18n="cellState">小区状态</p><strong id="metric-cell">—</strong><small id="metric-cell-sub">—</small></div></article>
+            <article class="metric-card"><span class="metric-icon metric-icon--amber">▱</span><div><p data-i18n="smsService">短信服务</p><strong id="metric-sms">—</strong><small data-i18n="submissionNotDelivery">提交状态不代表送达</small></div></article>
+            <article class="metric-card"><span class="metric-icon metric-icon--violet">⌕</span><div><p data-i18n="voiceService">语音服务</p><strong id="metric-voice">—</strong><small data-i18n="asteriskReadiness">Asterisk 就绪性</small></div></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel topology-panel">
+              <div class="panel-heading"><div><span class="eyebrow" data-i18n="serviceChain">服务链</span><h3 data-i18n="topologyTitle">小区进程拓扑</h3></div><span class="badge badge--neutral" id="topology-state" data-i18n="statusUnknown">状态未知</span></div>
+              <div class="topology" id="topology">
+                <svg class="topology-lines" viewBox="0 0 800 220" preserveAspectRatio="none" aria-hidden="true"><path d="M95 109H239M337 109H463M561 109H705"/><path d="M400 109V190"/></svg>
+                <button class="topology-node" data-process="transceiver" type="button"><span class="node-pulse"></span><span class="node-glyph">RF</span><strong>Transceiver</strong><small data-i18n="radioTransport">射频传输</small></button>
+                <button class="topology-node" data-process="openbts" type="button"><span class="node-pulse"></span><span class="node-glyph">BTS</span><strong>OpenBTS</strong><small data-i18n="gsmStack">GSM 协议栈</small></button>
+                <button class="topology-node" data-process="sipauthserve" type="button"><span class="node-pulse"></span><span class="node-glyph">ID</span><strong>SipAuthServe</strong><small data-i18n="subscriberAuth">签约鉴权</small></button>
+                <button class="topology-node" data-process="asterisk" type="button"><span class="node-pulse"></span><span class="node-glyph">SIP</span><strong>Asterisk</strong><small data-i18n="voiceRouting">语音路由</small></button>
+                <button class="topology-node topology-node--branch" data-process="smqueue" type="button"><span class="node-pulse"></span><span class="node-glyph">SMS</span><strong>Smqueue</strong><small data-i18n="messageQueue">消息队列</small></button>
+              </div>
+              <p class="panel-note" data-i18n="readinessCaveat">进程存活与 ready 只描述管理进程，不等同于射频验收。</p>
+            </article>
+            <article class="panel event-panel">
+              <div class="panel-heading"><div><span class="eyebrow" data-i18n="now">当前</span><h3 data-i18n="systemFacts">系统信息</h3></div></div>
+              <dl class="fact-list">
+                <div><dt data-i18n="version">版本</dt><dd id="fact-version">—</dd></div>
+                <div><dt data-i18n="revision">修订</dt><dd id="fact-revision">—</dd></div>
+                <div><dt data-i18n="startedAt">启动时间</dt><dd id="fact-started">—</dd></div>
+                <div><dt data-i18n="networkName">网络名称</dt><dd id="fact-name">—</dd></div>
+                <div><dt data-i18n="band">频段</dt><dd id="fact-band">—</dd></div>
+              </dl>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" data-view="cell" aria-labelledby="cell-heading">
+          <div class="section-heading"><div><span class="eyebrow" data-i18n="radioOperations">射频操作</span><h2 id="cell-heading" data-i18n="cellTitle">小区控制</h2><p data-i18n="cellIntro">明确选择启动来源。硬件操作只会在您提交后执行。</p></div><div class="section-actions"><span class="badge badge--neutral" id="cell-page-state">—</span><button class="button button--danger" id="stop-cell" type="button" data-i18n="stopCell">停止小区</button></div></div>
+          <div class="cell-layout">
+            <article class="panel control-panel">
+              <div class="segmented" role="tablist" aria-label="启动方式" data-i18n-aria-label="startMode">
+                <button type="button" role="tab" aria-selected="true" data-mode="preset" data-i18n="fromPreset">使用预设</button>
+                <button type="button" role="tab" aria-selected="false" data-mode="custom" data-i18n="customConfig">自定义配置</button>
+                <button type="button" role="tab" aria-selected="false" data-mode="saved" data-i18n="savedProfile">上次保存配置</button>
+              </div>
+              <form id="preset-start-form" class="start-pane is-active" data-pane="preset">
+                <div class="form-heading"><h3 data-i18n="choosePreset">选择启动预设</h3><p data-i18n="presetStartHint">启动会进行输入、硬件与 NAT 检查；不会启用自动重启。</p></div>
+                <label class="field"><span data-i18n="preset">预设</span><select id="start-preset" name="preset_id" required><option value="" data-i18n="loading">正在加载…</option></select></label>
+                <div class="preview-card" id="start-preset-preview" data-i18n="selectPresetPreview">选择一项以查看配置摘要</div>
+                <button class="button button--primary button--wide" type="submit" data-i18n="startWithPreset">使用预设启动</button>
+              </form>
+              <form id="custom-start-form" class="start-pane" data-pane="custom">
+                <div class="form-heading"><h3 data-i18n="customParameters">自定义参数</h3><p data-i18n="customHint">全部字段严格按 API 结构提交，成功启动后成为上次配置。</p></div>
+                <div class="form-grid cell-fields"></div>
+                <button class="button button--primary button--wide" type="submit" data-i18n="startCustom">使用自定义配置启动</button>
+              </form>
+              <form id="saved-start-form" class="start-pane" data-pane="saved">
+                <div class="form-heading"><h3 data-i18n="reuseProfile">复用上次保存配置</h3><p data-i18n="savedHint">发送空配置对象，服务端将验证并加载保存的完整配置。</p></div>
+                <div class="preview-card" id="saved-profile-preview" data-i18n="loading">正在加载…</div>
+                <button class="button button--primary button--wide" type="submit" data-i18n="startSaved">启动保存配置</button>
+              </form>
+            </article>
+            <aside class="panel process-panel"><div class="panel-heading"><div><span class="eyebrow" data-i18n="liveState">实时状态</span><h3 data-i18n="managedProcesses">托管进程</h3></div></div><ul class="process-list" id="cell-process-list"></ul><p class="panel-note" id="cell-poll-note" data-i18n="pollingNote">页面可见时每 12 秒更新，不会叠加请求。</p></aside>
+          </div>
+          <details class="panel advanced-panel">
+            <summary><span><strong data-i18n="advancedConfig">高级 OpenBTS 配置</strong><small data-i18n="advancedConfigHint">读取全部原生配置；只编辑 API 允许的八个键</small></span><span aria-hidden="true">⌄</span></summary>
+            <div class="advanced-content">
+              <div class="advanced-toolbar"><div><span class="eyebrow" data-i18n="apiWritable">API 可写字段</span><h3 data-i18n="radioIdentityConfig">无线与身份配置</h3></div><button class="button button--secondary" type="button" id="load-config" data-i18n="loadConfig">加载配置</button></div>
+              <form id="config-form"><div class="form-grid" id="config-edit-fields"></div><button class="button button--primary" type="submit" data-i18n="saveConfig">保存已更改配置</button><p class="form-disclaimer" data-i18n="configStopOnly">配置只可在小区停止时修改；提交前会要求确认。</p></form>
+              <details class="raw-config"><summary data-i18n="allNativeConfig">查看全部只读原生配置</summary><div class="table-wrap"><table><thead><tr><th data-i18n="configKey">配置键</th><th data-i18n="value">值</th></tr></thead><tbody id="raw-config-body"></tbody></table></div></details>
+            </div>
+          </details>
+        </section>
+
+        <section class="view" data-view="presets" aria-labelledby="presets-heading">
+          <div class="section-heading"><div><span class="eyebrow" data-i18n="configurationLibrary">配置库</span><h2 id="presets-heading" data-i18n="presetsTitle">启动预设</h2><p data-i18n="presetsIntro">创建、检查和维护服务端真实保存的完整配置。</p></div><button class="button button--primary" id="create-preset" type="button" data-i18n="newPreset">新建预设</button></div>
+          <div id="presets-grid" class="preset-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="view" data-view="subscribers" aria-labelledby="subscribers-heading">
+          <div class="section-heading"><div><span class="eyebrow" data-i18n="identityAndAttach">身份与接入</span><h2 id="subscribers-heading" data-i18n="subscribersTitle">连接与签约</h2><p data-i18n="subscribersIntro">连接是易失观测；签约与号码绑定是持久注册数据。</p></div></div>
+          <div class="segmented segmented--compact" role="tablist">
+            <button type="button" role="tab" aria-selected="true" data-subtab="connections" data-i18n="observedConnections">连接观测</button>
+            <button type="button" role="tab" aria-selected="false" data-subtab="registry" data-i18n="subscriberRegistry">签约库</button>
+          </div>
+          <div class="subview is-active" data-subview="connections"><div class="scope-note"><span>i</span><p data-i18n="connectionCaveat">TMSI/SGSN 当前快照包含注册尝试，不代表手机在线或已建立 PDP。</p></div><div class="table-panel"><div class="table-meta"><strong data-i18n="observedConnections">连接观测</strong><span id="connections-count">—</span></div><div class="table-wrap"><table><thead><tr><th>IMSI</th><th>IMEI</th><th data-i18n="number">号码</th><th>IP</th><th data-i18n="auth">鉴权</th><th data-i18n="rejectCode">拒绝码</th></tr></thead><tbody id="connections-body"></tbody></table></div><div class="pagination" data-page-for="connections"></div></div></div>
+          <div class="subview" data-subview="registry"><div class="scope-note"><span>i</span><p data-i18n="registryCaveat">号码写入不制作 SIM；仅可管理已存在的 15 位 IMSI 签约记录。</p></div><div class="table-panel"><div class="table-meta"><strong data-i18n="subscriberRegistry">签约库</strong><span id="subscribers-count">—</span></div><div class="table-wrap"><table><thead><tr><th>IMSI</th><th data-i18n="boundNumber">绑定号码</th><th data-i18n="consistency">一致性</th><th data-i18n="actions">操作</th></tr></thead><tbody id="subscribers-body"></tbody></table></div><div class="pagination" data-page-for="subscribers"></div></div></div>
+        </section>
+
+        <section class="view" data-view="sms" aria-labelledby="sms-heading">
+          <div class="section-heading"><div><span class="eyebrow" data-i18n="messaging">消息服务</span><h2 id="sms-heading" data-i18n="smsTitle">短信</h2><p data-i18n="smsIntro">安全 ASCII 下发与本次启动范围内的日志观测。</p></div></div>
+          <div class="sms-layout">
+            <article class="panel compose-panel"><div class="panel-heading"><div><span class="eyebrow" data-i18n="submit">提交</span><h3 data-i18n="sendSms">发送短信</h3></div></div><form id="sms-form"><label class="field"><span>IMSI</span><input name="imsi" inputmode="numeric" autocomplete="off" minlength="15" maxlength="15" pattern="[0-9]{15}" required placeholder="001010000000000"></label><label class="field"><span data-i18n="senderNumber">发送方号码</span><input name="sender" inputmode="numeric" autocomplete="off" minlength="2" maxlength="15" pattern="[0-9]{2,15}" required placeholder="10000"></label><label class="field"><span data-i18n="messageText">短信正文</span><textarea name="text" rows="5" maxlength="159" required aria-describedby="sms-char-note"></textarea><small id="sms-char-note"><span data-i18n="safeAsciiOnly">仅限安全 ASCII 字符</span> · <span id="sms-char-count">0 / 159 bytes</span></small></label><button class="button button--primary button--wide" type="submit" data-i18n="submitSms">提交短信</button><p class="form-disclaimer" data-i18n="smsDisclaimer">HTTP 202 仅表示已提交，不表示已送达。</p></form></article>
+            <article class="panel history-panel"><div class="panel-heading"><div><span class="eyebrow" data-i18n="currentStartScope">本次启动范围</span><h3 data-i18n="smsObservations">短信观测</h3></div><span class="badge badge--neutral" id="sms-session">—</span></div><div id="sms-list" class="timeline"></div><div class="pagination" data-page-for="sms"></div></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="calls" aria-labelledby="calls-heading">
+          <div class="section-heading"><div><span class="eyebrow" data-i18n="telephony">电话服务</span><h2 id="calls-heading" data-i18n="callsTitle">通话</h2><p data-i18n="callsIntro">Asterisk 活动通道快照与 CDR 历史记录。</p></div></div>
+          <div class="segmented segmented--compact" role="tablist"><button type="button" role="tab" aria-selected="true" data-calltab="active" data-i18n="activeCalls">活动通话</button><button type="button" role="tab" aria-selected="false" data-calltab="history" data-i18n="callHistory">通话历史</button></div>
+          <div class="subview is-active" data-callview="active"><div id="active-calls" class="call-grid"></div><div class="pagination" data-page-for="calls"></div></div>
+          <div class="subview" data-callview="history"><div class="table-panel"><div class="table-meta"><strong data-i18n="callHistory">通话历史</strong><span id="call-history-count">—</span></div><div class="table-wrap"><table><thead><tr><th data-i18n="startedAt">开始时间</th><th data-i18n="source">来源</th><th data-i18n="destination">目标</th><th data-i18n="duration">时长</th><th data-i18n="billed">计费</th><th data-i18n="result">结果</th></tr></thead><tbody id="call-history-body"></tbody></table></div><div class="pagination" data-page-for="callHistory"></div></div></div>
+        </section>
+
+        <section class="view" data-view="network" aria-labelledby="network-heading">
+          <div class="section-heading"><div><span class="eyebrow" data-i18n="packetData">分组数据</span><h2 id="network-heading" data-i18n="networkTitle">网络与 NAT</h2><p data-i18n="networkIntro">查询或显式设置受管 MASQUERADE 规则。IPv4 转发状态只读。</p></div></div>
+          <div class="network-layout">
+            <article class="panel nat-card"><div class="nat-visual" aria-hidden="true"><span class="nat-node">GSM</span><i></i><span class="nat-gateway">NAT</span><i></i><span class="nat-node">WAN</span></div><dl class="fact-list fact-list--large"><div><dt data-i18n="interface">接口</dt><dd id="network-iface">—</dd></div><div><dt data-i18n="managedRule">受管规则</dt><dd id="network-rule">—</dd></div><div><dt data-i18n="ipv4Forwarding">IPv4 转发</dt><dd id="network-forwarding">—</dd></div><div><dt data-i18n="persistence">持久化</dt><dd id="network-persisted">—</dd></div></dl></article>
+            <article class="panel network-control"><div class="panel-heading"><div><span class="eyebrow" data-i18n="explicitAction">显式操作</span><h3 data-i18n="queryOrApply">查询或应用规则</h3></div></div><form id="network-query-form"><label class="field"><span data-i18n="containerInterface">容器内接口</span><input name="iface" autocomplete="off" placeholder="eth0"><small data-i18n="ifaceHint">留空时由服务端使用上次配置。</small></label><button class="button button--secondary button--wide" type="submit" data-i18n="queryRule">查询规则</button></form><hr><form id="network-set-form"><label class="field"><span data-i18n="interfaceToApply">要应用的接口</span><input name="iface" autocomplete="off" required placeholder="eth0"></label><button class="button button--primary button--wide" type="submit" data-i18n="applyNat">应用运行时 NAT</button><p class="form-disclaimer" data-i18n="networkWarning">只允许在小区停止时设置；规则不会持久化，也不会修改 sysctl。</p></form></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="help" aria-labelledby="help-heading">
+          <div class="section-heading"><div><span class="eyebrow" data-i18n="fieldGuide">现场指南</span><h2 id="help-heading" data-i18n="helpTitle">接入与诊断</h2><p data-i18n="helpIntro">基于当前项目契约的简明操作参考。</p></div></div>
+          <div class="help-grid">
+            <article class="panel guide-card guide-card--wide"><span class="guide-number">01</span><div><h3 data-i18n="apnSettings">手机 APN 设置</h3><p data-i18n="apnIntro">内置 SGSN/GGSN 会解析 APN，但不按 APN 选择或拒绝路由。</p><dl class="guide-values"><div><dt>APN</dt><dd><code>internet</code></dd></div><div><dt data-i18n="apnType">APN 类型</dt><dd><code>default</code></dd></div><div><dt data-i18n="protocol">协议 / 漫游协议</dt><dd>IPv4</dd></div><div><dt data-i18n="credentials">用户名 / 密码 / 鉴权</dt><dd data-i18n="emptyNone">留空 / 无</dd></div><div><dt data-i18n="mobileData">移动数据 / 数据漫游</dt><dd data-i18n="enableForTestSim">为测试 SIM 开启</dd></div></dl></div></article>
+            <article class="panel guide-card"><span class="guide-number">02</span><div><h3 data-i18n="smsShortcodes">短信服务码</h3><div class="number-chip"><strong>101</strong><span data-i18n="bindBySms">发送 7–10 位号码以签约</span></div><div class="number-chip"><strong>411</strong><span data-i18n="queryInfoSms">发送 “info” 查询系统/号码</span></div><p class="panel-note" data-i18n="shortcodeNote">短信原生签约长度规则不同于 API 的 2–15 位规则。</p></div></article>
+            <article class="panel guide-card"><span class="guide-number">03</span><div><h3 data-i18n="voiceDiagnostics">语音诊断号码</h3><div class="number-chip"><strong>2600</strong><span data-i18n="echoTest">回声测试，按 # 结束，最长 60 秒</span></div><div class="number-chip"><strong>2602</strong><span data-i18n="toneTest">数字毫瓦测试音，最长 30 秒</span></div><p class="panel-note" data-i18n="voiceNoPstn">本实验拨号计划无 PSTN 或紧急呼叫保证。</p></div></article>
+            <article class="panel guide-card guide-card--dark"><span class="guide-number">04</span><div><h3 data-i18n="systemVersion">系统版本</h3><strong class="version-display" id="help-version">—</strong><p><span data-i18n="revision">修订</span> <code id="help-revision">—</code></p><p data-i18n="versionLiveHint">数据来自实时健康接口；未就绪时保持未知。</p></div></article>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false"></div>
+
+  <dialog id="token-dialog" class="modal">
+    <form method="dialog" id="token-form">
+      <div class="modal-heading"><div><span class="eyebrow" data-i18n="accessControl">访问控制</span><h2 data-i18n="bearerToken">Bearer 令牌</h2></div><button class="icon-button" value="cancel" aria-label="关闭" data-i18n-aria-label="close">×</button></div>
+      <p data-i18n="tokenPrivacy">令牌只保存在当前内存，或由您选择保存到本次浏览器会话；永不写入 localStorage。</p>
+      <label class="field"><span data-i18n="token">令牌</span><input id="token-input" type="password" autocomplete="off" spellcheck="false"></label>
+      <label class="check-field"><input id="token-session" type="checkbox"><span data-i18n="rememberSession">仅在本次会话中记住</span></label>
+      <div class="modal-actions"><button class="button button--quiet" type="button" id="clear-token" data-i18n="clearToken">清除令牌</button><span class="spacer"></span><button class="button button--secondary" value="cancel" data-i18n="cancel">取消</button><button class="button button--primary" value="default" data-i18n="save">保存</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="modal modal--small">
+    <form method="dialog"><div class="confirm-icon" aria-hidden="true">!</div><h2 id="confirm-title">—</h2><p id="confirm-message">—</p><div class="modal-actions modal-actions--end"><button class="button button--secondary" value="cancel" data-i18n="cancel">取消</button><button class="button button--danger" value="confirm" id="confirm-action" data-i18n="confirm">确认</button></div></form>
+  </dialog>
+
+  <dialog id="preset-dialog" class="modal modal--large">
+    <form method="dialog" id="preset-form"><div class="modal-heading"><div><span class="eyebrow" data-i18n="configurationLibrary">配置库</span><h2 id="preset-dialog-title" data-i18n="newPreset">新建预设</h2></div><button class="icon-button" value="cancel" aria-label="关闭" data-i18n-aria-label="close">×</button></div><div class="form-grid preset-meta"><label class="field"><span data-i18n="presetId">预设 ID</span><input name="id" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" autocomplete="off"></label><label class="field"><span data-i18n="presetName">预设名称</span><input name="name" required maxlength="128"></label><label class="field field--full"><span data-i18n="description">描述</span><textarea name="description" rows="2" maxlength="2048"></textarea></label></div><div class="form-grid cell-fields"></div><div class="modal-actions modal-actions--end"><button class="button button--secondary" value="cancel" data-i18n="cancel">取消</button><button class="button button--primary" value="default" data-i18n="savePreset">保存预设</button></div></form>
+  </dialog>
+
+  <dialog id="number-dialog" class="modal modal--small">
+    <form method="dialog" id="number-form"><div class="modal-heading"><div><span class="eyebrow" data-i18n="subscriberRegistry">签约库</span><h2 data-i18n="bindNumber">绑定号码</h2></div><button class="icon-button" value="cancel" aria-label="关闭" data-i18n-aria-label="close">×</button></div><p><span>IMSI</span> <code id="number-imsi">—</code></p><label class="field"><span data-i18n="number">号码</span><input name="number" inputmode="numeric" pattern="[0-9]{2,15}" minlength="2" maxlength="15" required autocomplete="off"></label><p class="form-disclaimer" data-i18n="reservedNumbers">101、411、111、112、911、2600、2602 为保留号码。</p><div class="modal-actions modal-actions--end"><button class="button button--secondary" value="cancel" data-i18n="cancel">取消</button><button class="button button--primary" value="default" data-i18n="bind">绑定</button></div></form>
+  </dialog>
+
+  <template id="cell-fields-template">
+    <label class="field"><span>ARFCNs</span><input name="arfcns" value="1" readonly required></label>
+    <label class="field"><span>C0</span><input name="c0" inputmode="numeric" pattern="[0-9]+" required></label>
+    <label class="field"><span data-i18n="band">频段</span><select name="band" required><option value="900">GSM 900</option><option value="1800">DCS 1800</option></select></label>
+    <label class="field"><span>MCC</span><input name="mcc" inputmode="numeric" pattern="[0-9]{3}" minlength="3" maxlength="3" required></label>
+    <label class="field"><span>MNC</span><input name="mnc" inputmode="numeric" pattern="[0-9]{2,3}" minlength="2" maxlength="3" required></label>
+    <label class="field"><span>LAC</span><input name="lac" inputmode="numeric" pattern="[0-9]+" required></label>
+    <label class="field"><span>CI</span><input name="ci" inputmode="numeric" pattern="[0-9]+" required></label>
+    <label class="field"><span data-i18n="shortName">网络短名</span><input name="short_name" required></label>
+    <label class="field field--full"><span data-i18n="interface">接口</span><input name="network" required placeholder="eth0"></label>
+  </template>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

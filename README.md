@@ -15,23 +15,24 @@ through one versioned REST API. Release 2.1 keeps only the standardized
 `/api/v1` surface and removes the ad-hoc root endpoints and project-owned Python
 management code.
 
-> **2.1 status / 状态：** verified at 2026-09-08 18:42 HKT:
-> image `gsm-system:2.1`, revision `8466188416a7`, management healthy, cell stopped
-> and RF off. Native Chinese UCS-2 SMS observations, bounded transient UHD RX
-> timeout recovery and built-in 2600/2602 voice routes are included. Four isolated
-> image suites, native regression/negative-control tests and CI passed.
-> Three bindings and raw SMS history were preserved; obsolete GSM images and
-> containers were removed, build cache is 0 B. Phone-to-phone/API SMS latency,
-> radio call reliability and packet-data Internet still require live acceptance.
+> **2.1 / 当前发布线：** Web and Go API share one `gsm-system:2.1` container.
+> Default Web port is `8080`; independent API `8082` is opt-in. Container and RF
+> startup remain explicit. Runtime health, radio acceptance and release readiness
+> are separate states; see the dated [acceptance record](docs/RELEASE-2.1.md).
 >
-> 2026-09-08 18:42 HKT 验证修复版健康，镜像固定为 `gsm-system:2.1`，小区及射频停止。
-> 已包含原生中文短信解码、短暂 UHD 接收超时的有限重试及 2600/2602 语音路由；四套
-> 镜像测试、原生回归/旧版负向对照及 CI 通过。三条绑定和原始短信日志完整，旧 GSM
-> 镜像与容器已清理，构建缓存为零。短信延迟、空口互拨可靠性及上网仍待真机验收。
-> 短信保持本次小区启动范围，默认东八区可由启动 `TZ` 自定义。
-> 详见 [发布记录](docs/RELEASE-2.1.md)。
+> Web 与 Go API 同镜像同容器，默认仅开放 Web，可选独立 API；容器不随开机自动启动，
+> 页面不自动启动射频。进程健康、无线真机验收和正式发版分别记录，不相互替代。
+> 版本继续使用 2.1，双语操作说明见 [Web 管理台](docs/WEB-CONSOLE.md)。
 
 ## Highlights / 主要特性
+
+- A bilingual, responsive Web console ships inside the Go binary and the same
+  container. Open `http://HOST:8080`; no CDN, Node runtime or extra proxy service.
+  中英双语响应式管理台内嵌 Go 二进制，与后端同容器，无 CDN、Node 运行时或额外代理。
+- By default only Web is published. Set `GSM_EXPOSE_API=true` in `.env` and use
+  the deployment script to additionally expose API `8082` for Postman/integrations.
+  默认仅开放 Web，按需通过启动配置同时发布独立 API；同源 API 仍使用相同 Bearer 鉴权。
+  See [Web guide / 界面指南](docs/WEB-CONSOLE.md) and [release workflow / 发版流程](docs/RELEASING.md).
 
 - Go standard-library HTTP control plane with a uniform
   `code/message/data/request_id` envelope and `X-Request-ID`.
@@ -55,7 +56,8 @@ their native C/C++ implementations. 运行时不包含 Python 管理程序；UHD
 
 ## API overview / API 概览
 
-Base URL: `http://HOST:8082/api/v1`
+Base URL: `http://HOST:8080/api/v1` (Web same-origin / Web 同源入口).
+With explicit standalone API exposure / 显式开放独立 API 后：`http://HOST:8082/api/v1`.
 
 | Resource / 资源 | Methods / 方法 | Purpose / 用途 |
 |---|---|---|

@@ -13,7 +13,7 @@ re-importing JSON does not update the server or its runtime configuration.
 
 | Variable / 变量 | Purpose / 用途 |
 |---|---|
-| `baseUrl` | `http://HOST:8082`, **without** `/api/v1` or a trailing slash / 不带接口前缀和尾斜杠 |
+| `baseUrl` | `http://HOST:8080` by default, or `http://HOST:8082` when independent API exposure is enabled; **without** `/api/v1` or a trailing slash / 默认 Web 入口或显式开放的独立 API，不带接口前缀和尾斜杠 |
 | `token` | Empty if server auth is disabled; otherwise its configured Bearer token / 对应服务器可选鉴权 |
 | `start_preset_id` | ID used by preset start, initially `0` / 用于按预设启动 |
 | `default_preset_id` | Read-only lookup of a built-in preset, initially `0` / 只读查询默认预设 |

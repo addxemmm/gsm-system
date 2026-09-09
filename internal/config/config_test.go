@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,99 @@ func TestEnvironmentOverlayAndPrivateSocketDisable(t *testing.T) {
 	}
 	if cfg.SyslogSocket != "" || cfg.LogDir != filepath.Join(dir, "log") || cfg.ListenAddr != "127.0.0.1:8082" {
 		t.Fatalf("bad overlay: %+v", cfg)
+	}
+}
+
+func TestWebListenerDefaultsAndEnvironment(t *testing.T) {
+	t.Setenv("TZ", "Asia/Shanghai")
+	t.Setenv("GSM_WEB_LISTEN", "127.0.0.1:9090")
+	t.Setenv("GSM_WEB_ENABLED", "false")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebEnabled || cfg.WebListen != "127.0.0.1:9090" {
+		t.Fatalf("bad web overlay: %+v", cfg)
+	}
+
+	t.Setenv("GSM_WEB_ENABLED", "true")
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.WebEnabled || cfg.WebListen != "127.0.0.1:9090" {
+		t.Fatalf("bad enabled web overlay: %+v", cfg)
+	}
+}
+
+func TestWebPublicOriginValidationAndEnvironment(t *testing.T) {
+	t.Setenv("TZ", "Asia/Shanghai")
+	for _, tc := range []struct {
+		origin string
+		valid  bool
+	}{
+		{origin: "", valid: true},
+		{origin: "http://console.example", valid: true},
+		{origin: "https://console.example:8443", valid: true},
+		{origin: "https://[2001:db8::1]", valid: true},
+		{origin: "console.example"},
+		{origin: "ftp://console.example"},
+		{origin: "https://user@console.example"},
+		{origin: "https://console.example/"},
+		{origin: "https://console.example/path"},
+		{origin: "https://console.example?q=1"},
+		{origin: "https://console.example#fragment"},
+		{origin: " https://console.example"},
+	} {
+		t.Run(tc.origin, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "config.yaml")
+			body := "web_public_origin: " + strconv.Quote(tc.origin) + "\n"
+			if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(p)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+		})
+	}
+
+	t.Setenv("GSM_WEB_PUBLIC_ORIGIN", "https://public.example")
+	cfg, err := Load("")
+	if err != nil || cfg.WebPublicOrigin != "https://public.example" {
+		t.Fatalf("origin=%q err=%v", cfg.WebPublicOrigin, err)
+	}
+}
+
+func TestListenerConfigurationValidation(t *testing.T) {
+	t.Setenv("TZ", "Asia/Shanghai")
+	for _, tc := range []struct {
+		name, api, web, enabled string
+		valid                   bool
+	}{
+		{name: "valid", api: "127.0.0.1:0", web: "[::1]:8080", enabled: "true", valid: true},
+		{name: "invalid api", api: "localhost", web: ":8080", enabled: "true"},
+		{name: "invalid api port", api: ":70000", web: ":8080", enabled: "true"},
+		{name: "invalid web", api: ":8082", web: "localhost", enabled: "true"},
+		{name: "empty web while enabled", api: ":8082", web: "", enabled: "true"},
+		{name: "disabled ignores web", api: ":8082", web: "not-an-address", enabled: "false", valid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "listen_addr: " + strconv.Quote(tc.api) + "\nweb_listen: " + strconv.Quote(tc.web) + "\nweb_enabled: " + tc.enabled + "\n"
+			p := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(p)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+		})
+	}
+
+	t.Setenv("GSM_WEB_ENABLED", "sometimes")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "GSM_WEB_ENABLED") {
+		t.Fatalf("expected boolean environment error, got %v", err)
 	}
 }
 

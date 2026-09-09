@@ -1,4 +1,7 @@
 # gsm-system 2.1 production compose (Ubuntu 22.04 + OpenBTS 5 + UHD 4.1).
+# The deployment script reads this resolved input to select the API overlay.
+# 部署脚本读取此插值开关选择 API overlay；Compose 本身不据此发布端口。
+x-gsm-expose-api: "${GSM_EXPOSE_API:-false}"
 services:
   gsm-system:
     build:
@@ -22,9 +25,10 @@ services:
     networks:
       - gsm-bridge
     ports:
-      # Only the management API crosses the container boundary. OpenBTS,
-      # Asterisk, smqueue, sipauthserve, RTP, TRX and CLI stay intra-container.
-      - "${GSM_BIND_ADDRESS:-0.0.0.0}:8082:8082/tcp"
+      # Default: publish the Web console only. Its same-origin /api/v1 uses
+      # the same optional Bearer authentication; hiding a port is not auth.
+      # 默认仅发布 Web；同源 API 使用同一鉴权，隐藏端口不等于鉴权。
+      - "${GSM_BIND_ADDRESS:-0.0.0.0}:${GSM_WEB_PORT:-8080}:8080/tcp"
     sysctls:
       # GPRS packets enter via sgsntun and leave via eth0 in this namespace.
       net.ipv4.ip_forward: "1"
@@ -50,8 +54,12 @@ services:
       # 容器、原生日志与 API 使用统一时区；CDR 持久记录仍为 UTC。
       TZ: "${TZ:-Asia/Shanghai}"
       GSM_CONFIG: /app/configs/app.yaml
-      # Canonical GSM API port (v2 retired, :8082 is free).
-      GSM_LISTEN: "${GSM_LISTEN:-:8082}"
+      # Independent API is loopback-only unless the API Compose overlay is used.
+      # 独立 API 默认仅容器内回环监听；显式启用 overlay 才对外开放。
+      GSM_LISTEN: "127.0.0.1:8082"
+      GSM_WEB_LISTEN: ":8080"
+      GSM_WEB_ENABLED: "true"
+      GSM_WEB_PUBLIC_ORIGIN: "${GSM_WEB_PUBLIC_ORIGIN:-}"
       # Optional Bearer auth from repository-root .env: blank disables it.
       # 可选 Bearer 鉴权来自项目根 .env：留空关闭，非空启用；不要提交密钥。
       GSM_API_TOKEN: "${GSM_API_TOKEN:-}"

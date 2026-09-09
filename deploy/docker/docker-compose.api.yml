@@ -1,0 +1,8 @@
+# Optional standalone API publishing; merge AFTER docker-compose.yml.
+# 可选独立 API 端口发布；必须在主 Compose 文件之后合并。
+services:
+  gsm-system:
+    ports:
+      - "${GSM_BIND_ADDRESS:-0.0.0.0}:${GSM_API_PORT:-8082}:8082/tcp"
+    environment:
+      GSM_LISTEN: ":8082"

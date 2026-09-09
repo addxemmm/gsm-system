@@ -7,8 +7,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // Keep IANA zones available in minimal images / 精简镜像内置时区。
@@ -21,10 +24,15 @@ type Config struct {
 	Version    string `yaml:"-"`
 	Revision   string `yaml:"-"`
 	ListenAddr string `yaml:"listen_addr"`
-	Timezone   string `yaml:"timezone"` // IANA name; TZ overrides YAML / TZ 优先于 YAML。
-	DataDir    string `yaml:"data_dir"` // e.g. /data : last_start.json, conf, log live here
-	ConfDir    string `yaml:"conf_dir"` // default DataDir/conf
-	LogDir     string `yaml:"log_dir"`  // default DataDir/log
+	WebEnabled bool   `yaml:"web_enabled"`
+	WebListen  string `yaml:"web_listen"`
+	// WebPublicOrigin is the externally visible http(s) origin when TLS is
+	// terminated before this process. Empty means derive the origin from r.Host.
+	WebPublicOrigin string `yaml:"web_public_origin"`
+	Timezone        string `yaml:"timezone"` // IANA name; TZ overrides YAML / TZ 优先于 YAML。
+	DataDir         string `yaml:"data_dir"` // e.g. /data : last_start.json, conf, log live here
+	ConfDir         string `yaml:"conf_dir"` // default DataDir/conf
+	LogDir          string `yaml:"log_dir"`  // default DataDir/log
 
 	// Binaries (absolute paths inside the gsmsystem-dep image).
 	OpenBTSBin      string `yaml:"openbts_bin"`
@@ -59,6 +67,8 @@ func Default() Config {
 		Version:         "2.1.0",
 		Revision:        "unknown",
 		ListenAddr:      ":8082",
+		WebEnabled:      true,
+		WebListen:       ":8080",
 		Timezone:        "Asia/Shanghai",
 		DataDir:         "/data",
 		OpenBTSBin:      "/OpenBTS/OpenBTS",
@@ -103,6 +113,19 @@ func Load(path string) (Config, error) {
 	if v := os.Getenv("GSM_LISTEN"); v != "" {
 		cfg.ListenAddr = v
 	}
+	if v := os.Getenv("GSM_WEB_LISTEN"); v != "" {
+		cfg.WebListen = v
+	}
+	if raw, ok := os.LookupEnv("GSM_WEB_ENABLED"); ok && strings.TrimSpace(raw) != "" {
+		enabled, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return cfg, fmt.Errorf("GSM_WEB_ENABLED must be true or false: %w", err)
+		}
+		cfg.WebEnabled = enabled
+	}
+	if value, ok := os.LookupEnv("GSM_WEB_PUBLIC_ORIGIN"); ok {
+		cfg.WebPublicOrigin = value
+	}
 	if v, ok := os.LookupEnv("TZ"); ok {
 		cfg.Timezone = v
 	}
@@ -124,6 +147,17 @@ func Load(path string) (Config, error) {
 	if cfg.LogDir == "" {
 		cfg.LogDir = filepath.Join(cfg.DataDir, "log")
 	}
+	if err := validateListenAddress("listen_addr/GSM_LISTEN", cfg.ListenAddr); err != nil {
+		return cfg, err
+	}
+	if cfg.WebEnabled {
+		if err := validateListenAddress("web_listen/GSM_WEB_LISTEN", cfg.WebListen); err != nil {
+			return cfg, err
+		}
+	}
+	if err := validateWebPublicOrigin(cfg.WebPublicOrigin); err != nil {
+		return cfg, err
+	}
 	if cfg.MaxHistoryBytes < 65536 || cfg.MaxHistoryBytes > 64<<20 {
 		return cfg, fmt.Errorf("max_history_bytes must be 65536-67108864")
 	}
@@ -133,6 +167,53 @@ func Load(path string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func validateWebPublicOrigin(origin string) error {
+	if origin == "" {
+		return nil
+	}
+	if strings.TrimSpace(origin) != origin {
+		return fmt.Errorf("web_public_origin/GSM_WEB_PUBLIC_ORIGIN must not contain surrounding whitespace")
+	}
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("web_public_origin/GSM_WEB_PUBLIC_ORIGIN must be an http(s) origin without credentials, path, query, or fragment")
+	}
+	if strings.HasSuffix(u.Host, ":") {
+		return fmt.Errorf("web_public_origin/GSM_WEB_PUBLIC_ORIGIN contains an empty port")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("web_public_origin/GSM_WEB_PUBLIC_ORIGIN contains an invalid port")
+		}
+	}
+	return nil
+}
+
+// validateListenAddress catches configuration mistakes before any receiver,
+// HTTP server, or native process is started. Port zero remains valid for
+// isolated tests and callers that intentionally request an ephemeral port.
+func validateListenAddress(name, address string) error {
+	if address == "" || strings.TrimSpace(address) != address {
+		return fmt.Errorf("%s must be a host:port listen address", name)
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("%s must be a host:port listen address: %w", name, err)
+	}
+	if port == "" {
+		return fmt.Errorf("%s must include a numeric port", name)
+	}
+	if strings.TrimSpace(host) != host || strings.ContainsAny(host, "\x00/\\") {
+		return fmt.Errorf("%s contains an invalid host", name)
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 0 || n > 65535 {
+		return fmt.Errorf("%s contains an invalid port %q", name, port)
+	}
+	return nil
 }
 
 // EnsureDirs creates DataDir/conf/log.

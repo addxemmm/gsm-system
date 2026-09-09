@@ -8,6 +8,7 @@ Release 2.1 uses exactly:
 
 - `deploy/docker/Dockerfile`;
 - `deploy/docker/docker-compose.yml`;
+- optional `deploy/docker/docker-compose.api.yml` for explicit API publishing / 可选独立 API 端口 overlay;
 - Compose project `gsm-system-live`;
 - Compose service `gsm-system`, container `gsmsystem-uhd4`;
 - external volume `docker_gsm-data`;
@@ -43,6 +44,13 @@ For new code/configuration deployment, use the gated release script instead.
 启动小区；发布新代码或配置仍使用带验收门禁的部署脚本。
 
 ## 1. Preconditions / 前置检查
+
+The default published port is Web `8080`; the independent API is unpublished
+and loopback-bound inside the container. Set `GSM_EXPOSE_API=true` in root `.env`
+to let this deployment script also publish API `8082`. Host ports can be changed
+with `GSM_WEB_PORT` and `GSM_API_PORT`. See [WEB-CONSOLE.md](WEB-CONSOLE.md).
+默认仅发布 Web 8080；独立 API 仅容器内回环。根 `.env` 中开启上述开关后，部署脚本
+会合并 API overlay 并发布 8082；两宿主机端口均可配置。测试环境可显式同时开放。
 
 On `HOST`:
 
@@ -294,7 +302,9 @@ acceptance. / Compose 使用只读 `--healthcheck`：小区停止时健康，运
 1. Development: `go test ./...`, `go vet ./...`, Linux cross-build.
 2. Server: all four isolated image suites below, with no production data or RF.
 3. Verify image labels/version, Compose image ID, `/health`, `/cell`, `/profile`;
-   confirm only host TCP 8082 is published and the container has `eth0`.
+   confirm only Web TCP 8080 is published by default (or both Web/API when
+   `GSM_EXPOSE_API=true`), and the container has `eth0`.
+   默认仅 Web 端口；显式开启独立 API 时检查两端口，原生服务端口不发布。
 4. Confirm `/data/state` databases and `/data/log` ownership/modes.
 5. Start one permitted single-ARFCN cell; check process state without treating
    `ready` as RF acceptance.

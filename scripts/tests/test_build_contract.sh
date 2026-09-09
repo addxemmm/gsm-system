@@ -9,8 +9,8 @@ fail() { echo "FAIL [BUILD-CONTRACT] $1" >&2; exit 1; }
 [ "$(tr -d '[:space:]' <VERSION)" = 2.1.0 ] || fail 'VERSION is not 2.1.0'
 [ "$(find deploy/docker -maxdepth 1 -type f -name 'Dockerfile*' | wc -l | tr -d '[:space:]')" = 1 ] || \
   fail 'multiple Dockerfiles remain'
-[ "$(find deploy/docker -maxdepth 1 -type f -name 'docker-compose*.yml' | wc -l | tr -d '[:space:]')" = 1 ] || \
-  fail 'multiple Compose files remain'
+[ "$(find deploy/docker -maxdepth 1 -type f -name 'docker-compose*.yml' | wc -l | tr -d '[:space:]')" = 2 ] || \
+  fail 'expected one production Compose plus optional API overlay'
 
 grep -F 'org.opencontainers.image.version="${VERSION}"' deploy/docker/Dockerfile >/dev/null || fail 'OCI version label missing'
 grep -F 'org.opencontainers.image.revision="${REVISION}"' deploy/docker/Dockerfile >/dev/null || fail 'OCI revision label missing'
@@ -54,8 +54,11 @@ grep -F 'docker_gsm-data' deploy/docker/docker-compose.yml >/dev/null || fail 'e
 if grep -F 'network_mode: host' deploy/docker/docker-compose.yml >/dev/null; then
   fail 'host networking remains enabled'
 fi
-grep -F '${GSM_BIND_ADDRESS:-0.0.0.0}:8082:8082/tcp' deploy/docker/docker-compose.yml >/dev/null || \
-  fail 'management API publication missing'
+grep -F '${GSM_BIND_ADDRESS:-0.0.0.0}:${GSM_WEB_PORT:-8080}:8080/tcp' deploy/docker/docker-compose.yml >/dev/null || \
+  fail 'default Web publication missing'
+grep -F 'GSM_LISTEN: "127.0.0.1:8082"' deploy/docker/docker-compose.yml >/dev/null || fail 'default API is not loopback-only'
+grep -F '${GSM_API_PORT:-8082}:8082/tcp' deploy/docker/docker-compose.api.yml >/dev/null || fail 'optional API publication missing'
+grep -F 'GSM_LISTEN: ":8082"' deploy/docker/docker-compose.api.yml >/dev/null || fail 'API overlay listener missing'
 published_ports=$(awk '
   /^    ports:$/ { in_ports=1; next }
   in_ports && /^    [A-Za-z_][A-Za-z0-9_-]*:/ { in_ports=0 }
