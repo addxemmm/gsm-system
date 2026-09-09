@@ -2,6 +2,70 @@
 
 Version / 版本：`2.1.0`
 
+## Latest deployment: 2026-09-09 09:56 +08:00 / 最新部署
+
+This summary supersedes older deployment identities below; the older sections
+are historical records, not the current container/image inventory.
+以下为当前部署摘要；后文旧标签、回滚容器及部署身份仅是历史记录，不代表当前库存。
+
+- Runtime / 运行版本: `gsm-system:2.1`, binary revision `19a03406d30e`.
+- Image / 镜像: `sha256:b5c0523289d5ce5d23b9b5df79a5e3dcbc6c94820e4353be77ebaf4ecbd50d31`.
+- Fixed the pinned public pager's pre-IMSI GPRS assignment early return; the
+  original-source negative control reproduces the defect. Authentication and
+  CS paging are unchanged. / 修复尚未取得 IMSI 时提前丢弃 GPRS 下行分配的问题，
+  原始源码失败对照可复现；鉴权与普通语音寻呼不变。
+- Explicit cell start now restores the exact missing GSM NAT rule before native
+  launch. The recreated container had no GSM rule; restoring its saved profile
+  added it without a separate network PUT. `rule_present=true` and
+  `ipv4_forwarding=true` were observed. / 新容器原本没有 GSM NAT，显式恢复保存配置
+  后自动补齐，未手动调用网络写接口；规则与转发状态均已核验。
+- Windows Go tests/vet, Linux Go race tests/vet, Postman offline contracts,
+  deployment/build fixtures, native positive/negative regressions, and all four
+  isolated image suites passed. Caller-ID, 2600/2602 local dialplan, persistence,
+  timezone, SMS scope, NAT recovery and preset tests remain green.
+  Windows/Linux Go、竞态、Postman、构建部署样本、原生回归及四组隔离镜像测试均通过；
+  来电显示、测试号码本机路由、持久化、时区、短信范围、NAT 与预设未发现测试回归。
+- Subscriber SQL dump and raw SMS log hashes matched before/after recreation;
+  SQLite integrity was OK, with three subscribers and three number bindings.
+  LTE container/image identity and start/finish timestamps were unchanged.
+  容器重建前后签约库导出和原始短信日志摘要一致；数据库完整，三用户三号码绑定保留；
+  LTE 容器、镜像和运行时间戳未变。
+- The cell was explicitly restored at `2026-09-09T09:56:26+08:00` and reported
+  running/ready, SMS-ready and voice-ready. Container restart policy remains `no`.
+  小区已显式恢复，管理状态全部就绪；容器开机自启仍关闭。
+- Old GSM objects, unused Go/Ubuntu build-base images and build cache were
+  removed. Only the current GSM and untouched LTE images remain; business
+  volumes were retained. / 旧 GSM 对象、无引用构建基础镜像与构建缓存已清理，
+  仅保留当前 GSM 与 LTE 镜像，业务数据卷保留。
+
+**Handset Internet acceptance is pending reattachment.** At the first post-start
+snapshot SGSN had no handset context and the TUN had no received packet. This
+is not evidence that a phone has obtained an IP or accessed the Internet; the
+operator must reconnect a test phone and verify PDP, DNS and an actual page.
+**手机上网仍待重新接入验收。** 首次启动后快照没有手机 SGSN 上下文，TUN 尚无接收
+流量，不将小区就绪或 NAT 恢复等同于手机已上网；需重新接入并验证 PDP、DNS 与网页。
+
+An additional RF observation found repeated RACH clipping with B200 RX gain at
+47 dB. The pinned configuration description recommends 0–10 dB for Ettus rather
+than the 47 dB RAD1 default. RX gain was temporarily changed to 10 dB through
+the native CLI; the subsequent checked log interval contained zero new clipping
+alerts and the cell remained ready. TX power and persistent configuration were
+not changed. This short observation does not establish handset coverage or data
+service quality; recheck with the actual test phones before making it persistent.
+另发现 B200 接收增益沿用 RAD1 的 47 dB 默认值并反复削顶；内置参数说明给 Ettus 的
+参考范围为 0–10 dB。通过原生 CLI 临时降至 10 dB 后，检查区间新增削顶告警为零，
+小区仍就绪；未改变发射功率或持久配置。短时观察不代表手机覆盖或数据质量验收，
+应先结合测试手机确认，再决定是否持久化。
+
+The native TUN reader also lacks an IP-version guard. Four initial 48-byte
+packets were consistent with IPv6 router solicitation being parsed as IPv4,
+but no packet capture confirmed that interpretation. The missing-PDP branch
+only drops the current packet; it does not stop the reader. Do not interpret
+those destination strings as confirmed handset traffic or disable IPv6 globally.
+原生 TUN 读取器还缺少 IP 版本检查：启动时四个 48 字节包与 IPv6 RS 被误作 IPv4
+解析的现象吻合，但未经抓包确认。找不到 PDP 的分支仅丢当前包、不停止读取；
+不要据此把日志目的地址认定为手机流量，也不要全局禁用 IPv6。
+
 ## Release identity / 发布身份
 
 The Go management plane was deployed to the SDR server between
