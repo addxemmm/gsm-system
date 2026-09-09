@@ -9,6 +9,7 @@ HEALTH_RETRIES=${HEALTH_RETRIES:-30}
 ENV_FILE=${GSM_ENV_FILE:-.env}
 BUILD=1
 VERIFY=1
+CLEANUP=1
 EXPOSE_API=0
 
 usage() {
@@ -18,6 +19,7 @@ Usage: ./scripts/deploy_to_ubuntu.sh [options]
   --project-name NAME  Compose project (default: gsm-system-live)
   --skip-build         Start the already-built image
   --skip-health        Do not poll the HTTP health endpoint
+  --skip-cleanup       Keep health gates; leave cleanup to scoped operator commands
   --health-url URL     Health endpoint (default: http://127.0.0.1:8082/api/v1/cell)
   -h, --help           Show help
 
@@ -40,6 +42,7 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --skip-health) VERIFY=0; shift ;;
+    --skip-cleanup) CLEANUP=0; shift ;;
     --health-url)
       [ "$#" -ge 2 ] || { echo "missing value for --health-url" >&2; exit 2; }
       HEALTH_URL=$2
@@ -225,7 +228,7 @@ if [ "$VERIFY" -eq 1 ]; then
 fi
 verify_containers
 
-if [ "$VERIFY" -eq 1 ]; then
+if [ "$VERIFY" -eq 1 ] && [ "$CLEANUP" -eq 1 ]; then
   # Only a fully validated deployment may remove superseded GSM runtime
   # objects. Exact image metadata and Compose/managed labels keep container
   # and image cleanup away from LTE and unrelated workloads. Build cache has
@@ -276,4 +279,7 @@ if [ "$VERIFY" -eq 1 ]; then
   docker builder prune --all --force >/dev/null
   printf 'Validated %s at revision %s; obsolete GSM objects and unused build cache cleaned / 已验收并清理\n' \
     "$GSM_IMAGE" "$REVISION"
+fi
+if [ "$VERIFY" -eq 1 ] && [ "$CLEANUP" -eq 0 ]; then
+  printf 'Validated %s at revision %s; automatic cleanup skipped / 已验收，跳过自动清理\n' "$GSM_IMAGE" "$REVISION"
 fi

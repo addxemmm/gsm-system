@@ -2,6 +2,38 @@
 
 Version / 版本：`2.1.0`
 
+## Latest deployment: 2026-09-09 14:48 +08:00 / 最新部署：统一前后端端口
+
+- Rebuilt and deployed `gsm-system:2.1` from application revision `8ae4b5fc1883`.
+  Image ID: `sha256:c97aeb33c05af1eb745cc44fec3e6ae844ee13b198dfc79a6a21ec426ebd4e05`.
+  / 基于上述最新应用提交重建并部署；后续部署脚本/验收文档提交不改变该应用镜像身份。
+- Web host/container port is now `18082`; independent API stays `8082`. Both
+  remain bound to the existing LAN address for this test installation. Both
+  health endpoints report the same revision and `ok=true`; Web HTML and metadata
+  also respond correctly. / 前端容器内外统一 18082，后端保持 8082，两者仅绑定既有
+  LAN 地址；双入口健康、版本一致，页面及元数据可达。默认发行配置仍仅开放前端。
+- Five final-image suites passed before replacement: caller identity/test numbers,
+  persistence/timezone/auth/CDR, SMS boundaries/deduplication, presets and Web/API.
+  / 替换前五组最终镜像隔离测试全通过，未使用射频、USB 或真实业务数据。
+- Existing OpenBTS and subscriber database SQL dump hashes matched before/after;
+  integrity checks returned `ok`. Token remains blank, timezone is `+0800`,
+  restart policy is `no`, and the cell remains deliberately stopped.
+  / 配置库及签约库 SQL 摘要前后一致、完整性检查通过；保留空 Token、东八区、不自启，
+  小区保持停止；本次未进行手机通话、短信或 GPRS 无线实测。
+- LTE and the separate GSM-sniffer container retained their IDs, image IDs and
+  start timestamps. / LTE 及独立采集容器的容器 ID、镜像 ID、启动时间均未改变。
+- Shared-host review rejected global cleanup. Added and regression-tested
+  `--skip-cleanup`, preserving all image/HTTP/binary-health gates. Deployment used
+  that option; the exact unreferenced old GSM image was subsequently removed.
+  Only one GSM runtime image/container remains, with no rollback container.
+  Shared builder cache was deliberately retained (about 3.6 GB observed), rather
+  than pruning other projects' cache. / 共享主机审查阻止全局清理；新增并验证跳过清理
+  选项且不削弱健康门禁。本次仅精确删除无引用旧 GSM 镜像，GSM 保留单容器单镜像、
+  无回滚容器；共享构建缓存暂留（观测约 3.6 GB），未跨项目全局清除。
+- This is a server-local build, not a replacement of the already-published
+  Docker Hub image or GitHub `v2.1.0` tag. / 此次为服务器本地构建部署，未覆盖已发布
+  Docker Hub 镜像或 GitHub v2.1.0 标签。
+
 ## Published: 2026-09-09 14:11 +08:00 / 已实际发布
 
 - [GitHub Release v2.1.0](https://github.com/addxemmm/gsm-system/releases/tag/v2.1.0)
@@ -64,7 +96,7 @@ See [release operations](RELEASING.md) and [third-party notes](THIRD-PARTY.md).
 分发改为重建干净 SQLite 种子，避免复制历史空闲页，同时附原生许可与对应源码。
 下方 GPRS/手机实测限制仍然保留。本轮发布流程工作不操作现网容器或 LTE。
 
-## Latest deployment: 2026-09-09 12:37 +08:00 / 最新部署：双语 Web 管理台
+## Previous deployment: 2026-09-09 12:37 +08:00 / 前次部署：双语 Web 管理台
 
 - Runtime / 运行镜像: **`gsm-system:2.1`**, source revision **`8d02b2b670b1`**.
   Image ID / 镜像 ID: `sha256:51807bbde23dcb9826309aca6495e603d5ae84c715a7a828eda382c95d4d010a`.

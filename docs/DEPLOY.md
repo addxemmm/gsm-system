@@ -1,5 +1,14 @@
 # Deploy 2.1 / 部署 2.1
 
+On hosts shared with other projects, use `--skip-cleanup` with the deployment
+script to retain all image identity, HTTP and binary-health gates while skipping
+automatic cleanup. Then remove only explicitly verified obsolete GSM objects;
+do not run a global builder prune without confirming its cross-project impact.
+This option does not skip health checks or remove data volumes.
+共享主机部署可加 `--skip-cleanup`：保留镜像身份、HTTP 与二进制健康门禁，仅跳过自动清理。
+随后按精确 ID 清理已核实的旧 GSM 对象；未确认跨项目影响前，不执行全局构建缓存清理。
+此选项不跳过健康检查，也不删除数据卷。
+
 > Development machines edit, test Go, and synchronize committed source only.
 > Docker builds, container changes, SDR probes, and RF acceptance run on the SDR
 > host. 开发机仅编辑、Go 检查与同步；镜像、容器、SDR 与射频操作只在服务器执行。

@@ -209,6 +209,22 @@ if grep -F 'image rm lte:preserve' "$LOG" >/dev/null || grep -F 'volume rm' "$LO
 fi
 echo 'PASS post-health GSM cleanup / 健康验收后清理 GSM 对象'
 
+# Shared hosts can retain every cleanup object without disabling health gates.
+# 共享服务器可跳过自动清理，但必须保留 HTTP 和二进制健康验收。
+: >"$LOG"
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state \
+  FAKE_CLEANUP_FIXTURES=1 "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build --skip-cleanup
+grep -F 'exec fixture-current sh -c' "$LOG" >/dev/null
+grep -F 'exec fixture-current /usr/local/bin/gsm-system --healthcheck' "$LOG" >/dev/null
+if grep -E ' builder prune | image rm | rm old-stopped| image ls -aq' "$LOG" >/dev/null; then
+  echo 'skip-cleanup performed cleanup operations' >&2; exit 1
+fi
+if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state \
+  FAKE_BINARY_HEALTH_FAIL=1 "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build --skip-cleanup; then
+  echo 'skip-cleanup bypassed binary health gate' >&2; exit 1
+fi
+echo 'PASS skip-cleanup retains health gates / 跳过清理仍保留健康门禁'
+
 # Exposure is an explicit env-file/Compose-resolved choice, never eval/source.
 # 独立 API 端口仅由明确配置启用；环境文件不得执行。
 : >"$LOG"
