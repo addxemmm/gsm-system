@@ -7,6 +7,9 @@ cd "$ROOT"
 fail() { echo "FAIL [BUILD-CONTRACT] $1" >&2; exit 1; }
 
 version=$(tr -d '[:space:]' <VERSION)
+if git ls-files --stage | grep -Eq '^160000 .*gsmsystem/a2billing$'; then
+  fail 'retired a2billing gitlink breaks clean authenticated checkout'
+fi
 printf '%s\n' "$version" | grep -Eq '^2\.1\.(0|[1-9][0-9]*)$' || fail 'VERSION must stay on the explicitly supported 2.1 release line'
 [ "$(find deploy/docker -maxdepth 1 -type f -name 'Dockerfile*' | wc -l | tr -d '[:space:]')" = 1 ] || \
   fail 'multiple Dockerfiles remain'

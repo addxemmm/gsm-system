@@ -16,3 +16,7 @@ crash/
 
 # Legacy packaged runtime logs are not source / 旧打包运行日志不属于源码
 /gsmsystem/log/
+# Retired orphan submodule; preserve local copies without publishing a gitlink.
+# 退役的孤立子模块仅保留本地副本，不再发布失效 gitlink。
+/gsmsystem/a2billing/
+/.codex-go-cache-release/
