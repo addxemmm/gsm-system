@@ -2,6 +2,25 @@
 
 Version / 版本：`2.1.0`
 
+## Follow-up: PDP established, radio reliability trial / 后续：PDP 已建立，继续无线可靠性对照
+
+At approximately 10:16–10:24 +08:00 on September 9, a handset reached registered
+SGSN state and obtained PDP addresses. TUN and NAT counters increased in both
+directions; bounded header-only inspection confirmed upstream DNS responses.
+Browsing was still reported unavailable. CS1-only coding improved the observed
+active transfer; idle downlink assignment failures remained, so per-MS slot caps
+were subsequently set to 1/1 pending reattachment and actual browser acceptance.
+See [GPRS recovery](GPRS-RECOVERY.md) for values, original values, and limitations.
+No code or image changed in this follow-up: runtime remains `19a03406d30e` /
+`gsm-system:2.1`, with container auto-start disabled. Temporary packet-diagnostic
+containers automatically removed themselves; no packet files were saved and no
+LTE object was changed by this task.
+9 月 9 日约 10:16–10:24（东八区），手机已注册并取得 PDP 地址，隧道/NAT 有双向流量，
+限时包头检查确认上游 DNS 回包；用户仍反馈网页失败。仅用 CS1 后活跃传输改善，但
+空闲态下行分配仍失败，继而设置每手机 1/1 时隙上限，等待重新接入及实际网页验收。
+配置、原值及边界详见上方文档。本次仅改站点运行配置和文档，未改变代码或镜像，
+仍为 2.1 / 19a03406d30e，关闭自启；诊断容器已自动删除，无抓包文件，本任务未动 LTE。
+
 ## Latest deployment: 2026-09-09 09:56 +08:00 / 最新部署
 
 This summary supersedes older deployment identities below; the older sections

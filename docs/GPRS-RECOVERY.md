@@ -58,6 +58,60 @@ no automatic container or RF restart. `restart: "no"` remains the Compose policy
 
 ## Verification boundaries / 验证边界
 
+### PDP present but browsing fails / 有 PDP 地址但网页失败
+
+On September 9 the follow-up handset test reached `GmmRegisteredNormal` with
+PDP addresses. Bounded TUN header inspection showed DNS requests and upstream
+responses separated by about 3–5 ms; it did not prove the responses were delivered
+over the air. Repeated downlink assignment/ACK failures remained. A `G` icon,
+an IP in the connections API, or a DNS reply at TUN is not end-to-end acceptance.
+9 月 9 日后续实测已出现已注册状态和 PDP 地址；限时隧道包头检查显示 DNS 请求与
+上游响应间隔约 3–5 ms，但不证明手机收到响应。无线下行分配/确认仍有失败；
+G 标志、接口有 IP 或隧道收到 DNS 回包都不等于端到端上网验收。
+
+The current installation is testing this conservative profile (native CLI commands,
+not new HTTP routes). Values are written to its OpenBTS database; they are not
+global image defaults and do not require an image rebuild:
+当前安装正在测试以下保守配置（原生 CLI 命令，不是新增 HTTP 接口）；它们写入此安装
+的 OpenBTS 数据库，不修改所有安装的镜像默认值，也无需重建镜像：
+
+```text
+devconfig GPRS.Codecs.Downlink 1
+devconfig GPRS.Codecs.Uplink 1
+config GPRS.Multislot.Max.Downlink 1
+config GPRS.Multislot.Max.Uplink 1
+```
+
+First, only coding was changed from `1,4` to `1`: the same MS accumulated
+additional bidirectional payload, and recent decoder/ACK statistics improved.
+Later, idle-state downlink assignment failures still occurred; the per-MS slot
+limits were reduced from downlink `3` / uplink `2` to `1` / `1` as the next trial.
+Reconnect the handset before judging the new slot limits, and verify actual
+assigned TN lists. Existing allocations are not immediately rewritten by config.
+先仅将编码从 1,4 限制到 CS1，同一手机的双向数据累计与近期译码/确认统计改善；
+随后空闲态下行分配仍失败，再将每手机上下行时隙上限从 3/2 改为 1/1 作下一阶段对照。
+须重新接入并核验实际 TN 分配后才可评价；改配置不会立即重写既有信道分配。
+
+Do not equate the CLI PDCH FER with handset downlink FER: it is the BTS receive
+decoder statistic. The pinned automatic CS1/CS4 selector uses received burst RSSI
+for both directions, not a downlink ACK-quality adaptation loop. Current evidence
+supports this installation's CS1 trial, not a universal claim that CS4 is broken.
+Keep frequency, transmit power, PDCH pool and other variables unchanged. Original
+values above allow reversal if the trial does not help. RX gain remains the earlier
+temporary runtime setting, separate from these persistent GPRS keys.
+CLI 的 PDCH FER 是基站接收译码指标，并非手机下行误码；固定源码双方向自动选码均
+依赖接收突发 RSSI，而非下行确认质量闭环。当前证据支持本机 CS1 对照，不等于普遍
+判定 CS4 有缺陷。保持频点、发射功率、PDCH 池不变；若对照无效可按上述原值恢复。
+接收增益仍是之前的临时运行设置，与这些持久 GPRS 键分开。
+
+Handset checks: disable Wi-Fi for this test, allow mobile data and test-SIM data
+roaming, leave APN proxy/port blank, and temporarily disable strict Private DNS
+to isolate encrypted-DNS setup failures. Test a small explicit HTTP page before
+large HTTPS pages. These are diagnostic steps, not proof the network is fixed.
+手机排查：测试时关闭 Wi-Fi、开启移动数据和测试卡数据漫游、APN 代理/端口留空；
+暂关严格私人 DNS 以隔离加密 DNS 建链问题，先测试小型 HTTP 页面再测大型 HTTPS 页面。
+这些是诊断步骤，不是修复完成的证据。
+
 - Native regression must cover unknown/known IMSI, preserve TLLI targeting,
   exercise relevant production queue/constructor methods and demonstrate the
   original-source failure. / 原生回归覆盖未知/已知身份、临时身份寻址与相关生产队列/构造
