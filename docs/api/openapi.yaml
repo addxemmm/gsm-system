@@ -9,7 +9,7 @@ info:
     A new preset store contains editable defaults with IDs "0" through "4".
     A successful SMS response means submitted, never delivered.
 servers:
-  - url: http://HOST:8080
+  - url: http://HOST:18082
     description: Default Web same-origin API, same Bearer rules / 默认 Web 同源 API，鉴权相同
   - url: http://HOST:8082
     description: Optional standalone API when explicitly published / 显式发布后的独立 API

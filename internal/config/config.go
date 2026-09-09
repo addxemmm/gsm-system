@@ -68,7 +68,7 @@ func Default() Config {
 		Revision:        "unknown",
 		ListenAddr:      ":8082",
 		WebEnabled:      true,
-		WebListen:       ":8080",
+		WebListen:       ":18082",
 		Timezone:        "Asia/Shanghai",
 		DataDir:         "/data",
 		OpenBTSBin:      "/OpenBTS/OpenBTS",

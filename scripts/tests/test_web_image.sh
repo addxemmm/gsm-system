@@ -35,17 +35,17 @@ unset base both
 echo 'PASS actual Compose Web-only and explicit API overlay / 实际 Compose 默认仅 Web 与双端口合并'
 
 docker run -d --name "$name" --label "com.gsm-system.web-fixture=$run_id" --network none \
-  -e GSM_LISTEN=127.0.0.1:8082 -e GSM_WEB_LISTEN=:8080 -e GSM_WEB_ENABLED=true \
+  -e GSM_LISTEN=127.0.0.1:8082 -e GSM_WEB_LISTEN=:18082 -e GSM_WEB_ENABLED=true \
   -e GSM_API_TOKEN=web-fixture-token "$image" >/dev/null
 i=0
-until docker exec "$name" curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:8080/web-meta.json >/dev/null 2>&1; do
+until docker exec "$name" curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:18082/web-meta.json >/dev/null 2>&1; do
   i=$((i+1)); [ "$i" -lt 35 ] || { docker logs "$name"; exit 1; }; sleep 1
 done
-docker exec "$name" curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:8080/ | grep -qi '<!doctype html'
-meta=$(docker exec "$name" curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:8080/web-meta.json)
+docker exec "$name" curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:18082/ | grep -qi '<!doctype html'
+meta=$(docker exec "$name" curl --connect-timeout 3 --max-time 10 -fsS http://127.0.0.1:18082/web-meta.json)
 printf '%s' "$meta" | grep -Fq '"token_required":true'
 if printf '%s' "$meta" | grep -Fq web-fixture-token; then echo 'FAIL token leaked in metadata'; exit 1; fi
-for port in 8080 8082; do
+for port in 18082 8082; do
   code=$(docker exec "$name" curl --connect-timeout 3 --max-time 10 -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/api/v1/cell")
   [ "$code" = 401 ]
   docker exec "$name" curl --connect-timeout 3 --max-time 10 -fsS -H 'Authorization: Bearer web-fixture-token' \
@@ -53,7 +53,7 @@ for port in 8080 8082; do
 done
 code=$(docker exec "$name" curl --connect-timeout 3 --max-time 10 -sS -o /dev/null -w '%{http_code}' \
   -X POST -H 'Origin: https://untrusted.invalid' -H 'Authorization: Bearer web-fixture-token' \
-  -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/api/v1/cell)
+  -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:18082/api/v1/cell)
 [ "$code" = 403 ]
 docker exec "$name" /usr/local/bin/gsm-system --healthcheck
 echo 'PASS Web assets, secret-free metadata, identical auth, cross-origin mutation rejection and dual-listener health / 页面、元数据、同鉴权、跨源写拒绝与双监听健康通过'

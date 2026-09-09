@@ -20,7 +20,7 @@ same authenticated Go handler used by the independent API listener.
 提供页面，并将同源 `/api/v1` 交给与独立 API 监听器相同的 Go 处理器和鉴权逻辑。
 
 ```text
-Browser / 浏览器 → HOST:8080 → Go Web + embedded assets / 内嵌资源
+Browser / 浏览器 → HOST:18082 → Go Web + embedded assets / 内嵌资源
                                   └ /api/v1 → existing Go API / 原有 API
 Postman / integration → HOST:8082 ────────────┘  optional / 可选
 Native GSM / SIP / RTP / CLI remain inside the container / 原生端口保留在容器内部
@@ -28,7 +28,7 @@ Native GSM / SIP / RTP / CLI remain inside the container / 原生端口保留在
 
 | Startup setting / 启动配置 | Default / 默认 | Meaning / 含义 |
 |---|---|---|
-| `GSM_WEB_PORT` | `8080` | Published Web host port / Web 宿主机端口 |
+| `GSM_WEB_PORT` | `18082` | Published Web host port / Web 宿主机端口 |
 | `GSM_API_PORT` | `8082` | Published API host port, only when enabled / 启用时的 API 宿主机端口 |
 | `GSM_EXPOSE_API` | `false` | Deployment-script API overlay selection / 部署脚本选择 API overlay |
 | `GSM_BIND_ADDRESS` | `0.0.0.0` | Use the actual LAN address to limit exposure / 建议填实际 LAN 地址 |
@@ -36,17 +36,28 @@ Native GSM / SIP / RTP / CLI remain inside the container / 原生端口保留在
 | `GSM_WEB_PUBLIC_ORIGIN` | empty / 空 | Exact external origin behind a trusted TLS proxy / 可信 TLS 代理后的精确外部 origin |
 | `TZ` | `Asia/Shanghai` | Runtime timezone / 运行时区 |
 
-Default Compose publishes **only 8080** and binds the separate API to container
+Default Compose publishes **only 18082** and binds the separate API to container
 loopback. Web must still expose `/api/v1` for interactive operations: this is
 port isolation, not an authentication boundary. A blank token gives every client
 able to reach Web full API access; use a trusted LAN or configure a token and TLS
 termination when appropriate. Do not expose this privileged radio-management
 container directly to the Internet.
-默认仅发布 8080，独立 API 绑定容器回环；Web 交互仍需公开同源 `/api/v1`，因此隐藏
+默认仅发布 18082，独立 API 绑定容器回环；Web 交互仍需公开同源 `/api/v1`，因此隐藏
 独立端口不是权限隔离。令牌留空时能访问 Web 的客户端也能操作 API；应限制在可信局域网，
 按需启用令牌与 TLS 入口，不将具有射频管理权限的容器直接暴露到互联网。
 
 ## Deploy / 部署
+
+The current source defaults to Web `18082` and API `8082`, including the internal
+Web listener and Docker mapping. The already-published `v2.1.0` image and existing
+containers are unchanged; they used Web `8080`. Do not mix the new Compose file
+with that older image without explicitly aligning its listener configuration.
+Existing `.env` values override defaults: change `GSM_WEB_PORT=8080` to `18082`
+when migrating, and update bookmarks/Postman/public-origin settings as needed.
+当前源码统一使用前端 18082、后端 8082，包含容器内监听及端口映射。已发布 v2.1.0
+镜像和现有容器保持原状，前端仍为 8080；新 Compose 搭配旧镜像时须显式对齐监听配置。
+迁移时已有 .env 优先于默认值，需将旧 GSM_WEB_PORT 改为 18082，并同步书签、Postman
+及按需配置的 public origin。此改动不自动升版或重新发布旧版本。
 
 Use the normal gated deployment script. It reads Compose-resolved `.env` values
 without executing that file. Enabling a different host port requires recreating
@@ -62,7 +73,7 @@ TLS 终止场景须显式填精确 HTTPS origin，Web 按该值验证而不信�
 
 ```dotenv
 # Default Web-only / 默认仅 Web
-GSM_WEB_PORT=8080
+GSM_WEB_PORT=18082
 GSM_EXPOSE_API=false
 GSM_API_PORT=8082
 
@@ -125,7 +136,7 @@ their server-supplied offset. Container/native/API timezone is configured by `TZ
 - `401`: check the token in this browser session; both ports use the same token.
   401 检查浏览器会话令牌，两入口规则相同。
 - Web works but Postman 8082 fails: check `GSM_EXPOSE_API` and recreate with the
-  deploy script. Postman can also use Web-origin `http://HOST:8080/api/v1`.
+  deploy script. Postman can also use Web-origin `http://HOST:18082/api/v1`.
   Web 正常但 8082 不通时检查显式暴露开关；Postman 也可使用 Web 同源入口。
 - `degraded` is a backend observation, not a UI loading error. Inspect logs and
   process readiness before repeating start requests.

@@ -17,7 +17,7 @@ through one versioned REST API. Release 2.1 keeps only the standardized
 management code.
 
 > **2.1 / 当前发布线：** Web and Go API share one `gsm-system:2.1` container.
-> Default Web port is `8080`; independent API `8082` is opt-in. Container and RF
+> Default Web port is `18082`; independent API `8082` is opt-in. Container and RF
 > startup remain explicit. Runtime health, radio acceptance and release readiness
 > are separate states; see the dated [acceptance record](docs/RELEASE-2.1.md).
 >
@@ -37,7 +37,7 @@ management code.
   发布线使用 2.1，固定产物使用完整版本或 digest，不自动升版或重启服务器。
 
 - A bilingual, responsive Web console ships inside the Go binary and the same
-  container. Open `http://HOST:8080`; no CDN, Node runtime or extra proxy service.
+  container. Open `http://HOST:18082`; no CDN, Node runtime or extra proxy service.
   中英双语响应式管理台内嵌 Go 二进制，与后端同容器，无 CDN、Node 运行时或额外代理。
 - By default only Web is published. Set `GSM_EXPOSE_API=true` in `.env` and use
   the deployment script to additionally expose API `8082` for Postman/integrations.
@@ -66,7 +66,7 @@ their native C/C++ implementations. 运行时不包含 Python 管理程序；UHD
 
 ## API overview / API 概览
 
-Base URL: `http://HOST:8080/api/v1` (Web same-origin / Web 同源入口).
+Base URL: `http://HOST:18082/api/v1` (Web same-origin / Web 同源入口).
 With explicit standalone API exposure / 显式开放独立 API 后：`http://HOST:8082/api/v1`.
 
 | Resource / 资源 | Methods / 方法 | Purpose / 用途 |

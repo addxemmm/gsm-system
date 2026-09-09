@@ -45,11 +45,11 @@ For new code/configuration deployment, use the gated release script instead.
 
 ## 1. Preconditions / 前置检查
 
-The default published port is Web `8080`; the independent API is unpublished
+The default published port is Web `18082`; the independent API is unpublished
 and loopback-bound inside the container. Set `GSM_EXPOSE_API=true` in root `.env`
 to let this deployment script also publish API `8082`. Host ports can be changed
 with `GSM_WEB_PORT` and `GSM_API_PORT`. See [WEB-CONSOLE.md](WEB-CONSOLE.md).
-默认仅发布 Web 8080；独立 API 仅容器内回环。根 `.env` 中开启上述开关后，部署脚本
+默认仅发布 Web 18082；独立 API 仅容器内回环。根 `.env` 中开启上述开关后，部署脚本
 会合并 API overlay 并发布 8082；两宿主机端口均可配置。测试环境可显式同时开放。
 
 On `HOST`:
@@ -58,7 +58,9 @@ On `HOST`:
 docker --version
 docker compose version
 lsusb | grep 2500
-ss -tlnp | grep 8082 || echo '8082 is free'
+ss -tlnp | grep -E ':18082[[:space:]]' || echo '18082 is free'
+# Only for explicit standalone API exposure / 仅显式开放独立 API 时检查
+ss -tlnp | grep -E ':8082[[:space:]]' || echo '8082 is free'
 ip route
 docker network ls
 docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_gsm-data
@@ -302,7 +304,7 @@ acceptance. / Compose 使用只读 `--healthcheck`：小区停止时健康，运
 1. Development: `go test ./...`, `go vet ./...`, Linux cross-build.
 2. Server: all four isolated image suites below, with no production data or RF.
 3. Verify image labels/version, Compose image ID, `/health`, `/cell`, `/profile`;
-   confirm only Web TCP 8080 is published by default (or both Web/API when
+   confirm only Web TCP 18082 is published by default (or both Web/API when
    `GSM_EXPOSE_API=true`), and the container has `eth0`.
    默认仅 Web 端口；显式开启独立 API 时检查两端口，原生服务端口不发布。
 4. Confirm `/data/state` databases and `/data/log` ownership/modes.

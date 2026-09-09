@@ -145,11 +145,11 @@ docker pull addxemmm/gsm-system:2.1.0
 ```
 
 Pulling does not start a container. Deployment still uses existing gates and site
-configuration, preserving the external business volume. Default Web is 8080;
+configuration, preserving the external business volume. Default Web is 18082;
 independent API 8082 requires the overlay. Publication does not change the current
 test server's dual-port settings. See [deployment](DEPLOY.md) and [Web](WEB-CONSOLE.md).
 
-拉取不启动容器；部署仍走既有门禁与站点配置，保留外部业务卷。默认 Web 8080，独立 API
+拉取不启动容器；部署仍走既有门禁与站点配置，保留外部业务卷。默认 Web 18082，独立 API
 8082 需 overlay；发布不改变当前测试服务器双端口设置。
 
 ## Publication contents / 分发内容

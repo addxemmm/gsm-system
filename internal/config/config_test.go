@@ -55,6 +55,10 @@ func TestEnvironmentOverlayAndPrivateSocketDisable(t *testing.T) {
 }
 
 func TestWebListenerDefaultsAndEnvironment(t *testing.T) {
+	defaults := Default()
+	if defaults.ListenAddr != ":8082" || defaults.WebListen != ":18082" || !defaults.WebEnabled {
+		t.Fatalf("unexpected default API/Web listeners: %+v", defaults)
+	}
 	t.Setenv("TZ", "Asia/Shanghai")
 	t.Setenv("GSM_WEB_LISTEN", "127.0.0.1:9090")
 	t.Setenv("GSM_WEB_ENABLED", "false")

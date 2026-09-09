@@ -59,7 +59,7 @@ grep -F 'docker_gsm-data' deploy/docker/docker-compose.yml >/dev/null || fail 'e
 if grep -F 'network_mode: host' deploy/docker/docker-compose.yml >/dev/null; then
   fail 'host networking remains enabled'
 fi
-grep -F '${GSM_BIND_ADDRESS:-0.0.0.0}:${GSM_WEB_PORT:-8080}:8080/tcp' deploy/docker/docker-compose.yml >/dev/null || \
+grep -F '${GSM_BIND_ADDRESS:-0.0.0.0}:${GSM_WEB_PORT:-18082}:18082/tcp' deploy/docker/docker-compose.yml >/dev/null || \
   fail 'default Web publication missing'
 grep -F 'GSM_LISTEN: "127.0.0.1:8082"' deploy/docker/docker-compose.yml >/dev/null || fail 'default API is not loopback-only'
 grep -F '${GSM_API_PORT:-8082}:8082/tcp' deploy/docker/docker-compose.api.yml >/dev/null || fail 'optional API publication missing'

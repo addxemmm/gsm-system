@@ -1,7 +1,7 @@
 listen_addr: ":8082"
 # Browser UI listener. Set GSM_WEB_ENABLED=false for an API-only process.
 web_enabled: true
-web_listen: ":8080"
+web_listen: ":18082"
 # Set for TLS termination, e.g. https://console.example (no trailing slash).
 web_public_origin: ""
 # IANA project timezone; TZ environment takes precedence / TZ 环境变量优先。

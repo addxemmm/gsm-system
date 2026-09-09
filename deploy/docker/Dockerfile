@@ -239,5 +239,5 @@ ENV GSM_CONFIG=/app/configs/app.yaml \
     TZ=Asia/Shanghai \
     UHD_IMAGES_DIR=/usr/share/uhd/images
 
-EXPOSE 8080 8082
+EXPOSE 18082 8082
 ENTRYPOINT ["/entrypoint.sh"]

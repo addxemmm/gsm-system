@@ -6,7 +6,7 @@
 > 非射频验收，射频与真机验收仍待完成。
 
 Prerequisites / 前置条件：Ubuntu 22.04, Docker Compose, a USB3-connected B210,
-Web port `8080` (optional standalone API `8082`), the external `docker_gsm-data` volume, and externally provisioned
+Web port `18082` (optional standalone API `8082`), the external `docker_gsm-data` volume, and externally provisioned
 test SIMs. Replace every placeholder; never commit real IMSIs, numbers, tokens,
 or host addresses. 需准备 B210、Docker、外部数据卷与已在外部制卡的测试 SIM。
 
@@ -29,7 +29,7 @@ docker volume inspect docker_gsm-data >/dev/null || docker volume create docker_
 Container creation does not start a cell. First inspect non-RF state:
 
 ```bash
-BASE=http://HOST:8080/api/v1 # Web same-origin API / 默认 Web 同源 API
+BASE=http://HOST:18082/api/v1 # Web same-origin API / 默认 Web 同源 API
 AUTH="" # or: AUTH="Authorization: Bearer TOKEN"
 curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/health"; echo
 curl -fsS ${AUTH:+-H "$AUTH"} "$BASE/cell"; echo
@@ -280,7 +280,7 @@ and no RF), run from the development checkout. The script reads the optional
 token from `GSM_API_TOKEN` and cleans up its unique fixture in `finally`:
 
 ```powershell
-.\scripts\tests\presets_smoke.ps1 -BaseUrl http://HOST:8080/api/v1
+.\scripts\tests\presets_smoke.ps1 -BaseUrl http://HOST:18082/api/v1
 ```
 
 该脚本仅验证预设 CRUD、`409/404/422`，不发送有效小区启动，可从

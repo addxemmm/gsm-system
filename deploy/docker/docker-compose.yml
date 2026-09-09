@@ -28,7 +28,7 @@ services:
       # Default: publish the Web console only. Its same-origin /api/v1 uses
       # the same optional Bearer authentication; hiding a port is not auth.
       # 默认仅发布 Web；同源 API 使用同一鉴权，隐藏端口不等于鉴权。
-      - "${GSM_BIND_ADDRESS:-0.0.0.0}:${GSM_WEB_PORT:-8080}:8080/tcp"
+      - "${GSM_BIND_ADDRESS:-0.0.0.0}:${GSM_WEB_PORT:-18082}:18082/tcp"
     sysctls:
       # GPRS packets enter via sgsntun and leave via eth0 in this namespace.
       net.ipv4.ip_forward: "1"
@@ -57,7 +57,7 @@ services:
       # Independent API is loopback-only unless the API Compose overlay is used.
       # 独立 API 默认仅容器内回环监听；显式启用 overlay 才对外开放。
       GSM_LISTEN: "127.0.0.1:8082"
-      GSM_WEB_LISTEN: ":8080"
+      GSM_WEB_LISTEN: ":18082"
       GSM_WEB_ENABLED: "true"
       GSM_WEB_PUBLIC_ORIGIN: "${GSM_WEB_PUBLIC_ORIGIN:-}"
       # Optional Bearer auth from repository-root .env: blank disables it.
