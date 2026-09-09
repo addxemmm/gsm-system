@@ -90,6 +90,8 @@ settings are separate from the workflow file.
 
 1. Update code, bilingual docs and dated history. Change `VERSION` **only when
    explicitly approved**. 完成功能、双语文档和日期记录；用户批准升版后才改 VERSION。
+   Add matching bilingual `docs/releases/X.Y.Z.md`; the workflow appends it to
+   the generated validation/digest record. 同步建立该版本双语说明，工作流将其附到自动摘要与验收记录。
 2. Test, commit, push and merge to `master`. In Actions run release with
    `dry_run=true` for full cloud build/tests without uploading.
    测试提交并进入 master，可先 dry-run 完整云构建验收而不上传。
@@ -122,6 +124,12 @@ job is used here. tag 使用用户凭据推送，不依赖隐藏自动升版任�
 - Push success followed by release creation failure can leave an image without a
   Release. Resume the same version; do not overwrite it with a rebuilt artifact.
   上传后 Release 失败时续跑同一版本，不用重建产物覆盖旧版本。
+- A draft checkpoint is created before the first image push. If uploading a large
+  source attachment is interrupted, retain the existing draft/assets and supply
+  the missing matching attachments before retrying. Required assets are checked
+  before alias promotion and publication; an incomplete source bundle is not silently
+  published. 首次镜像推送前先建草稿检查点；大源码附件上传中断时，保留既有草稿与附件，
+  补齐同一版本缺失附件后重跑。更新别名和发布前检查必需附件，不静默发布不完整源码。
 - Older-version retries must not move `2.1` backwards. Source changes after a
   publication need an explicitly approved new patch version. Fix a failed dry-run
   before creating an immutable version tag. 旧版重试不回退 2.1，已发布后改源码需显式新版本。

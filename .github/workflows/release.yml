@@ -103,6 +103,7 @@ jobs:
           version=$(tr -d '\r\n' <VERSION)
           [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$(wc -l <VERSION | tr -d '[:space:]')" -le 1 ]]
+          [[ -s "docs/releases/$version.md" ]]
           revision=$(git rev-parse HEAD)
           [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
           git fetch --no-tags origin refs/heads/master:refs/remotes/origin/master
@@ -138,6 +139,7 @@ jobs:
       action: ${{ steps.dry.outputs.action || steps.registry.outputs.action }}
       digest: ${{ steps.registry.outputs.digest }}
       config_digest: ${{ steps.registry.outputs.config_digest }}
+      checkpoint: ${{ steps.registry.outputs.checkpoint }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -163,6 +165,7 @@ jobs:
           TAG: ${{ needs.source.outputs.tag }}
           VERSION: ${{ needs.source.outputs.version }}
           LINE: ${{ needs.source.outputs.line }}
+          REVISION: ${{ needs.source.outputs.revision }}
           REV12: ${{ needs.source.outputs.rev12 }}
           HUB_REPOSITORY: ${{ needs.source.outputs.repository }}
         run: |
@@ -187,6 +190,24 @@ jobs:
             exit 1
           fi
 
+          checkpoint=false
+          checkpoint_config=
+          if [[ "$release_state" != absent ]]; then
+            mkdir "$RUNNER_TEMP/checkpoint"
+            gh release download "$TAG" --pattern BUILD-CHECKPOINT.txt --dir "$RUNNER_TEMP/checkpoint"
+            checkpoint_file="$RUNNER_TEMP/checkpoint/BUILD-CHECKPOINT.txt"
+            checkpoint_value() {
+              [[ "$(grep -c "^$1=" "$checkpoint_file")" -eq 1 ]]
+              sed -n "s/^$1=//p" "$checkpoint_file"
+            }
+            [[ "$(checkpoint_value version)" == "$VERSION" ]]
+            [[ "$(checkpoint_value revision)" == "$REVISION" ]]
+            [[ "$(checkpoint_value repository)" == "$HUB_REPOSITORY" ]]
+            checkpoint_config=$(checkpoint_value config_digest)
+            [[ "$checkpoint_config" =~ ^sha256:[0-9a-f]{64}$ ]]
+            checkpoint=true
+          fi
+
           stable_relation=absent
           if [[ "$stable_state" == present ]]; then
             stable_version=$(printf '%s' "$stable" | field version)
@@ -205,9 +226,13 @@ jobs:
           fi
 
           if [[ "$full_state" == absent ]]; then
-            [[ "$release_state" == absent ]]
             [[ "$stable_relation" != current ]]
-            echo 'action=build' >>"$GITHUB_OUTPUT"
+            [[ "$release_state" != published ]]
+            {
+              echo 'action=build'
+              printf 'checkpoint=%s\n' "$checkpoint"
+              printf 'config_digest=%s\n' "$checkpoint_config"
+            } >>"$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -217,19 +242,29 @@ jobs:
           config_digest=$(printf '%s' "$full" | field config_digest)
           [[ "$full_version" == "$VERSION" && "$full_revision" == "$REV12" ]]
           [[ "$release_state" != absent ]]
-          mkdir "$RUNNER_TEMP/checkpoint"
-          gh release download "$TAG" --pattern IMAGE-DIGEST.txt --dir "$RUNNER_TEMP/checkpoint"
-          [[ "$(tr -d '\r\n' <"$RUNNER_TEMP/checkpoint/IMAGE-DIGEST.txt")" == "docker.io/$HUB_REPOSITORY@$full_digest" ]]
+          [[ "$checkpoint_config" == "$config_digest" ]]
+          digest_assets=$(jq '[.assets[] | select(.name == "IMAGE-DIGEST.txt")] | length' "$RUNNER_TEMP/release.json")
+          [[ "$digest_assets" -le 1 ]]
+          if [[ "$digest_assets" -eq 1 ]]; then
+            gh release download "$TAG" --pattern IMAGE-DIGEST.txt --dir "$RUNNER_TEMP/checkpoint"
+            [[ "$(tr -d '\r\n' <"$RUNNER_TEMP/checkpoint/IMAGE-DIGEST.txt")" == "docker.io/$HUB_REPOSITORY@$full_digest" ]]
+          elif [[ "$release_state" == published ]]; then
+            echo 'Published release lacks IMAGE-DIGEST.txt; stopping closed / 已发布 Release 缺少摘要附件，停止' >&2
+            exit 1
+          fi
           if [[ "$stable_relation" == current ]]; then
             [[ "$stable_digest" == "$full_digest" ]]
           fi
           {
             printf 'digest=%s\n' "$full_digest"
             printf 'config_digest=%s\n' "$config_digest"
+            printf 'checkpoint=%s\n' "$checkpoint"
           } >>"$GITHUB_OUTPUT"
           if [[ "$release_state" == published ]]; then
             [[ "$stable_relation" == current ]]
             echo 'action=done' >>"$GITHUB_OUTPUT"
+          elif [[ "$digest_assets" -eq 0 ]]; then
+            echo 'action=resume_finalize' >>"$GITHUB_OUTPUT"
           else
             echo 'action=resume' >>"$GITHUB_OUTPUT"
           fi
@@ -365,6 +400,51 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Verify a recovered pre-push checkpoint / 校验恢复的推送前检查点
+        if: needs.source.outputs.dry_run != 'true' && needs.preflight.outputs.action == 'build' && needs.preflight.outputs.checkpoint == 'true'
+        shell: bash
+        env:
+          IMAGE_ID: ${{ steps.image.outputs.image_id }}
+          CHECKPOINT_CONFIG: ${{ needs.preflight.outputs.config_digest }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_ID" == "$CHECKPOINT_CONFIG" ]]
+
+      - name: Create a tested pre-push draft checkpoint / 创建已测试的推送前草稿检查点
+        if: needs.source.outputs.dry_run != 'true' && needs.preflight.outputs.action == 'build' && needs.preflight.outputs.checkpoint != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_ID: ${{ steps.image.outputs.image_id }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/release-assets"
+          cat >"$assets/BUILD-CHECKPOINT.txt" <<EOF
+          version=$VERSION
+          revision=$REVISION
+          repository=$HUB_REPOSITORY
+          platform=linux/amd64
+          config_digest=$IMAGE_ID
+          workflow=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          EOF
+          (
+            cd "$assets"
+            find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | LC_ALL=C sort |
+              while IFS= read -r file; do sha256sum "$file"; done >SHA256SUMS.txt
+          )
+          cat >"$RUNNER_TEMP/checkpoint-notes.md" <<EOF
+          # gsm-system $TAG — publication in progress / 发布进行中
+
+          The exact source and image config digest passed all cloud and isolated image gates.
+          No Docker tag is recorded as released until the digest attachment appears and this
+          draft is published. Rerunning the same source tag may rebuild only this exact config.
+          精确源码及镜像配置摘要已通过全部云端与隔离镜像门禁；在摘要附件出现且草稿发布前，
+          不视为已发布。以同一源码 tag 重跑时，仅允许重建完全相同的配置摘要。
+          EOF
+          gh release create "$TAG" --verify-tag --draft --latest=false \
+            --title "gsm-system $TAG / GSM 系统 $TAG" \
+            --notes-file "$RUNNER_TEMP/checkpoint-notes.md" "$assets"/*
+
       - name: Push immutable full version after a second absence check / 二次确认不存在后推送完整版本
         if: needs.source.outputs.dry_run != 'true' && needs.preflight.outputs.action == 'build'
         id: push_version
@@ -390,30 +470,29 @@ jobs:
           [[ "$remote_config" == "$IMAGE_ID" && "$remote_version" == "$VERSION" && "$remote_revision" == "$REV12" ]]
           printf 'digest=%s\nconfig_digest=%s\n' "$remote_digest" "$remote_config" >>"$GITHUB_OUTPUT"
 
-      - name: Checkpoint tested digest as a draft GitHub Release / 以草稿 Release 记录已测试摘要
-        if: needs.source.outputs.dry_run != 'true' && needs.preflight.outputs.action == 'build'
+      - name: Complete the draft with the immutable digest / 用不可变摘要完成草稿
+        if: needs.source.outputs.dry_run != 'true' && (needs.preflight.outputs.action == 'build' || needs.preflight.outputs.action == 'resume_finalize')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          DIGEST: ${{ steps.push_version.outputs.digest }}
-          CONFIG_DIGEST: ${{ steps.push_version.outputs.config_digest }}
+          DIGEST: ${{ steps.push_version.outputs.digest || needs.preflight.outputs.digest }}
+          CONFIG_DIGEST: ${{ steps.push_version.outputs.config_digest || needs.preflight.outputs.config_digest }}
         run: |
           set -euo pipefail
-          assets="$RUNNER_TEMP/release-assets"
-          printf 'docker.io/%s@%s\n' "$HUB_REPOSITORY" "$DIGEST" >"$assets/IMAGE-DIGEST.txt"
-          cat >"$assets/BUILD-METADATA.txt" <<EOF
+          post="$RUNNER_TEMP/post-push-assets"
+          mkdir "$post"
+          printf 'docker.io/%s@%s\n' "$HUB_REPOSITORY" "$DIGEST" >"$post/IMAGE-DIGEST.txt"
+          cat >"$post/PUBLISHED-METADATA.txt" <<EOF
           version=$VERSION
           revision=$REVISION
           revision_short=$REV12
           platform=linux/amd64
           image_config=$CONFIG_DIGEST
           immutable=docker.io/$HUB_REPOSITORY@$DIGEST
-          workflow=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
           EOF
           (
-            cd "$assets"
-            find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | LC_ALL=C sort |
-              while IFS= read -r file; do sha256sum "$file"; done >SHA256SUMS.txt
+            cd "$post"
+            sha256sum PUBLISHED-METADATA.txt >PUBLISHED-SHA256SUMS.txt
           )
           cat >"$RUNNER_TEMP/release-notes.md" <<EOF
           # gsm-system $TAG
@@ -445,15 +524,67 @@ jobs:
           third-party notices, build metadata and SHA-256 list describe this publication.
           附件包含对应源码包及校验、供应商 revision 清单、第三方声明、构建元数据与 SHA-256 清单。
 
-          A draft is created after the immutable tag and before the stable alias. On interruption,
-          rerun this workflow for the same existing source tag; it resumes only when the recorded
-          digest matches. Never move or recreate the Git tag.
-          完整版本镜像推送后先建立草稿，再更新稳定别名；若中断，以同一现有源码 tag 重跑，
-          仅在已记录摘要一致时续发，切勿移动或重建 Git tag。
+          A tested draft checkpoint is created before the first push. On interruption, rerun this
+          workflow for the same existing source tag; it resumes only when the config and recorded
+          manifest digest match. Never move or recreate the Git tag.
+          首次推送前先建立已测试的草稿检查点；若中断，以同一现有源码 tag 重跑，且仅在配置
+          摘要与已记录 manifest 摘要一致时续发，切勿移动或重建 Git tag。
           EOF
-          gh release create "$TAG" --verify-tag --draft --latest=false \
-            --title "gsm-system $TAG / GSM 系统 $TAG" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" "$assets"/*
+          printf '\n## Version notes / 版本说明\n\n' >>"$RUNNER_TEMP/release-notes.md"
+          cat "docs/releases/$VERSION.md" >>"$RUNNER_TEMP/release-notes.md"
+          # Upload metadata and final notes before IMAGE-DIGEST.txt. The digest
+          # file is the completion marker consumed by an idempotent rerun.
+          # 先上传元数据并更新说明；IMAGE-DIGEST.txt 最后上传，作为续发完成标志。
+          ensure_asset() {
+            name=$1
+            path=$2
+            release_json="$RUNNER_TEMP/release-assets-$name.json"
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" >"$release_json"
+            count=$(jq --arg name "$name" '[.assets[] | select(.name == $name)] | length' "$release_json")
+            if [[ "$count" -eq 0 ]]; then
+              gh release upload "$TAG" "$path"
+            elif [[ "$count" -eq 1 ]]; then
+              existing="$RUNNER_TEMP/existing-$name"
+              mkdir "$existing"
+              gh release download "$TAG" --pattern "$name" --dir "$existing"
+              cmp "$path" "$existing/$name"
+            else
+              echo "Duplicate release asset: $name / Release 附件重名" >&2
+              return 1
+            fi
+          }
+          ensure_asset PUBLISHED-METADATA.txt "$post/PUBLISHED-METADATA.txt"
+          ensure_asset PUBLISHED-SHA256SUMS.txt "$post/PUBLISHED-SHA256SUMS.txt"
+          gh release edit "$TAG" --draft=true --latest=false --notes-file "$RUNNER_TEMP/release-notes.md"
+          ensure_asset IMAGE-DIGEST.txt "$post/IMAGE-DIGEST.txt"
+
+      - name: Require every release artifact before promotion / 提升前要求全部发布附件
+        if: needs.source.outputs.dry_run != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/complete-release.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" >"$release_json"
+          [[ "$(jq -r '.draft' "$release_json")" == true ]]
+          for required in \
+            BUILD-CHECKPOINT.txt \
+            SHA256SUMS.txt \
+            gsm-system-corresponding-source.tar.gz \
+            gsm-system-corresponding-source.tar.gz.sha256 \
+            VENDOR-REVISIONS.tsv \
+            THIRD-PARTY.md \
+            PUBLISHED-METADATA.txt \
+            PUBLISHED-SHA256SUMS.txt \
+            IMAGE-DIGEST.txt
+          do
+            count=$(jq --arg name "$required" '[.assets[] | select(.name == $name)] | length' "$release_json")
+            if [[ "$count" -ne 1 ]]; then
+              echo "Required draft asset missing or duplicated: $required. Repair this draft without overwriting existing assets, then rerun / 草稿附件缺失或重名，请保留已有附件并修复后重跑" >&2
+              exit 1
+            fi
+          done
 
       - name: Promote the recorded image to the stable line / 将已记录镜像提升为稳定线
         if: needs.source.outputs.dry_run != 'true'

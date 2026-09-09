@@ -18,5 +18,6 @@ vendor/
 .env.*
 .release-revision
 __pycache__/
+.codex-go-cache-release/
 crash/
 *_run.conf
