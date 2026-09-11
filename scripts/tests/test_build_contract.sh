@@ -44,7 +44,12 @@ grep -F 'sh /app/compat/tests/test-gprs-pre-imsi.sh .' deploy/docker/Dockerfile 
 
 grep -F 'image: "${GSM_IMAGE:-gsm-system:2.1}"' deploy/docker/docker-compose.yml >/dev/null || fail '2.1 runtime image default missing'
 grep -F 'com.gsm-system.managed: "true"' deploy/docker/docker-compose.yml >/dev/null || fail 'managed GSM cleanup label missing'
-grep -F 'RUNTIME_IMAGE=gsm-system:2.1' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'stable deploy image missing'
+# Keep the local default and the explicit, pre-pulled Hub path in sync.
+# 同步本地默认镜像与显式 Hub 路径；行为门禁另由部署脚本回归测试验证。
+grep -Fx 'GSM_IMAGE=${GSM_IMAGE-gsm-system:2.1}' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'stable local deploy image default missing'
+grep -Fx '  gsm-system:2.1) ;;' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'local deploy image allowlist missing'
+grep -Fx '  addxemmm/gsm-system:2.1)' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'Hub deploy image allowlist missing'
+grep -F 'compose up -d --no-build --pull never' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'verified Hub image replacement gate missing'
 grep -F "label=org.opencontainers.image.title=gsm-system" scripts/deploy_to_ubuntu.sh >/dev/null || fail 'GSM-scoped image cleanup missing'
 grep -F 'docker builder prune --all --force' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'post-validation build-cache cleanup missing'
 grep -F 'docker exec "$HEALTH_CONTAINER" /usr/local/bin/gsm-system --healthcheck' scripts/deploy_to_ubuntu.sh >/dev/null || fail 'binary health cleanup gate missing'
