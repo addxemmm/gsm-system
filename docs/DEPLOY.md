@@ -1,5 +1,22 @@
 # Deploy 2.1 / 部署 2.1
 
+## Docker Hub image / Docker Hub 镜像
+
+For a verified registry image, explicitly export
+`GSM_IMAGE=addxemmm/gsm-system:2.1` and use `--skip-build --skip-cleanup`.
+Pull and inspect the image first; set `GSM_VERSION` and `GSM_REVISION` to its
+reviewed version/revision labels rather than the local checkout revision.
+The deployment retains the identity and health gates, disables implicit build/pull
+at container replacement, and rejects other repository/tag overrides.
+Compare the published revision with the installed application before switching:
+a newly pulled registry tag can still contain older code. The site Compose Web
+listener override preserves `18082`, even when an older image defaults to `8080`.
+使用已核验 Hub 镜像时，显式导出上述 GSM_IMAGE，并加 --skip-build --skip-cleanup。
+先 pull 并检查版本和 revision，再显式设置相应 GSM_VERSION/GSM_REVISION；不要拿本地
+源码 revision 冒充镜像版本。替换时禁止隐式构建或拉取，保留身份与健康门禁。
+切换前比较应用版本：刚拉下来的镜像也可能比现网代码旧；站点 Compose 监听配置仍可
+将旧镜像的前端默认 8080 覆盖为 18082。仅导出 GSM_IMAGE，不把密钥写入命令行。
+
 On hosts shared with other projects, use `--skip-cleanup` with the deployment
 script to retain all image identity, HTTP and binary-health gates while skipping
 automatic cleanup. Then remove only explicitly verified obsolete GSM objects;

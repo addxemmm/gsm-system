@@ -30,15 +30,15 @@ case " $* " in
   *" volume inspect "*) exit 0 ;;
   *" image inspect "*"org.opencontainers.image.version"*) echo "${FAKE_LABEL_VERSION:-$GSM_VERSION}" ;;
   *" image inspect "*"org.opencontainers.image.revision"*) echo "${FAKE_LABEL_REVISION:-$GSM_REVISION}" ;;
-  *" image inspect "*"range .RepoTags"*" sha256:fixture "*) printf '%s\n' 'gsm-system:2.1' 'gsm-system:2.1.0' ;;
-  *" image inspect "*"range .RepoTags"*" sha256:old "*) printf '%s\n' 'gsm-system:2.1.0' 'gsm-system:2.1.0-oldrevision' ;;
+  *" image inspect "*"range .RepoTags"*" sha256:fixture "*) printf '%s\n' 'gsm-system:2.1' 'gsm-system:2.1.0' 'addxemmm/gsm-system:2.1' ;;
+  *" image inspect "*"range .RepoTags"*" sha256:old "*) printf '%s\n' 'gsm-system:2.1.0' 'gsm-system:2.1.0-oldrevision' 'addxemmm/gsm-system:2.0' ;;
   *" image inspect "*"range .RepoTags"*" sha256:shared "*) printf '%s\n' 'gsm-system:legacy' 'lte:preserve' ;;
   *" image inspect "*"range .RepoTags"*" sha256:dangling "*) : ;;
   *" image ls -aq --no-trunc "*)
     [ "${FAKE_CLEANUP_FIXTURES:-0}" = 1 ] && printf '%s\n' sha256:fixture sha256:old sha256:shared sha256:dangling || echo sha256:fixture
     ;;
   *" image inspect "*) echo 'sha256:fixture' ;;
-  *" run --rm --entrypoint /usr/local/bin/gsm-system "*) echo "gsm-system $GSM_VERSION ($GSM_REVISION)" ;;
+  *" run --rm --entrypoint /usr/local/bin/gsm-system "*) echo "${FAKE_BINARY_VERSION:-gsm-system $GSM_VERSION ($GSM_REVISION)}" ;;
   *" exec fixture-current /usr/local/bin/gsm-system --healthcheck "*) [ "${FAKE_BINARY_HEALTH_FAIL:-0}" != 1 ] ;;
   *" exec fixture-current sh -c "*)
     [ "${FAKE_EXEC_FAIL:-0}" != 1 ] || exit 22
@@ -155,13 +155,75 @@ if grep -F "$TOKEN_FIXTURE" "$LOG" >/dev/null; then
   echo 'container token leaked into deployment log' >&2; exit 1
 fi
 
-# The runtime image tag is fixed for release 2.1; revision-suffixed overrides
-# are rejected before Docker is called. / 2.1 运行 tag 固定，禁止 revision 后缀。
+# Only the local/Hub 2.1 references are allowed, before any Docker operation.
+# 仅支持本地/Hub 的明确 2.1 引用，其余仓库、tag、digest 和空值均提前拒绝。
+for rejected_image in '' gsm-system:2.1.0-aaaaaaaaaaaa gsm-system:latest \
+  addxemmm/gsm-system:latest addxemmm/gsm-system:2.1.0 other/gsm-system:2.1 \
+  docker.io/addxemmm/gsm-system:2.1 'addxemmm/gsm-system@sha256:aaaaaaaaaaaa'; do
+  : >"$LOG"
+  if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG GSM_IMAGE="$rejected_image" \
+    "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build --skip-health; then
+    echo "unsupported image override unexpectedly passed: $rejected_image" >&2; exit 1
+  fi
+  [ ! -s "$LOG" ] || { echo 'unsupported image invoked Docker' >&2; exit 1; }
+done
+
+# Hub references must never enter either explicit or implicit build/pull paths.
+# Hub 镜像必须预拉取，部署中既不显式构建，也不隐式构建/拉取。
+HUB_IMAGE=addxemmm/gsm-system:2.1
 : >"$LOG"
-if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG GSM_IMAGE=gsm-system:2.1.0-aaaaaaaaaaaa \
-  "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build --skip-health; then
-  echo 'revision-suffixed image override unexpectedly passed' >&2; exit 1
+if PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG GSM_IMAGE=$HUB_IMAGE \
+  "$ROOT/scripts/deploy_to_ubuntu.sh"; then
+  echo 'Hub image accepted without --skip-build' >&2; exit 1
 fi
+[ ! -s "$LOG" ] || { echo 'Hub build rejection invoked Docker' >&2; exit 1; }
+
+: >"$LOG"
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state GSM_IMAGE=$HUB_IMAGE \
+  "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build --skip-cleanup
+grep -F "image=$HUB_IMAGE version=$EXPECTED_VERSION revision=$REVISION" "$LOG" >/dev/null
+grep -F 'up -d --no-build --pull never' "$LOG" >/dev/null
+grep -F 'org.opencontainers.image.version' "$LOG" >/dev/null
+grep -F 'org.opencontainers.image.revision' "$LOG" >/dev/null
+grep -F "run --rm --entrypoint /usr/local/bin/gsm-system $HUB_IMAGE --version" "$LOG" >/dev/null
+grep -F 'exec fixture-current sh -c' "$LOG" >/dev/null
+grep -F 'exec fixture-current /usr/local/bin/gsm-system --healthcheck' "$LOG" >/dev/null
+if grep -E ' build$| builder prune | image rm | image ls -aq' "$LOG" >/dev/null; then
+  echo 'Hub skip-build/skip-cleanup performed build or cleanup' >&2; exit 1
+fi
+
+# Published images retain the exact same metadata, readiness and health gates.
+# Hub 镜像仍须通过元数据、容器状态、HTTP 与二进制健康门禁。
+for failure in FAKE_LABEL_VERSION=0.0.0 FAKE_LABEL_REVISION=bbbbbbbbbbbb \
+  FAKE_BINARY_VERSION=wrong FAKE_CURRENT_RUNNING=false FAKE_CURRENT_IMAGE=sha256:stale \
+  FAKE_EXEC_FAIL=1 FAKE_BINARY_HEALTH_FAIL=1; do
+  : >"$LOG"
+  if env "PATH=$BIN:$PATH" "FAKE_DEPLOY_LOG=$LOG" "FAKE_DEPLOY_STATE=$TMP/state" \
+    "GSM_IMAGE=$HUB_IMAGE" HEALTH_RETRIES=1 "$failure" \
+    "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build; then
+    echo "Hub image bypassed gate: $failure" >&2; exit 1
+  fi
+  if grep -E ' builder prune | image rm | image ls -aq' "$LOG" >/dev/null; then
+    echo "Hub cleanup ran after failed gate: $failure" >&2; exit 1
+  fi
+  case "$failure" in
+    FAKE_LABEL_*|FAKE_BINARY_VERSION=*)
+      if grep -F ' up -d' "$LOG" >/dev/null; then
+        echo 'Hub image started before metadata/binary validation' >&2; exit 1
+      fi
+      ;;
+  esac
+done
+
+: >"$LOG"
+PATH=$BIN:$PATH FAKE_DEPLOY_LOG=$LOG FAKE_DEPLOY_STATE=$TMP/state GSM_IMAGE=$HUB_IMAGE \
+  FAKE_CLEANUP_FIXTURES=1 "$ROOT/scripts/deploy_to_ubuntu.sh" --skip-build
+grep -F 'image rm gsm-system:2.1' "$LOG" >/dev/null
+grep -F 'image rm addxemmm/gsm-system:2.0' "$LOG" >/dev/null
+if grep -E 'image rm (addxemmm/gsm-system:2\.1|lte:preserve|sha256:fixture)$|volume rm|system prune' "$LOG" >/dev/null; then
+  echo 'Hub cleanup removed current image or unrelated objects' >&2; exit 1
+fi
+echo 'PASS restricted Hub deployment / 受限 Hub 部署契约通过'
 
 echo "PASS test_deploy_to_ubuntu.sh / Ubuntu 部署脚本测试通过"
 

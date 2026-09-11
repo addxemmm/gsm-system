@@ -17,7 +17,7 @@ usage() {
 Usage: ./scripts/deploy_to_ubuntu.sh [options]
   --compose-file PATH  Compose file (default: deploy/docker/docker-compose.yml)
   --project-name NAME  Compose project (default: gsm-system-live)
-  --skip-build         Start the already-built image
+  --skip-build         Start an existing image (required for Docker Hub image)
   --skip-health        Do not poll the HTTP health endpoint
   --skip-cleanup       Keep health gates; leave cleanup to scoped operator commands
   --health-url URL     Health endpoint (default: http://127.0.0.1:8082/api/v1/cell)
@@ -25,6 +25,8 @@ Usage: ./scripts/deploy_to_ubuntu.sh [options]
 
 This script runs `compose up -d`; use deploy_from_windows.ps1 for sync/build only.
 本脚本会执行 `compose up -d`；仅同步或构建请使用 deploy_from_windows.ps1。
+GSM_IMAGE: gsm-system:2.1 (default), or addxemmm/gsm-system:2.1 with --skip-build.
+Hub 镜像须预先拉取且仅支持 --skip-build；本脚本不构建或更新 Hub 镜像。
 EOF
 }
 
@@ -102,12 +104,17 @@ case "$REVISION" in
 esac
 [ "${#REVISION}" -eq 12 ] || { echo "revision must contain 12 characters: $REVISION" >&2; exit 2; }
 
-RUNTIME_IMAGE=gsm-system:2.1
-if [ "${GSM_IMAGE+x}" = x ] && [ "$GSM_IMAGE" != "$RUNTIME_IMAGE" ]; then
-  echo "GSM_IMAGE must remain $RUNTIME_IMAGE: $GSM_IMAGE" >&2
-  exit 2
-fi
-GSM_IMAGE=$RUNTIME_IMAGE
+GSM_IMAGE=${GSM_IMAGE-gsm-system:2.1}
+case "$GSM_IMAGE" in
+  gsm-system:2.1) ;;
+  addxemmm/gsm-system:2.1)
+    [ "$BUILD" -eq 0 ] || {
+      echo 'Docker Hub GSM_IMAGE requires --skip-build; pull it before deployment' >&2
+      exit 2
+    }
+    ;;
+  *) echo "unsupported GSM_IMAGE (only gsm-system:2.1 or addxemmm/gsm-system:2.1): $GSM_IMAGE" >&2; exit 2 ;;
+esac
 GSM_VERSION=$VERSION
 GSM_REVISION=$REVISION
 export GSM_IMAGE GSM_VERSION GSM_REVISION
@@ -165,7 +172,13 @@ for image in $images; do
   expected_ids="$expected_ids $image_id"
 done
 
-compose up -d
+if [ "$GSM_IMAGE" = addxemmm/gsm-system:2.1 ]; then
+  # The pre-pulled Hub image has already passed the metadata/binary gates.
+  # 禁止 Compose 隐式构建或重新拉取，以免覆盖刚验收的 Hub 镜像。
+  compose up -d --no-build --pull never
+else
+  compose up -d
+fi
 
 HEALTH_CONTAINER=''
 verify_containers() {
@@ -257,14 +270,18 @@ if [ "$VERIFY" -eq 1 ] && [ "$CLEANUP" -eq 1 ]; then
       [ -z "$(docker ps -aq --filter "ancestor=$image_id")" ] || continue
     fi
 
-    # Untag only this repository. If an image ID is shared with another
+    # Untag only the two permitted GSM repositories. If an image ID is shared with another
     # repository, that unrelated tag and image remain intact.
-    # 仅删除 gsm-system 仓库 tag；共享同一 ID 的其他仓库不受影响。
+    # 仅删除本地/Hub GSM 仓库 tag；共享同一 ID 的其他仓库不受影响。
     repo_tags=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "$image_id")
     for repo_tag in $repo_tags; do
       case "$repo_tag" in
-        gsm-system:2.1) [ "$image_id" = "$current_image_id" ] && continue ;;
-        gsm-system:*) docker image rm "$repo_tag" >/dev/null ;;
+        gsm-system:*|addxemmm/gsm-system:*)
+          if [ "$repo_tag" = "$GSM_IMAGE" ] && [ "$image_id" = "$current_image_id" ]; then
+            continue
+          fi
+          docker image rm "$repo_tag" >/dev/null
+          ;;
       esac
     done
 
